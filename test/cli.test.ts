@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -55,7 +55,7 @@ test('typos get a suggestion and exit 2', () => {
 test('a wrong project path suggests the real one', () => {
   const r = oodle(['run', 'examples']);
   assert.equal(r.code, 2);
-  assert.match(r.stderr, /No oodle\.yaml in examples/);
+  assert.match(r.stderr, /No oodlc\/ folder in examples/);
   assert.match(r.stderr, /examples\/checkout/);
 });
 
@@ -105,7 +105,7 @@ test('piped output carries no colour codes; --color always forces them', () => {
 test('init scaffolds a project that passes run straight away', () => {
   const dir = join(mkdtempSync(join(tmpdir(), 'oodle-init-')), 'svc');
   const made = json(oodle(['init', dir, '--json']).stdout);
-  assert.deepEqual(made.created, ['oodle.yaml', 'catalog/intents.yaml', 'catalog/outcomes.yaml', 'src/app.ts']);
+  assert.deepEqual(made.created, ['oodlc/config.yaml', 'oodlc/intents.yaml', 'oodlc/outcomes.yaml', 'src/app.ts']);
   const run = oodle(['run', dir, '--json']);
   assert.equal(run.code, 0, run.stdout);
   assert.equal(json(run.stdout).summary.held, 1);
@@ -131,7 +131,7 @@ test('completion scripts are generated for each shell', () => {
 
 test('GitHub Actions: blocking findings become annotations on stderr', () => {
   const r = oodle(['lint', EXAMPLE], { GITHUB_ACTIONS: 'true' });
-  assert.match(r.stderr, /::warning title=Oodle catalog warning,file=examples\/checkout\/catalog\/intents\.yaml::/);
+  assert.match(r.stderr, /::warning title=Oodle catalog warning,file=examples\/checkout\/oodlc\/intents\.yaml::/);
 });
 
 test('a compile error in the app shows file:line:col, not just the first line', () => {
@@ -157,4 +157,33 @@ test('the same finding under several conditions is shown once', () => {
   assert.equal(r.stdout.match(/body\.order_id: missing/g)?.length, 1, r.stdout);
   assert.match(r.stdout, /3 conditions\s+body\.order_id: missing/);
   assert.match(r.stdout, /warnings only · not blocking/);
+});
+
+test('the old layout (oodle.yaml + catalog/) still runs, with a nudge, and --migrate moves it into oodlc/', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'oodle-legacy-')), 'checkout');
+  cpSync(EXAMPLE, dir, { recursive: true });
+  // Rebuild the v0 layout from the current one.
+  cpSync(join(dir, 'oodlc'), join(dir, 'catalog'), { recursive: true });
+  writeFileSync(join(dir, 'oodle.yaml'), `catalog: catalog\n${readFileSync(join(dir, 'oodlc', 'config.yaml'), 'utf8')}`);
+  rmSync(join(dir, 'oodlc'), { recursive: true });
+  rmSync(join(dir, 'catalog', 'config.yaml'));
+
+  const old = oodle(['run', dir]);
+  assert.equal(old.code, 0, old.stderr);
+  assert.match(old.stdout, /All 4 outcomes hold/);
+  assert.match(old.stderr, /old layout \(oodle\.yaml\)\. Move it into oodlc\/ with oodle init --migrate/);
+
+  const moved = json(oodle(['init', '--migrate', dir, '--json']).stdout);
+  assert.equal(moved.ok, true);
+  assert.deepEqual(moved.moved.at(-1), ['oodle.yaml', 'oodlc/config.yaml']);
+  assert.equal(existsSync(join(dir, 'oodle.yaml')), false);
+  assert.equal(existsSync(join(dir, 'catalog')), false);
+  assert.doesNotMatch(readFileSync(join(dir, 'oodlc', 'config.yaml'), 'utf8'), /^catalog:/m);
+  const after = json(oodle(['run', dir, '--json']).stdout);
+  assert.equal(after.summary.held, 4);
+});
+
+test('a project is found from inside its oodlc/ folder, and oodlc/ itself is accepted as the argument', () => {
+  assert.equal(json(oodle(['lint', '--json'], {}, join(EXAMPLE, 'oodlc')).stdout).ok, true);
+  assert.equal(json(oodle(['lint', join(EXAMPLE, 'oodlc'), '--json']).stdout).ok, true);
 });

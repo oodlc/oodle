@@ -38,12 +38,12 @@ oodle run [project]            Run every outcome and behavior under every condit
 oodle check [project]          Outcome diff of the working tree against a git ref
 oodle diff <base> <head>       Outcome diff between two project checkouts
 oodle lint [project]           Validate the catalog and its traceability
-oodle init [dir]               Start a project: oodle.yaml, a starter catalog and app
+oodle init [dir]               Start a project: an oodlc/ folder, a starter catalog and app
 oodle doctor [project]         Check your environment and project setup
 oodle completion <shell>       Print a bash, zsh or fish completion script
 ```
 
-- **Finds the project.** Run it from anywhere inside a project, and it walks up to the nearest `oodle.yaml`.
+- **Finds the project.** Run it from anywhere inside a project, and it walks up to the nearest `oodlc/` folder.
 - **Readable in a terminal, clean in a pipe.** Results go to stdout; Oodle, progress, hints and errors go to stderr. Colour follows `NO_COLOR`, `FORCE_COLOR` and `--color`.
 - **Made for scripts and agents.** `--json` (or `OODLE_FORMAT=json`) prints exactly one JSON document, errors included. `oodle help --json` describes the whole CLI.
 - **Helps you get unstuck.** Every error says what to do next, typos get a "did you mean", and each run ends with a suggested next step.
@@ -53,7 +53,7 @@ oodle completion <shell>       Print a bash, zsh or fish completion script
 
 The full reference is in [`docs/cli.md`](docs/cli.md).
 
-Oodle checks itself, too. The root [`oodle.yaml`](oodle.yaml) declares Oodle's own promises, and CI blocks any pull request that breaks one. See [CONTRIBUTING](CONTRIBUTING.md#oodle-checks-itself).
+Oodle checks itself, too. The root [`oodlc/`](oodlc/) folder declares Oodle's own promises, and CI blocks any pull request that breaks one. See [CONTRIBUTING](CONTRIBUTING.md#oodle-checks-itself).
 
 ## Three layers
 
@@ -74,12 +74,22 @@ The rule underneath all of it: **only what a human declared can block** (outcome
 
 ## Writing a catalog
 
-A project has an `oodle.yaml` and a directory of YAML files. Any file can hold any of the five sections: `intents`, `outcomes`, `behaviors`, `conditions`, `constraints`.
+Everything Oodle needs lives in one visible folder, `oodlc/`, at the project root ([0003](docs/decisions/0003-one-visible-oodlc-folder.md)). `oodlc/config.yaml` says how to run the app. Every other YAML file in the folder is catalog, and any file can hold any of the five sections: `intents`, `outcomes`, `behaviors`, `conditions`, `constraints`.
+
+```
+my-service/
+  oodlc/
+    config.yaml        # how to run the app
+    intents.yaml       # why the product exists
+    checkout.yaml      # outcomes, behaviors, conditions, constraints: split however you like
+  src/app.ts           # your app, wherever it already lives
+```
+
+Give `oodlc/` a `CODEOWNERS` entry and outcome changes get the right reviewers. A project from v0 (`oodle.yaml` + `catalog/`) still runs; `oodle init --migrate` moves it into `oodlc/` with its git history.
 
 ```yaml
-# oodle.yaml
-app: src/app.ts          # default export createApp(ctx)
-catalog: catalog
+# oodlc/config.yaml
+app: src/app.ts          # default export createApp(ctx), relative to the project root
 defaults:
   given:
     state: { customers: [{ id: c1, email: ada@example.com }] }
@@ -88,7 +98,7 @@ defaults:
 ```
 
 ```yaml
-# catalog/checkout.yaml
+# oodlc/checkout.yaml
 version: 0
 outcomes:
   - id: checkout.payment-confirmed
@@ -112,7 +122,7 @@ outcomes:
 ```
 
 ```yaml
-# catalog/ops.yaml
+# oodlc/ops.yaml
 version: 0
 behaviors:
   - id: ops.health

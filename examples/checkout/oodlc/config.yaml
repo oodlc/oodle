@@ -1,6 +1,5 @@
 # Project config for the checkout demo.
 app: src/app.ts
-catalog: catalog
 defaults:
   given:
     state:

@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://oodlc.dev/schema/v0/config.json",
-  "title": "oodle.yaml project config (OODLC v0)",
+  "title": "oodlc/config.yaml project config (OODLC v0)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["app", "catalog"],
+  "required": ["app"],
   "properties": {
-    "app": { "type": "string", "description": "Path to the module whose default export is createApp(ctx)" },
-    "catalog": { "type": "string", "description": "Directory of catalog YAML files" },
+    "app": { "type": "string", "description": "Path to the module whose default export is createApp(ctx), relative to the project root (the directory that holds oodlc/)" },
+    "catalog": { "type": "string", "description": "Directory of catalog YAML files. Default: oodlc/ itself. Only the legacy oodle.yaml layout needs it" },
     "defaults": {
       "type": "object",
       "additionalProperties": false,

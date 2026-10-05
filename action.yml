@@ -7,7 +7,7 @@ branding:
 
 inputs:
   project:
-    description: 'Directory that holds oodle.yaml, relative to the repository root.'
+    description: 'Directory that holds the oodlc/ folder, relative to the repository root.'
     default: .
   base-ref:
     description: 'Git ref to compare against. Default: the pull request''s base branch, or the previous commit on a push.'

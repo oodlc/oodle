@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { loadCatalog, loadConfig, CatalogError } from './catalog.ts';
+import { configFile, loadCatalog, loadConfig, CatalogError } from './catalog.ts';
 import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
 import { findProject, display } from './project.ts';
@@ -57,7 +57,10 @@ export async function doctor(arg?: string): Promise<Check[]> {
 
   try {
     const config = loadConfig(dir);
-    checks.push({ name: 'config', status: 'ok', detail: `oodle.yaml: app ${config.app}, catalog ${config.catalog}/` });
+    const where = configFile(dir)!;
+    checks.push(where.legacy
+      ? { name: 'config', status: 'warn', detail: `oodle.yaml (old layout): app ${config.app}, catalog ${config.catalog}/`, hint: 'Move it into oodlc/ with `oodle init --migrate`.' }
+      : { name: 'config', status: 'ok', detail: `oodlc/config.yaml: app ${config.app}` });
     const catalog = loadCatalog(dir, config);
     checks.push({ name: 'catalog', status: 'ok', detail: `${plural(catalog.outcomes.length, 'outcome')}, ${plural(catalog.behaviors.length, 'behavior')}, ${plural(catalog.intents.length, 'intent')}` });
     const result = lint(catalog);
@@ -76,7 +79,7 @@ export async function doctor(arg?: string): Promise<Check[]> {
     const threw = run.observations.filter((o) => o.error);
     const unstubbed = [...new Set(run.observations.flatMap((o) => o.effects.filter((e) => e.error?.startsWith('no stub')).map((e) => e.kind)))];
     if (unstubbed.length) {
-      checks.push({ name: 'app', status: 'fail', detail: `external calls with no stub: ${unstubbed.join(', ')}`, hint: 'Add each one under defaults.given.stubs in oodle.yaml, or in a condition.' });
+      checks.push({ name: 'app', status: 'fail', detail: `external calls with no stub: ${unstubbed.join(', ')}`, hint: 'Add each one under defaults.given.stubs in oodlc/config.yaml, or in a condition.' });
     } else if (threw.length) {
       checks.push({ name: 'app', status: 'fail', detail: `${plural(threw.length, 'run')} threw, e.g. ${threw[0].id}: ${threw[0].error}`, hint: 'Run `oodle run` to see each failure.' });
     } else {

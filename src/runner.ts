@@ -39,7 +39,7 @@ export async function loadApp(projectDir: string, config: Config): Promise<Creat
       // Compiler errors (esbuild via tsx) put the useful part, file:line:col and the message, after the first line.
       problems: missing ? [] : (err as Error).message.split('\n').filter((l) => l.trim()).slice(0, 8).map((l) => l.replaceAll(`${resolve(projectDir)}/`, `${relative(process.cwd(), resolve(projectDir)) || '.'}/`)),
       cause: err,
-      hint: missing ? 'Point "app" in oodle.yaml at the module whose default export is createApp(ctx).' : 'Fix the error above, then run again. Add --debug for the full stack.',
+      hint: missing ? 'Point "app" in oodlc/config.yaml at the module whose default export is createApp(ctx).' : 'Fix the error above, then run again. Add --debug for the full stack.',
     });
   }
   const createApp = mod.default ?? mod.createApp;
@@ -228,7 +228,7 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
   } catch (err) {
     throw new OodleError('app-crash', `createApp(ctx) threw: ${(err as Error).message}`, {
       cause: err,
-      hint: 'createApp runs with the state from defaults.given in oodle.yaml. Seed what it needs there, or make it tolerate an empty state.',
+      hint: 'createApp runs with the state from defaults.given in oodlc/config.yaml. Seed what it needs there, or make it tolerate an empty state.',
     });
   }
   const routes = probeApp.routes.map((r) => `${r.method} ${r.path}`);

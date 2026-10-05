@@ -12,7 +12,7 @@ oodle <command> [project] [flags]
 | `oodle check [project]` | Outcome diff of the working tree against a git ref |
 | `oodle diff <base> <head>` | Outcome diff between two project checkouts |
 | `oodle lint [project]` | Validate the catalog and its traceability |
-| `oodle init [dir]` | Start a project: `oodle.yaml`, a starter catalog and app |
+| `oodle init [dir]` | Start a project: an `oodlc/` folder, a starter catalog and app. `--migrate` moves a v0 project in |
 | `oodle doctor [project]` | Check your environment and project setup |
 | `oodle completion <shell>` | Print a bash, zsh or fish completion script |
 | `oodle hello` | Meet Oodle |
@@ -22,7 +22,9 @@ Every command takes `-h`/`--help`. `oodle help run`, `oodle run --help` and `ood
 
 ## Finding the project
 
-With no `project` argument, Oodle walks up from the current directory to the nearest `oodle.yaml`, the way git finds `.git`, so `oodle run` works from anywhere inside a project. If you pass a path with no `oodle.yaml`, Oodle suggests the nearest directories that have one.
+A project is the directory that holds an `oodlc/` folder. With no `project` argument, Oodle walks up from the current directory to the nearest one, the way git finds `.git`, so `oodle run` works from anywhere inside a project, including from inside `oodlc/`. You can also pass the `oodlc/` folder or its `config.yaml`. If you pass a path with no project, Oodle suggests the nearest directories that have one.
+
+A v0 project (`oodle.yaml` plus a catalog directory) still runs, and Oodle suggests `oodle init --migrate`. That moves the files into `oodlc/` with `git mv`, so history follows them.
 
 ## Output
 
@@ -76,11 +78,11 @@ An error that is not Oodle's to explain is a bug. Oodle says so and links a pref
 
 ## Ctrl-C
 
-`oodle check` checks out the base ref in a temporary git worktree under `.oodle-tmp/`. On Ctrl-C, Oodle removes the worktree and exits with 130. A second Ctrl-C exits at once; `git worktree prune` tidies anything left behind. If a worktree for the same commit is left over from an earlier crash, the next run replaces it.
+`oodle check` checks out the base ref in a temporary git worktree under `.git/oodle/worktrees/`, so nothing appears in your repository. On Ctrl-C, Oodle removes the worktree and exits with 130. A second Ctrl-C exits at once; `git worktree prune` tidies anything left behind. If a worktree for the same commit is left over from an earlier crash, the next run replaces it.
 
 ## Watch mode
 
-`oodle run --watch` and `oodle lint --watch` re-run whenever a file in the project changes, ignoring `node_modules`, `.git`, `.oodle-tmp` and editor temp files. Each run is a fresh process, so the app is always re-imported.
+`oodle run --watch` and `oodle lint --watch` re-run whenever a file in the project changes, ignoring `node_modules`, `.git` and editor temp files. Each run is a fresh process, so the app is always re-imported.
 
 Every run starts with a `WATCH` or `RERUN` line naming the files that changed. It ends with a status block:
 
@@ -132,7 +134,7 @@ The action:
 
 | Input | Default | |
 | --- | --- | --- |
-| `project` | `.` | Directory with `oodle.yaml` |
+| `project` | `.` | Directory that holds `oodlc/` |
 | `base-ref` | PR base, or the commit before a push | Ref to compare against |
 | `comment` | `true` | Post and update the PR comment |
 | `fail-on-blocking` | `true` | Fail the job on blocking findings. If Oodle cannot run, the job always fails |

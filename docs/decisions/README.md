@@ -6,6 +6,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | --- | --- | --- |
 | [0001](0001-outcomes-and-behaviors.md) | Outcomes are declared, behaviors are observed | Accepted |
 | [0002](0002-constraints-hold-on-every-run.md) | Constraints hold on every run | Accepted |
+| [0003](0003-one-visible-oodlc-folder.md) | Everything lives in one visible oodlc/ folder | Accepted |
 
 ## When to write one
 

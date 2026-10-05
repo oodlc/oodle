@@ -91,10 +91,10 @@ const MUTATIONS: Record<string, [file: string, from: string | RegExp, to: string
   'health-adds-version': [['src/app.ts', 'body: { ok: true }', "body: { ok: true, version: '2' }"]],
   'add-undescribed-route': [['src/app.ts', "    { method: 'POST', path: '/checkout', handler: checkout },", "    { method: 'POST', path: '/checkout', handler: checkout },\n    { method: 'DELETE', path: '/orders/:id', handler: async () => ({ status: 204 }) },"]],
   'remove-constraint': [
-    ['catalog/constraints.yaml', /  - id: receipt-only-for-real-orders[\s\S]*$/, ''],
-    ['catalog/checkout.yaml', ', receipt-only-for-real-orders]', ']'],
+    ['oodlc/constraints.yaml', /  - id: receipt-only-for-real-orders[\s\S]*$/, ''],
+    ['oodlc/checkout.yaml', ', receipt-only-for-real-orders]', ']'],
   ],
-  'reword-outcome': [['catalog/checkout.yaml', 'gets exactly one receipt', 'receives exactly one receipt']],
+  'reword-outcome': [['oodlc/checkout.yaml', 'gets exactly one receipt', 'receives exactly one receipt']],
 };
 
 type Handler = (body: any) => Record<string, unknown>;

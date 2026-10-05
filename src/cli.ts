@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { CatalogError, loadCatalog, loadConfig } from './catalog.ts';
+import { CatalogError, FOLDER, configFile, isProject, loadCatalog, loadConfig } from './catalog.ts';
 import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
 import { diffRuns } from './diff.ts';
 import { diffMarkdown } from './report.ts';
 import { renderDiff, renderLint, renderRun, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
-import { init } from './init.ts';
+import { init, migrate } from './init.ts';
 import { doctor } from './doctor.ts';
 import { completion, SHELLS, type Shell } from './completion.ts';
 import { findProject, display } from './project.ts';
@@ -76,7 +76,7 @@ const MD_FLAG: Flag = { name: 'md', type: 'string', value: 'file', description: 
 const VERBOSE: Flag = { name: 'verbose', short: 'v', type: 'boolean', description: 'Show statements, held outcomes and proposed catalog entries' };
 const WATCH: Flag = { name: 'watch', short: 'w', type: 'boolean', description: 'Re-run whenever a file in the project changes' };
 
-const PROJECT_ARG = { name: 'project', description: 'Directory with oodle.yaml. Default: the nearest one at or above the current directory' };
+const PROJECT_ARG = { name: 'project', description: 'Directory that holds oodlc/. Default: the nearest one at or above the current directory' };
 
 const COMMANDS: Command[] = [
   {
@@ -136,7 +136,7 @@ const COMMANDS: Command[] = [
   {
     name: 'lint',
     summary: 'Validate the catalog and its traceability',
-    description: 'Validates oodle.yaml and every catalog file against the schema, then checks traceability: every outcome traces to an intent, every reference resolves, every constraint parses.',
+    description: 'Validates oodlc/config.yaml and every catalog file against the schema, then checks traceability: every outcome traces to an intent, every reference resolves, every constraint parses.',
     args: [PROJECT_ARG],
     flags: [WATCH],
     formats: ['text', 'json'],
@@ -148,17 +148,19 @@ const COMMANDS: Command[] = [
   },
   {
     name: 'init',
-    summary: 'Start a project: oodle.yaml, a starter catalog and app',
-    description: 'Writes oodle.yaml, a catalog with one intent and one outcome, and a starter app if none exists. Your own app is never overwritten. The result passes `oodle run` straight away.',
+    summary: 'Start a project: an oodlc/ folder with config, a starter catalog and app',
+    description: 'Creates oodlc/ with config.yaml and a catalog of one intent and one outcome, plus a starter app if none exists. Your own app is never overwritten. The result passes `oodle run` straight away. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
     args: [{ name: 'dir', description: 'Where to create the project. Default: the current directory' }],
     flags: [
       { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
-      { name: 'force', short: 'f', type: 'boolean', description: 'Overwrite an existing oodle.yaml and starter catalog' },
+      { name: 'force', short: 'f', type: 'boolean', description: 'Overwrite an existing oodlc/config.yaml and starter catalog' },
+      { name: 'migrate', type: 'boolean', description: 'Move an old-layout project (oodle.yaml + catalog/) into oodlc/' },
     ],
     formats: ['text', 'json'],
     examples: [
       ['oodle init', 'Scaffold in the current directory'],
       ['oodle init services/api --app src/server.ts', 'Point Oodle at an existing app'],
+      ['oodle init --migrate', 'Move an oodle.yaml project into oodlc/'],
     ],
     run: cmdInit,
   },
@@ -346,7 +348,11 @@ function printJson(value: unknown): void {
 }
 
 function heading(title: string, dir: string): void {
-  if (!settings.quiet) note(`${e.bold(e.cyan(`oodle ${title}`))} ${e.dim(display(dir))}\n`);
+  if (settings.quiet) return;
+  note(`${e.bold(e.cyan(`oodle ${title}`))} ${e.dim(display(dir))}\n`);
+  if (configFile(dir)?.legacy) {
+    note(`${e.yellow(sym.warn)} This project uses the old layout (oodle.yaml). Move it into ${FOLDER}/ with ${e.cyan(`oodle init --migrate${display(dir) === '.' ? '' : ` ${display(dir)}`}`)}\n`);
+  }
 }
 
 // ── Interrupts ──────────────────────────────────────────────────────────────
@@ -356,7 +362,7 @@ let interrupted = false;
 function onSignal(signal: NodeJS.Signals) {
   clearSpinner();
   if (interrupted) {
-    process.stderr.write(`\n${e.red('Forced exit.')} Run \`git worktree prune\` if a temporary worktree is left behind.\n`);
+    process.stderr.write(`\n${e.red('Forced exit.')} Run \`git worktree prune\` if a temporary worktree is left behind in .git/oodle.\n`);
     process.exit(EXIT.interrupted);
   }
   interrupted = true;
@@ -505,7 +511,8 @@ function checkoutBase(projectDir: string, ref: string): { dir: string; sha: stri
   } catch {
     throw usageError(`Unknown git ref "${ref}"`, 'Check the name with `git branch -a` or `git log --oneline`.');
   }
-  const tmpRoot = join(root, '.oodle-tmp');
+  // Worktrees live inside .git, so nothing appears in the repository and nothing needs ignoring.
+  const tmpRoot = join(resolve(root, git(root, 'rev-parse', '--git-common-dir')), 'oodle', 'worktrees');
   const tree = join(tmpRoot, `base-${sha}`);
   mkdirSync(tmpRoot, { recursive: true });
   const remove = () => {
@@ -517,9 +524,9 @@ function checkoutBase(projectDir: string, ref: string): { dir: string; sha: stri
   const modules = join(root, 'node_modules');
   if (existsSync(modules) && !existsSync(join(tree, 'node_modules'))) symlinkSync(modules, join(tree, 'node_modules'), 'dir');
   const dir = join(tree, relative(root, realpathSync(projectDir)));
-  if (!existsSync(join(dir, 'oodle.yaml'))) {
+  if (!isProject(dir)) {
     remove();
-    throw new OodleError('no-base-project', `${ref} has no oodle.yaml at ${relative(root, realpathSync(projectDir)) || '.'}`, {
+    throw new OodleError('no-base-project', `${ref} has no Oodle project at ${relative(root, realpathSync(projectDir)) || '.'}`, {
       hint: 'Oodle was set up after that ref. Compare against a later ref, or use `oodle run` for now.',
     });
   }
@@ -602,6 +609,15 @@ async function cmdDiff(ctx: Ctx): Promise<number> {
 }
 
 async function cmdInit(ctx: Ctx): Promise<number> {
+  if (ctx.flags.migrate) {
+    const result = migrate(ctx.args[0] ?? '.');
+    if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+    heading('init --migrate', result.dir);
+    for (const [from, to] of result.moved ?? []) console.log(`  ${o.cyan(sym.arrow)} ${from} ${o.dim(sym.arrow)} ${to}`);
+    console.log(`\n${o.green(o.bold(`${sym.ok} Moved into ${FOLDER}/`))}  ${o.dim('git history follows each file')}`);
+    hints([`Check nothing changed: ${e.cyan(`oodle run${display(result.dir) === '.' ? '' : ` ${display(result.dir)}`}`)}`, 'Commit the move on its own, so the history stays easy to read.']);
+    return EXIT.ok;
+  }
   const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force });
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
   heading('init', result.dir);
@@ -612,7 +628,7 @@ async function cmdInit(ctx: Ctx): Promise<number> {
   const where = display(result.dir) === '.' ? '' : ` ${display(result.dir)}`;
   hints([
     `Run it: ${e.cyan(`oodle run${where}`)}`,
-    `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'catalog/outcomes.yaml'))}`,
+    `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
     `Shell completion: ${e.cyan('oodle completion --help')}`,
   ]);
   return EXIT.ok;

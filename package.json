@@ -12,7 +12,7 @@
   },
   "type": "module",
   "bin": {
-    "oodle": "./bin/oodle.js"
+    "oodle": "bin/oodle.js"
   },
   "exports": {
     "./adapter": {

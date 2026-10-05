@@ -1,0 +1,68 @@
+name: Publish
+
+# Publishes @oodlc/oodle to npm when a version tag (v1.2.3) is pushed, then moves
+# the major tag (v1, or v0 for 0.x) that `uses: oodlc/oodle@v0` resolves to.
+#
+# Trusted publishing: npm verifies this workflow through GitHub's OIDC token, so
+# there is no npm token secret, and every version gets a provenance statement.
+# One-time setup on npmjs.com, in the package's Settings > Trusted publishing:
+# GitHub Actions, organization `oodlc`, repository `oodle`, workflow `publish.yml`.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write   # move the major tag
+  id-token: write   # trusted publishing and provenance
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: Check npm
+        run: |
+          npm --version
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$(npm --version)" \
+            || npm install -g npm@latest
+
+      - name: Tag matches package.json
+        id: version
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error title=Version mismatch::Tag $GITHUB_REF_NAME, but package.json says $version. Bump package.json, commit, and tag that commit."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "major=v${version%%.*}" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+
+      # prepublishOnly runs the typecheck and the tests, and prepare builds dist/.
+      # Re-running a tag that already published skips the publish and only moves the major tag.
+      - name: Publish
+        run: |
+          name="$(node -p 'require("./package.json").name')"
+          if npm view "$name@${{ steps.version.outputs.version }}" version >/dev/null 2>&1; then
+            echo "$name@${{ steps.version.outputs.version }} is already on npm."
+          else
+            npm publish --provenance
+          fi
+
+      - name: Move ${{ steps.version.outputs.major }} to this release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa "${{ steps.version.outputs.major }}" -m "Oodle ${{ steps.version.outputs.major }}: latest is ${{ steps.version.outputs.version }}"
+          git push -f origin "refs/tags/${{ steps.version.outputs.major }}"

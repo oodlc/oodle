@@ -1,0 +1,26 @@
+{
+  "name": "oodle",
+  "version": "0.1.0",
+  "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that verifies behaviors, not code.",
+  "type": "module",
+  "bin": {
+    "oodle": "./bin/oodle.js"
+  },
+  "scripts": {
+    "oodle": "tsx src/cli.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx src/cli.ts run examples/checkout"
+  },
+  "keywords": ["oodlc", "oodle", "outcomes", "ci", "testing", "agents", "behavior", "verification"],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "tsx": "^4.23.15",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  }
+}

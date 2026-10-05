@@ -1,0 +1,16 @@
+# Project config for the checkout demo.
+app: src/app.ts
+catalog: catalog
+defaults:
+  given:
+    state:
+      products:
+        - { sku: tee, name: T-shirt, price_cents: 2500 }
+        - { sku: mug, name: Mug, price_cents: 1200 }
+      customers:
+        - { id: c1, email: ada@example.com, orders: 0 }
+      orders: []
+    stubs:
+      payment.capture:
+        result: { id: pay_1, status: succeeded }
+        latency_ms: 120

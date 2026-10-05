@@ -1,0 +1,13 @@
+version: 0
+# Behaviors the runner observed and a human acknowledged. Not durable:
+# drift is reported, never blocking. Promote one to an outcome to protect it.
+behaviors:
+  - id: ops.health
+    statement: Health endpoint answers ok
+    boundary: internal
+    trigger:
+      http: GET /health
+    observed:
+      status: 200
+      body:
+        ok: true

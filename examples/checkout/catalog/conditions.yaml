@@ -1,0 +1,17 @@
+version: 0
+conditions:
+  - id: first_purchase
+    statement: Customer has never ordered before
+    given:
+      state:
+        customers: [{ id: c1, email: ada@example.com, orders: 0 }]
+  - id: returning_customer
+    statement: Customer has ordered before
+    given:
+      state:
+        customers: [{ id: c1, email: ada@example.com, orders: 3 }]
+  - id: payment_provider_slow
+    statement: Payment provider takes 1.5s to answer
+    given:
+      stubs:
+        payment.capture: { latency_ms: 1500 }

@@ -1,0 +1,75 @@
+version: 0
+outcomes:
+  - id: checkout.payment-confirmed
+    intent: buy-without-surprises
+    statement: After a successful payment the customer sees a confirmation and gets exactly one receipt
+    boundary: customer
+    trigger:
+      http: POST /checkout
+      given:
+        body: { customer_id: c1, items: [{ sku: tee, qty: 2 }, { sku: mug, qty: 1 }] }
+    conditions: [first_purchase, returning_customer, payment_provider_slow]
+    expect:
+      status: 200
+      body:
+        order_id: { exists: true }
+        status: confirmed
+        total_cents: 6200
+      effects:
+        - { kind: payment.capture, match: { amount_cents: 6200 }, count: 1 }
+        - { kind: email.sent, match: { template: receipt, to: ada@example.com }, count: 1 }
+      latency_ms_max: 2000
+    constraints: [no-charge-without-order, receipt-only-for-real-orders]
+
+  - id: checkout.empty-cart-rejected
+    intent: buy-without-surprises
+    statement: Checking out an empty cart is refused with a clear message and no charge
+    boundary: customer
+    trigger:
+      http: POST /checkout
+      given:
+        body: { customer_id: c1, items: [] }
+    expect:
+      status: 400
+      body:
+        error: cart_empty
+        message: { contains: empty }
+      effects:
+        - { kind: payment.capture, count: 0 }
+        - { kind: email.sent, count: 0 }
+
+  - id: checkout.payment-declined
+    intent: buy-without-surprises
+    statement: A declined card is reported plainly, no order is created and no receipt is sent
+    boundary: customer
+    trigger:
+      http: POST /checkout
+      given:
+        body: { customer_id: c1, items: [{ sku: tee, qty: 1 }] }
+        stubs:
+          payment.capture: { result: { id: pay_9, status: declined } }
+    expect:
+      status: 402
+      body:
+        error: payment_declined
+        message: { contains: No charge was made }
+      effects:
+        - { kind: email.sent, count: 0 }
+
+  - id: checkout.payment-provider-down
+    intent: buy-without-surprises
+    statement: If the payment provider is unreachable the customer is told no charge was made
+    boundary: customer
+    trigger:
+      http: POST /checkout
+      given:
+        body: { customer_id: c1, items: [{ sku: tee, qty: 1 }] }
+        stubs:
+          payment.capture: { error: connection refused }
+    expect:
+      status: 502
+      body:
+        error: payment_unavailable
+        message: { contains: No charge was made }
+      effects:
+        - { kind: email.sent, count: 0 }

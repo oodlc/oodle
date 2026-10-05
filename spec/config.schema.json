@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oodlc.dev/schema/v0/config.json",
+  "title": "oodle.yaml project config (OODLC v0)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["app", "catalog"],
+  "properties": {
+    "app": { "type": "string", "description": "Path to the module whose default export is createApp(ctx)" },
+    "catalog": { "type": "string", "description": "Directory of catalog YAML files" },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "given": { "type": "object", "description": "Baseline state, stubs and body merged under every run" }
+      }
+    }
+  }
+}

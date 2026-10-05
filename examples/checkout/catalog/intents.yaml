@@ -1,0 +1,6 @@
+version: 0
+intents:
+  - id: buy-without-surprises
+    statement: Customers can buy without surprises. They are charged once, for what they ordered, and told what happened.
+  - id: customers-track-orders
+    statement: Customers can see the status of their past orders.

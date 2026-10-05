@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oodlc.dev/schema/v0/catalog.json",
+  "title": "OODLC catalog file (v0)",
+  "description": "One YAML file in a catalog directory. Any file may hold any of the five sections.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 0 },
+    "intents": { "type": "array", "items": { "$ref": "#/definitions/intent" } },
+    "outcomes": { "type": "array", "items": { "$ref": "#/definitions/outcome" } },
+    "behaviors": { "type": "array", "items": { "$ref": "#/definitions/behavior" } },
+    "conditions": { "type": "array", "items": { "$ref": "#/definitions/condition" } },
+    "constraints": { "type": "array", "items": { "$ref": "#/definitions/constraint" } }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 128 },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 }
+      }
+    },
+    "stub": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "result": {},
+        "error": { "type": "string" },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "given": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body": {},
+        "state": { "type": "object" },
+        "stubs": { "type": "object", "additionalProperties": { "$ref": "#/definitions/stub" } }
+      }
+    },
+    "boundary": { "enum": ["customer", "external", "data", "obligation", "internal"] },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["http"],
+      "properties": {
+        "http": { "type": "string", "pattern": "^(GET|POST|PUT|PATCH|DELETE) /\\S*$" },
+        "given": { "$ref": "#/definitions/given" }
+      }
+    },
+    "expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "body": { "type": "object" },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "count"],
+            "properties": {
+              "kind": { "type": "string" },
+              "match": { "type": "object" },
+              "count": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "latency_ms_max": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "outcome": {
+      "description": "Declared, human-approved, durable by definition.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "boundary", "trigger", "expect"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "intent": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "boundary": { "$ref": "#/definitions/boundary" },
+        "trigger": { "$ref": "#/definitions/trigger" },
+        "conditions": { "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
+        "expect": { "$ref": "#/definitions/expect" },
+        "constraints": {
+          "description": "Traceability only: the constraints this outcome depends on. Every constraint is checked on every run regardless. See docs/decisions/0002.",
+          "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true
+        }
+      }
+    },
+    "behavior": {
+      "description": "Observed by the runner, not durable by default. Drift is reported, never blocking.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "boundary", "trigger"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "boundary": { "$ref": "#/definitions/boundary" },
+        "trigger": { "$ref": "#/definitions/trigger" },
+        "conditions": { "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
+        "observed": { "$ref": "#/definitions/expect" }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "given"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string" },
+        "given": { "$ref": "#/definitions/given" }
+      }
+    },
+    "constraint": {
+      "description": "Human-declared invariant. Checked on every run (outcomes, behaviors, probes of unknown routes); a violation always blocks, and so does changing or removing one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "check"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "check": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

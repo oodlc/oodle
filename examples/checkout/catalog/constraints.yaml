@@ -1,0 +1,12 @@
+version: 0
+constraints:
+  - id: no-charge-without-order
+    statement: A payment is never captured without an order record
+    check: >-
+      effects.filter(e => e.kind === 'payment.capture' && e.result && e.result.status === 'succeeded')
+        .every(p => (state.orders || []).some(o => o.payment_id === p.result.id))
+  - id: receipt-only-for-real-orders
+    statement: A receipt is only ever sent for an order that exists
+    check: >-
+      effects.filter(e => e.kind === 'email.sent' && e.payload.template === 'receipt')
+        .every(e => (state.orders || []).some(o => o.id === e.payload.order_id))

@@ -1,155 +1,778 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, watch, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { CatalogError, loadCatalog, loadConfig } from './catalog.ts';
 import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
 import { diffRuns } from './diff.ts';
-import { diffMarkdown, runSummary } from './report.ts';
+import { diffMarkdown } from './report.ts';
+import { renderDiff, renderLint, renderRun, wrap } from './render.ts';
+import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
+import { init } from './init.ts';
+import { doctor } from './doctor.ts';
+import { completion, SHELLS, type Shell } from './completion.ts';
+import { findProject, display } from './project.ts';
+import { EXIT, OodleError, suggest, usageError } from './errors.ts';
+import { clearSpinner, columns, err as e, hints, note, out as o, settings, spinner, sym, type ColorMode } from './term.ts';
 import { hello, say } from './oodle.ts';
+import type { RunResult } from './types.ts';
 
-const USAGE = `oodle: the OODLC (Open Outcome Delivery Lifecycle) CLI, v0
+const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
+const VERSION: string = pkg.version;
+const DOCS = 'https://github.com/oodlc/oodle#readme';
+const ISSUES = 'https://github.com/oodlc/oodle/issues/new';
 
-  oodle lint  [project]                     Validate the catalog and run traceability checks
-  oodle run   [project]                     Run every outcome and behavior under every condition
-  oodle diff  <base-project> <head-project> Outcome diff between two checkouts
-  oodle check [project] --base-ref <ref>    Outcome diff of the working tree against a git ref
-  oodle hello                               Meet Oodle
+// ── Command registry ────────────────────────────────────────────────────────
 
-Options:
-  --md <file>    Also write the diff as markdown (for PR comments)
-  --json         Print machine-readable JSON instead of text
+type Format = 'text' | 'json' | 'md';
 
-Exit code is 1 when anything is blocking: an outcome broken, removed, redefined
-or changed, a constraint violated on any run, or catalog lint errors. Behavior
-drift is reported, never blocking.
-Set OODLE_QUIET=1 to hush Oodle, OODLE_STILL=1 to stop the animation.`;
+interface Flag {
+  name: string;
+  short?: string;
+  type: 'boolean' | 'string';
+  multiple?: boolean;
+  /** Placeholder shown in help, e.g. <ref>. */
+  value?: string;
+  choices?: string[];
+  /** What a shell should offer for the value. Default: files. */
+  complete?: 'files' | 'refs' | 'none';
+  description: string;
+}
 
-function parseArgs(argv: string[]) {
-  const positional: string[] = [];
-  const flags: Record<string, string | boolean> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith('--')) {
-      const key = a.slice(2);
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--') && ['md', 'base-ref'].includes(key)) {
-        flags[key] = next;
-        i++;
-      } else flags[key] = true;
-    } else positional.push(a);
+interface Ctx {
+  args: string[];
+  flags: Record<string, any>;
+  format: Format;
+}
+
+interface Command {
+  name: string;
+  summary: string;
+  description: string;
+  args: { name: string; required?: boolean; description: string }[];
+  flags: Flag[];
+  formats: Format[];
+  /** Format when none is asked for. Defaults to text. */
+  defaultFormat?: () => Format;
+  examples: [string, string][];
+  positional?: 'dirs' | 'files' | string[];
+  run(ctx: Ctx): Promise<number>;
+}
+
+const GLOBAL_FLAGS: Flag[] = [
+  { name: 'json', type: 'boolean', description: 'Print exactly one JSON document on stdout (same as --format json)' },
+  { name: 'format', type: 'string', value: 'fmt', description: 'Output format; choices depend on the command' },
+  { name: 'color', type: 'string', value: 'when', choices: ['auto', 'always', 'never'], description: 'Colour output: auto (default), always or never' },
+  { name: 'no-color', type: 'boolean', description: 'Same as --color never' },
+  { name: 'quiet', short: 'q', type: 'boolean', description: 'Hush Oodle, hints and progress; results still print' },
+  { name: 'debug', type: 'boolean', description: 'Show stack traces and internal detail on errors' },
+  { name: 'help', short: 'h', type: 'boolean', description: 'Show help for the command' },
+];
+
+const MD_FLAG: Flag = { name: 'md', type: 'string', value: 'file', description: 'Also write the diff as markdown, for a PR comment' };
+const VERBOSE: Flag = { name: 'verbose', short: 'v', type: 'boolean', description: 'Show statements, held outcomes and proposed catalog entries' };
+const WATCH: Flag = { name: 'watch', short: 'w', type: 'boolean', description: 'Re-run whenever a file in the project changes' };
+
+const PROJECT_ARG = { name: 'project', description: 'Directory with oodle.yaml. Default: the nearest one at or above the current directory' };
+
+const COMMANDS: Command[] = [
+  {
+    name: 'run',
+    summary: 'Run every outcome and behavior under every condition',
+    description:
+      'Runs the app in a simulated world: every outcome and behavior, under each of its conditions, with every external call stubbed and every side effect recorded. Outcomes and constraints block; behavior drift is reported only. Routes nothing describes are probed and listed as unknown.',
+    args: [PROJECT_ARG],
+    flags: [
+      { name: 'only', short: 'o', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Run only ids matching the glob, e.g. "checkout.*" (repeatable)' },
+      VERBOSE,
+      WATCH,
+    ],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle run', 'Run the project in or above the current directory'],
+      ['oodle run examples/checkout --only "checkout.*"', 'Run a subset'],
+      ['oodle run --watch', 'Re-run on every save'],
+      ['oodle run --json | jq .summary', 'Machine-readable results'],
+    ],
+    run: cmdRun,
+  },
+  {
+    name: 'check',
+    summary: 'Outcome diff of the working tree against a git ref',
+    description:
+      'Checks out the base ref in a temporary worktree, runs base and head, and reports what changed outcome by outcome. Exit code 1 means a human must approve: an outcome broke, changed, was redefined or removed, or a constraint was touched or violated.',
+    args: [PROJECT_ARG],
+    flags: [
+      { name: 'base-ref', short: 'b', type: 'string', value: 'ref', complete: 'refs', description: 'Git ref to compare against. Default: origin/HEAD, then main, then master' },
+      MD_FLAG,
+      VERBOSE,
+    ],
+    formats: ['text', 'md', 'json'],
+    defaultFormat: () => (process.stdout.isTTY ? 'text' : 'md'),
+    examples: [
+      ['oodle check', 'Compare the working tree with the default branch'],
+      ['oodle check --base-ref HEAD~1', 'What did the last commit change?'],
+      ['oodle check --md diff.md', 'Also write a PR comment'],
+    ],
+    run: cmdCheck,
+  },
+  {
+    name: 'diff',
+    summary: 'Outcome diff between two project checkouts',
+    description: 'Runs two copies of a project and reports the outcome diff from <base> to <head>. Use `oodle check` to compare against a git ref instead.',
+    args: [
+      { name: 'base', required: true, description: 'Project directory before the change' },
+      { name: 'head', required: true, description: 'Project directory after the change' },
+    ],
+    flags: [MD_FLAG, VERBOSE],
+    formats: ['text', 'md', 'json'],
+    defaultFormat: () => (process.stdout.isTTY ? 'text' : 'md'),
+    examples: [['oodle diff ../before ./app --md diff.md', 'Diff two checkouts and write a PR comment']],
+    run: cmdDiff,
+  },
+  {
+    name: 'lint',
+    summary: 'Validate the catalog and its traceability',
+    description: 'Validates oodle.yaml and every catalog file against the schema, then checks traceability: every outcome traces to an intent, every reference resolves, every constraint parses.',
+    args: [PROJECT_ARG],
+    flags: [WATCH],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle lint', 'Lint the nearest project'],
+      ['oodle lint --watch', 'Lint on every save while editing the catalog'],
+    ],
+    run: cmdLint,
+  },
+  {
+    name: 'init',
+    summary: 'Start a project: oodle.yaml, a starter catalog and app',
+    description: 'Writes oodle.yaml, a catalog with one intent and one outcome, and a starter app if none exists. Your own app is never overwritten. The result passes `oodle run` straight away.',
+    args: [{ name: 'dir', description: 'Where to create the project. Default: the current directory' }],
+    flags: [
+      { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
+      { name: 'force', short: 'f', type: 'boolean', description: 'Overwrite an existing oodle.yaml and starter catalog' },
+    ],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle init', 'Scaffold in the current directory'],
+      ['oodle init services/api --app src/server.ts', 'Point Oodle at an existing app'],
+    ],
+    run: cmdInit,
+  },
+  {
+    name: 'doctor',
+    summary: 'Check your environment and project setup',
+    description: 'Checks Node, git, the project config, the catalog, lint, and that the app loads and every external call it makes has a stub. Each problem comes with a fix.',
+    args: [PROJECT_ARG],
+    flags: [],
+    formats: ['text', 'json'],
+    examples: [['oodle doctor', 'Is everything wired up?']],
+    run: cmdDoctor,
+  },
+  {
+    name: 'completion',
+    summary: 'Print a shell completion script',
+    description: 'Prints a completion script for bash, zsh or fish, generated from the same registry as this help, so it never goes stale.',
+    args: [{ name: 'shell', required: true, description: SHELLS.join(', ') }],
+    flags: [],
+    formats: ['text'],
+    positional: [...SHELLS],
+    examples: [
+      ['oodle completion zsh > "${fpath[1]}/_oodle"', 'zsh'],
+      ['oodle completion bash >> ~/.bashrc', 'bash'],
+      ['oodle completion fish > ~/.config/fish/completions/oodle.fish', 'fish'],
+    ],
+    run: cmdCompletion,
+  },
+  {
+    name: 'hello',
+    summary: 'Meet Oodle',
+    description: 'Oodle waves and explains the deal.',
+    args: [],
+    flags: [],
+    formats: ['text'],
+    examples: [['oodle hello', 'Say hi']],
+    run: async () => (await hello(), EXIT.ok),
+  },
+  {
+    name: 'help',
+    summary: 'Show help for oodle or a command',
+    description: 'Shows help. With --json, describes every command, flag, exit code and environment variable, for scripts and agents.',
+    args: [{ name: 'command', description: 'Command to describe' }],
+    flags: [],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle help check', 'Help for one command'],
+      ['oodle help --json', 'The whole CLI as JSON'],
+    ],
+    run: async (ctx) => {
+      if (ctx.format === 'json') return printJson(cliSpec()), EXIT.ok;
+      const name = ctx.args[0];
+      if (!name) return console.log(topHelp()), EXIT.ok;
+      return console.log(commandHelp(commandNamed(name))), EXIT.ok;
+    },
+  },
+];
+
+const ENV: [string, string][] = [
+  ['NO_COLOR', 'Disable colour (any non-empty value)'],
+  ['FORCE_COLOR', 'Force colour on, even when piped (0 forces it off)'],
+  ['OODLE_FORMAT', 'Default output format, e.g. json for agents and scripts'],
+  ['OODLE_QUIET', 'Same as --quiet'],
+  ['OODLE_STILL', 'Draw Oodle without animation'],
+  ['OODLE_ASCII', 'Use ASCII symbols instead of unicode'],
+  ['OODLE_DEBUG', 'Same as --debug'],
+  ['GITHUB_ACTIONS', 'When "true", findings become annotations and diffs go to the job summary'],
+];
+
+const EXIT_DOCS: [number, string][] = [
+  [EXIT.ok, 'Success. Nothing a human declared is broken'],
+  [EXIT.blocking, 'Blocking: an outcome or constraint is not holding, or the catalog has lint errors'],
+  [EXIT.usage, 'Could not run: bad usage, no project, invalid config, or the app failed to load'],
+  [EXIT.interrupted, 'Interrupted with Ctrl-C'],
+];
+
+function commandNamed(name: string): Command {
+  const cmd = COMMANDS.find((c) => c.name === name);
+  if (cmd) return cmd;
+  const guess = suggest(name, COMMANDS.map((c) => c.name));
+  throw usageError(`Unknown command "${name}"`, guess ? `Did you mean \`oodle ${guess}\`?` : 'Run `oodle help` to see every command.');
+}
+
+// ── Help ────────────────────────────────────────────────────────────────────
+
+const H = (t: string) => o.bold(t.toUpperCase());
+
+function flagLabel(f: Flag): string {
+  return `${f.short ? `-${f.short}, ` : '    '}--${f.name}${f.value ? ` <${f.value}>` : ''}`;
+}
+
+function flagRows(flags: Flag[]): string[] {
+  const width = Math.max(...flags.map((f) => flagLabel(f).length)) + 3;
+  return flags.map((f) => `  ${o.cyan(flagLabel(f))}${' '.repeat(width - flagLabel(f).length)}${wrap(f.description, columns() - width - 4, width + 2)}`);
+}
+
+function exampleRows(examples: [string, string][]): string[] {
+  return examples.flatMap(([cmd, what]) => [`  ${o.dim(`# ${what}`)}`, `  ${o.dim('$')} ${cmd}`]);
+}
+
+function topHelp(): string {
+  const width = Math.max(...COMMANDS.map((c) => c.name.length)) + 4;
+  return [
+    `${o.bold('oodle')} ${o.dim(VERSION)}  CI that protects outcomes and watches behavior. ${o.dim('Part of OODLC.')}`,
+    '',
+    H('Usage'),
+    `  oodle ${o.cyan('<command>')} [project] [flags]`,
+    '',
+    H('Commands'),
+    ...COMMANDS.map((c) => `  ${o.cyan(c.name.padEnd(width))}${c.summary}`),
+    '',
+    H('Examples'),
+    ...exampleRows([
+      ['oodle init', 'Start a project in this directory'],
+      ['oodle run --watch', 'Run every outcome, again on every save'],
+      ['oodle check --base-ref main --md diff.md', 'What this branch changes, outcome by outcome'],
+    ]),
+    '',
+    H('Flags'),
+    ...flagRows([...GLOBAL_FLAGS, { name: 'version', short: 'V', type: 'boolean', description: 'Print the version' }]),
+    '',
+    H('Exit codes'),
+    ...EXIT_DOCS.map(([c, d]) => `  ${o.cyan(String(c).padEnd(5))}${d}`),
+    '',
+    H('Learn more'),
+    `  ${o.cyan('oodle help <command>')}   details and examples for one command`,
+    `  ${o.cyan('oodle help --json')}      the whole CLI as JSON, for scripts and agents`,
+    `  ${o.link(DOCS, DOCS)}`,
+  ].join('\n');
+}
+
+/** --json and --format only apply to commands with more than one format. */
+const globalsFor = (c: Command) => GLOBAL_FLAGS.filter((g) => c.formats.length > 1 || !['json', 'format'].includes(g.name));
+
+function commandHelp(c: Command): string {
+  const usageArgs = c.args.map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`)).join(' ');
+  const flags = c.flags.length + GLOBAL_FLAGS.length;
+  const lines = [
+    `${o.bold(`oodle ${c.name}`)}  ${c.summary}`,
+    '',
+    H('Usage'),
+    `  oodle ${c.name}${usageArgs ? ` ${usageArgs}` : ''}${flags ? ' [flags]' : ''}`,
+    '',
+    wrap(c.description, Math.min(columns(), 100) - 2).split('\n').map((l) => `  ${l}`).join('\n'),
+    '',
+  ];
+  if (c.args.length) {
+    const w = Math.max(...c.args.map((a) => a.name.length)) + 4;
+    lines.push(H('Arguments'), ...c.args.map((a) => `  ${o.cyan(a.name.padEnd(w))}${wrap(a.description, columns() - w - 4, w + 2)}`), '');
   }
-  return { positional, flags };
+  lines.push(H('Examples'), ...exampleRows(c.examples), '');
+  const globals = globalsFor(c);
+  if (c.flags.length) lines.push(H('Flags'), ...flagRows(c.flags), '');
+  lines.push(H('Global flags'), ...flagRows(globals));
+  if (c.formats.length > 1) lines.push('', `  ${o.dim(`Formats: ${c.formats.join(', ')}${c.defaultFormat ? ' (text on a terminal, md when piped)' : ''}`)}`);
+  return lines.join('\n');
+}
+
+function cliSpec() {
+  const flag = (f: Flag) => ({ name: f.name, short: f.short ?? null, type: f.type, multiple: !!f.multiple, value: f.value ?? null, choices: f.choices ?? null, description: f.description });
+  return {
+    name: 'oodle',
+    version: VERSION,
+    docs: DOCS,
+    usage: 'oodle <command> [args] [flags]',
+    commands: COMMANDS.map((c) => ({
+      name: c.name,
+      summary: c.summary,
+      description: c.description,
+      arguments: c.args.map((a) => ({ name: a.name, required: !!a.required, description: a.description })),
+      flags: c.flags.map(flag),
+      formats: c.formats,
+      examples: c.examples.map(([command, description]) => ({ command, description })),
+    })),
+    global_flags: GLOBAL_FLAGS.map(flag),
+    exit_codes: EXIT_DOCS.map(([code, description]) => ({ code, description })),
+    environment: ENV.map(([name, description]) => ({ name, description })),
+  };
+}
+
+// ── Output helpers ──────────────────────────────────────────────────────────
+
+function printJson(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function heading(title: string, dir: string): void {
+  if (!settings.quiet) note(`${e.bold(e.cyan(`oodle ${title}`))} ${e.dim(display(dir))}\n`);
+}
+
+// ── Interrupts ──────────────────────────────────────────────────────────────
+
+const cleanups = new Set<() => void>();
+let interrupted = false;
+function onSignal(signal: NodeJS.Signals) {
+  clearSpinner();
+  if (interrupted) {
+    process.stderr.write(`\n${e.red('Forced exit.')} Run \`git worktree prune\` if a temporary worktree is left behind.\n`);
+    process.exit(EXIT.interrupted);
+  }
+  interrupted = true;
+  if (cleanups.size) process.stderr.write(`\n${e.yellow(sym.warn)} Interrupted. Cleaning up ${e.dim('(Ctrl-C again to force)')}\n`);
+  else process.stderr.write('\n');
+  for (const c of cleanups) {
+    try { c(); } catch { /* best effort on the way out */ }
+  }
+  process.exit(signal === 'SIGTERM' ? 143 : EXIT.interrupted);
+}
+process.on('SIGINT', onSignal);
+process.on('SIGTERM', onSignal);
+
+// ── Commands ────────────────────────────────────────────────────────────────
+
+async function runWithProgress(dir: string, label: string, only?: string[]): Promise<RunResult> {
+  const spin = spinner(`${label} ${e.dim(display(dir))}`);
+  try {
+    return await runProject(dir, {
+      only,
+      onProgress: (what, done, total) => spin.update(`${label} ${e.dim(`${done + 1}/${total}`)} ${what}`),
+    });
+  } finally {
+    spin.stop();
+  }
+}
+
+function runSummaryJson(run: RunResult, elapsed: number) {
+  const outcomes = new Set(run.observations.filter((x) => x.kind === 'outcome').map((x) => x.id));
+  const broken = new Set(run.observations.filter((x) => x.kind === 'outcome' && (x.failures.length || x.violations.length)).map((x) => x.id));
+  const behaviors = new Set(run.observations.filter((x) => x.kind === 'behavior').map((x) => x.id));
+  const drifted = new Set(run.observations.filter((x) => x.kind === 'behavior' && x.failures.length).map((x) => x.id));
+  return {
+    outcomes: outcomes.size,
+    held: outcomes.size - broken.size,
+    broken: broken.size,
+    behaviors: behaviors.size,
+    drifted: drifted.size,
+    unknown_routes: run.gaps.length,
+    constraint_violations: run.observations.reduce((n, x) => n + x.violations.length, 0) + run.gaps.reduce((n, g) => n + g.violations.length, 0),
+    lint_errors: run.lint.errors.length,
+    lint_warnings: run.lint.warnings.length,
+    runs: run.observations.length,
+    elapsed_ms: Math.round(elapsed),
+  };
+}
+
+async function cmdRun(ctx: Ctx): Promise<number> {
+  if (ctx.flags.watch) return watchLoop(ctx);
+  const dir = findProject(ctx.args[0]);
+  const t0 = performance.now();
+  if (ctx.format === 'text') heading('run', dir);
+  const run = await runWithProgress(dir, 'Running', ctx.flags.only);
+  const elapsed = performance.now() - t0;
+  const failing =
+    run.observations.some((x) => x.violations.length || (x.kind === 'outcome' && x.failures.length)) ||
+    run.gaps.some((g) => g.violations.length) ||
+    run.lint.errors.length > 0;
+  const drifting = run.observations.some((x) => x.kind === 'behavior' && x.failures.length);
+  annotateRun(run);
+
+  if (ctx.format === 'json') {
+    printJson({ ok: !failing, oodle: VERSION, project: dir, summary: runSummaryJson(run, elapsed), observations: run.observations, gaps: run.gaps, lint: run.lint });
+    return failing ? EXIT.blocking : EXIT.ok;
+  }
+
+  console.log(renderRun(run, { verbose: ctx.flags.verbose, elapsed, only: ctx.flags.only }));
+  if (failing) await say('worried', 'Something declared is not holding.');
+  else if (run.gaps.length) await say('curious', `Every outcome holds. ${run.gaps.length} route(s) nobody has described yet.`);
+  else if (drifting) await say('curious', 'Every outcome holds. Some behavior drifted; have a look.');
+  else await say('happy', 'Every outcome holds.');
+
+  const next: string[] = [];
+  const first = run.observations.find((x) => x.kind === 'outcome' && (x.failures.length || x.violations.length));
+  if (first && !ctx.flags.only) next.push(`Focus on one: ${e.cyan(`oodle run --only ${first.id}`)}`);
+  if (run.lint.errors.length) next.push(`Catalog details: ${e.cyan('oodle lint')}`);
+  if (run.gaps.length && !ctx.flags.verbose) next.push(`See proposed catalog entries for unknown routes: ${e.cyan('oodle run --verbose')}`);
+  if (!failing && inGitRepo(dir)) next.push(`Compare with your default branch: ${e.cyan('oodle check')}`);
+  hints(next);
+  return failing ? EXIT.blocking : EXIT.ok;
+}
+
+async function cmdLint(ctx: Ctx): Promise<number> {
+  if (ctx.flags.watch) return watchLoop(ctx);
+  const dir = findProject(ctx.args[0]);
+  const catalog = loadCatalog(dir, loadConfig(dir));
+  const result = lint(catalog);
+  annotateLint(dir, result);
+  if (ctx.format === 'json') {
+    printJson({ ok: !result.errors.length, ...result });
+    return result.errors.length ? EXIT.blocking : EXIT.ok;
+  }
+  heading('lint', dir);
+  console.log(renderLint(result, catalog));
+  if (result.errors.length) await say('worried', `${result.errors.length} catalog error(s) to fix first.`);
+  else await say('happy', 'Catalog looks tidy!');
+  if (!result.errors.length) hints([`Run every outcome: ${e.cyan('oodle run')}`]);
+  return result.errors.length ? EXIT.blocking : EXIT.ok;
 }
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-async function checkoutBase(projectDir: string, ref: string): Promise<{ dir: string; cleanup: () => void }> {
-  const root = git(projectDir, 'rev-parse', '--show-toplevel');
-  const sha = git(root, 'rev-parse', '--short', ref);
+function inGitRepo(dir: string): boolean {
+  try { return git(dir, 'rev-parse', '--is-inside-work-tree') === 'true'; } catch { return false; }
+}
+
+function defaultBaseRef(dir: string): string {
+  for (const candidate of ['origin/HEAD', 'main', 'master']) {
+    try {
+      git(dir, 'rev-parse', '--verify', '--quiet', `${candidate}^{commit}`);
+      return candidate === 'origin/HEAD' ? git(dir, 'rev-parse', '--abbrev-ref', 'origin/HEAD') : candidate;
+    } catch { /* try the next one */ }
+  }
+  throw usageError('Could not work out which ref to compare against', 'Pass one: `oodle check --base-ref <branch|tag|sha>`.');
+}
+
+function checkoutBase(projectDir: string, ref: string): { dir: string; sha: string; cleanup: () => void } {
+  let root: string;
+  try {
+    root = git(projectDir, 'rev-parse', '--show-toplevel');
+  } catch {
+    throw usageError(`${display(projectDir)} is not inside a git repository`, 'Use `oodle diff <base> <head>` to compare two directories.');
+  }
+  let sha: string;
+  try {
+    sha = git(root, 'rev-parse', '--short', '--verify', `${ref}^{commit}`);
+  } catch {
+    throw usageError(`Unknown git ref "${ref}"`, 'Check the name with `git branch -a` or `git log --oneline`.');
+  }
   const tmpRoot = join(root, '.oodle-tmp');
   const tree = join(tmpRoot, `base-${sha}`);
   mkdirSync(tmpRoot, { recursive: true });
-  if (existsSync(tree)) {
+  const remove = () => {
     try { git(root, 'worktree', 'remove', '--force', tree); } catch { rmSync(tree, { recursive: true, force: true }); }
-  }
+  };
+  if (existsSync(tree)) remove();
   git(root, 'worktree', 'add', '--detach', tree, sha);
   // Reuse installed dependencies so the base app can import what the head app imports.
   const modules = join(root, 'node_modules');
   if (existsSync(modules) && !existsSync(join(tree, 'node_modules'))) symlinkSync(modules, join(tree, 'node_modules'), 'dir');
   const dir = join(tree, relative(root, realpathSync(projectDir)));
-  return {
-    dir,
-    cleanup: () => {
-      try { git(root, 'worktree', 'remove', '--force', tree); } catch { rmSync(tree, { recursive: true, force: true }); }
-    },
-  };
+  if (!existsSync(join(dir, 'oodle.yaml'))) {
+    remove();
+    throw new OodleError('no-base-project', `${ref} has no oodle.yaml at ${relative(root, realpathSync(projectDir)) || '.'}`, {
+      hint: 'Oodle was set up after that ref. Compare against a later ref, or use `oodle run` for now.',
+    });
+  }
+  return { dir, sha, cleanup: remove };
 }
 
-async function main() {
-  const [cmd, ...rest] = process.argv.slice(2);
-  const { positional, flags } = parseArgs(rest);
+async function diffAndReport(ctx: Ctx, baseDir: string, headDir: string, labels: { base: string; head: string }, t0: number): Promise<number> {
+  const base = await runWithProgress(baseDir, `Running base ${e.dim(labels.base)}`);
+  const head = await runWithProgress(headDir, `Running head ${e.dim(labels.head)}`);
+  const report = diffRuns(base, head);
+  const md = diffMarkdown(report);
+  if (typeof ctx.flags.md === 'string') writeFileSync(ctx.flags.md, md);
+  annotateDiff(report, headDir, md);
 
-  switch (cmd) {
-    case 'lint': {
-      const dir = resolve(positional[0] ?? '.');
-      const result = lint(loadCatalog(dir, loadConfig(dir)));
-      if (flags.json) console.log(JSON.stringify(result, null, 2));
-      else {
-        for (const e of result.errors) console.log(`error: ${e}`);
-        for (const w of result.warnings) console.log(`warning: ${w}`);
-        console.log(`${result.errors.length} errors, ${result.warnings.length} warnings`);
-        if (result.errors.length) await say('worried', `${result.errors.length} catalog error(s) to fix first.`);
-        else await say('happy', 'Catalog looks tidy!');
-      }
-      return result.errors.length ? 1 : 0;
-    }
-    case 'run': {
-      const run = await runProject(resolve(positional[0] ?? '.'));
-      if (flags.json) console.log(JSON.stringify({ observations: run.observations, gaps: run.gaps, lint: run.lint }, null, 2));
-      const failing =
-        run.observations.some((o) => o.violations.length || (o.kind === 'outcome' && o.failures.length)) ||
-        run.gaps.some((g) => g.violations.length) ||
-        run.lint.errors.length > 0;
-      const drifting = run.observations.some((o) => o.kind === 'behavior' && o.failures.length);
-      if (!flags.json) {
-        console.log(runSummary(run));
-        if (failing) await say('worried', 'Something declared is not holding.');
-        else if (run.gaps.length) await say('curious', `Every outcome holds. ${run.gaps.length} route(s) nobody has described yet.`);
-        else if (drifting) await say('curious', 'Every outcome holds. Some behavior drifted; have a look.');
-        else await say('happy', 'Every outcome holds.');
-      }
-      return failing ? 1 : 0;
-    }
-    case 'diff':
-    case 'check': {
-      let baseDir: string;
-      let headDir: string;
-      let cleanup = () => {};
-      if (cmd === 'diff') {
-        if (positional.length < 2) throw new Error('oodle diff needs <base-project> <head-project>');
-        baseDir = resolve(positional[0]);
-        headDir = resolve(positional[1]);
-      } else {
-        if (typeof flags['base-ref'] !== 'string') throw new Error('oodle check needs --base-ref <ref>');
-        headDir = resolve(positional[0] ?? '.');
-        const base = await checkoutBase(headDir, flags['base-ref']);
-        baseDir = base.dir;
-        cleanup = base.cleanup;
-      }
-      try {
-        const report = diffRuns(await runProject(baseDir), await runProject(headDir));
-        const md = diffMarkdown(report);
-        if (typeof flags.md === 'string') writeFileSync(flags.md, md);
-        console.log(flags.json ? JSON.stringify(report, null, 2) : md);
-        if (!flags.json) {
-          if (report.blocking) await say('worried', `${report.blocking} blocking. A human needs to look.`);
-          else if (report.gaps.length) await say('curious', 'Nothing blocking. Some routes are new to me.');
-          else await say('happy', 'Nothing blocking. Every outcome intact.');
-        }
-        return report.blocking ? 1 : 0;
-      } finally {
-        cleanup();
-      }
-    }
-    case 'hello':
-      await hello();
-      return 0;
-    default:
-      await say('hello', 'Hi! You declare outcomes, I watch behaviors.');
-      console.log(USAGE);
-      return cmd && !['help', '--help', '-h'].includes(cmd) ? 2 : 0;
+  if (ctx.format === 'json') printJson({ ok: !report.blocking, oodle: VERSION, base: labels.base, head: labels.head, ...report });
+  else if (ctx.format === 'md') console.log(md);
+  else {
+    console.log(renderDiff(report, { verbose: ctx.flags.verbose, base: labels.base, head: labels.head, elapsed: performance.now() - t0 }));
+    if (report.blocking) await say('worried', `${report.blocking} blocking. A human needs to look.`);
+    else if (report.gaps.length) await say('curious', 'Nothing blocking. Some routes are new to me.');
+    else await say('happy', 'Nothing blocking. Every outcome intact.');
+    const next: string[] = [];
+    if (typeof ctx.flags.md === 'string') next.push(`PR comment written to ${e.cyan(ctx.flags.md)}`);
+    else next.push(`Write a PR comment: ${e.cyan(`oodle ${process.argv.slice(2).join(' ')} --md diff.md`)}`);
+    if (report.blocking) next.push('Blocking changes need a human: fix the code, or update the catalog and get the change approved.');
+    hints(next);
+  }
+  return report.blocking ? EXIT.blocking : EXIT.ok;
+}
+
+async function cmdCheck(ctx: Ctx): Promise<number> {
+  const t0 = performance.now();
+  const headDir = findProject(ctx.args[0]);
+  const ref: string = ctx.flags['base-ref'] ?? defaultBaseRef(headDir);
+  if (ctx.format === 'text') heading('check', headDir);
+  const spin = spinner(`Checking out ${ref}`);
+  let base: ReturnType<typeof checkoutBase>;
+  try {
+    base = checkoutBase(headDir, ref);
+  } finally {
+    spin.stop();
+  }
+  cleanups.add(base.cleanup);
+  try {
+    return await diffAndReport(ctx, base.dir, headDir, { base: `${ref} (${base.sha})`, head: 'working tree' }, t0);
+  } finally {
+    base.cleanup();
+    cleanups.delete(base.cleanup);
   }
 }
 
-main().then(
+async function cmdDiff(ctx: Ctx): Promise<number> {
+  const t0 = performance.now();
+  const baseDir = findProject(ctx.args[0]);
+  const headDir = findProject(ctx.args[1]);
+  if (ctx.format === 'text') heading('diff', headDir);
+  return diffAndReport(ctx, baseDir, headDir, { base: display(baseDir), head: display(headDir) }, t0);
+}
+
+async function cmdInit(ctx: Ctx): Promise<number> {
+  const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force });
+  if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+  heading('init', result.dir);
+  for (const f of result.created) console.log(`  ${o.green('+')} ${f}`);
+  for (const f of result.kept) console.log(`  ${o.dim(`${sym.dot} ${f} (kept)`)}`);
+  console.log(`\n${o.green(o.bold(`${sym.ok} Project ready`))}  ${o.dim(display(result.dir))}`);
+  await say('happy', 'A fresh catalog! Tell me what matters.');
+  const where = display(result.dir) === '.' ? '' : ` ${display(result.dir)}`;
+  hints([
+    `Run it: ${e.cyan(`oodle run${where}`)}`,
+    `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'catalog/outcomes.yaml'))}`,
+    `Shell completion: ${e.cyan('oodle completion --help')}`,
+  ]);
+  return EXIT.ok;
+}
+
+async function cmdDoctor(ctx: Ctx): Promise<number> {
+  if (ctx.format === 'text') heading('doctor', ctx.args[0] ? resolve(ctx.args[0]) : process.cwd());
+  const spin = spinner('Checking');
+  const checks = await doctor(ctx.args[0]).finally(() => spin.stop());
+  const failed = checks.some((c) => c.status === 'fail');
+  if (ctx.format === 'json') return printJson({ ok: !failed, checks }), failed ? EXIT.blocking : EXIT.ok;
+  const width = Math.max(...checks.map((c) => c.name.length)) + 2;
+  for (const c of checks) {
+    const mark = c.status === 'ok' ? o.green(sym.ok) : c.status === 'warn' ? o.yellow(sym.warn) : o.red(sym.fail);
+    console.log(`  ${mark} ${c.name.padEnd(width)}${c.status === 'ok' ? o.dim(c.detail) : c.detail}`);
+    if (c.hint && c.status !== 'ok') console.log(`    ${' '.repeat(width)}${o.dim(`${sym.arrow} ${c.hint}`)}`);
+  }
+  const warns = checks.filter((c) => c.status === 'warn').length;
+  console.log(`\n${failed ? o.red(o.bold(`${sym.fail} Not ready`)) : o.green(o.bold(`${sym.ok} Ready`))}${warns ? `  ${o.yellow(`${warns} to look at`)}` : ''}`);
+  return failed ? EXIT.blocking : EXIT.ok;
+}
+
+async function cmdCompletion(ctx: Ctx): Promise<number> {
+  const shell = ctx.args[0] as Shell;
+  if (!SHELLS.includes(shell)) {
+    const guess = shell ? suggest(shell, [...SHELLS]) : undefined;
+    throw usageError(shell ? `Unsupported shell "${shell}"` : 'Which shell?', guess ? `Did you mean \`oodle completion ${guess}\`?` : `Choose one of: ${SHELLS.join(', ')}.`);
+  }
+  const specs = COMMANDS.map((c) => ({ name: c.name, summary: c.summary, positional: c.positional ?? (c.name === 'help' ? COMMANDS.map((x) => x.name) : 'dirs'), flags: [...c.flags, ...globalsFor(c)].map((f) => ({ ...f, choices: f.name === 'format' ? c.formats : f.choices })) }));
+  process.stdout.write(completion(shell, specs));
+  return EXIT.ok;
+}
+
+/** Re-runs the command in a child process on every change, so the app is always freshly imported. */
+async function watchLoop(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0]);
+  const argv = process.argv.slice(2).filter((a) => a !== '--watch' && a !== '-w');
+  let child: ChildProcess | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  const start = () => {
+    child?.kill();
+    if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+    child = spawn(process.execPath, [...process.execArgv, process.argv[1], ...argv], { stdio: 'inherit', env: { ...process.env, OODLE_STILL: '1' } });
+    child.on('exit', (code, signal) => {
+      if (signal) return;
+      const status = code === 0 ? e.green(sym.ok) : e.red(sym.fail);
+      process.stderr.write(`\n${status} ${e.dim(`${new Date().toLocaleTimeString()} ${sym.dot} watching ${display(dir)} ${sym.dot} Ctrl-C to stop`)}\n`);
+    });
+  };
+  const ignored = /(^|\/)(node_modules|\.git|\.oodle-tmp)(\/|$)/;
+  watch(dir, { recursive: true }, (_event, file) => {
+    if (file && ignored.test(String(file))) return;
+    clearTimeout(timer);
+    timer = setTimeout(start, 120);
+  });
+  cleanups.add(() => child?.kill());
+  start();
+  return new Promise(() => {});
+}
+
+// ── Main ────────────────────────────────────────────────────────────────────
+
+function parse(cmd: Command, argv: string[]) {
+  const flags = [...cmd.flags, ...GLOBAL_FLAGS];
+  const options = Object.fromEntries(flags.map((f) => [f.name, { type: f.type, ...(f.multiple ? { multiple: true } : {}), ...(f.short ? { short: f.short } : {}) }]));
+  try {
+    return parseArgs({ args: argv, options: options as any, allowPositionals: true, strict: true });
+  } catch (error) {
+    const msg = (error as Error).message;
+    const m = /'(-{1,2}[^' ]+)/.exec(msg);
+    const bad = m?.[1] ?? '';
+    if ((error as any).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
+      const names = flags.flatMap((f) => [`--${f.name}`, ...(f.short ? [`-${f.short}`] : [])]);
+      const guess = suggest(bad, names);
+      throw usageError(`Unknown flag ${bad} for \`oodle ${cmd.name}\``, guess ? `Did you mean ${guess}?` : `See \`oodle ${cmd.name} --help\` for its flags.`);
+    }
+    if ((error as any).code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') {
+      const flag = flags.find((f) => msg.includes(`--${f.name}`));
+      throw usageError(flag?.type === 'string' ? `--${flag.name} needs a value` : msg, flag ? `Usage: ${flagLabel(flag).trim()}  ${flag.description}` : undefined);
+    }
+    if (String((error as any).code).startsWith('ERR_PARSE_ARGS')) throw usageError(msg, `See \`oodle ${cmd.name} --help\`.`);
+    throw error;
+  }
+}
+
+function resolveFormat(cmd: Command, flags: Record<string, any>): Format {
+  if (flags.json && flags.format && flags.format !== 'json') throw usageError('--json and --format disagree', 'Pick one.');
+  const asked = flags.json ? 'json' : (flags.format as string | undefined);
+  if (asked) {
+    if (!cmd.formats.includes(asked as Format)) {
+      throw usageError(`\`oodle ${cmd.name}\` cannot print ${asked}`, `Formats for this command: ${cmd.formats.join(', ')}.`);
+    }
+    return asked as Format;
+  }
+  const fromEnv = process.env.OODLE_FORMAT as Format | undefined;
+  if (fromEnv && cmd.formats.includes(fromEnv)) return fromEnv;
+  return cmd.defaultFormat?.() ?? 'text';
+}
+
+let jsonMode = false;
+
+async function main(argv: string[]): Promise<number> {
+  if (process.env.OODLE_QUIET) settings.quiet = true;
+  if (process.env.OODLE_DEBUG) settings.debug = true;
+  // Honour colour and json flags even when the command line is otherwise wrong.
+  if (argv.includes('--no-color')) settings.color = 'never';
+  jsonMode = argv.includes('--json') || argv.includes('--format=json');
+
+  const [first, ...rest] = argv;
+  if (first === undefined) {
+    console.log(topHelp());
+    return EXIT.ok;
+  }
+  if (first === '--version' || first === '-V') {
+    if (jsonMode || rest.includes('--json')) printJson({ name: 'oodle', version: VERSION, node: process.versions.node, platform: `${process.platform}-${process.arch}` });
+    else console.log(`oodle ${VERSION}`);
+    return EXIT.ok;
+  }
+  if (first === '--help' || first === '-h') return commandNamed('help').run({ args: [], flags: {}, format: jsonMode ? 'json' : 'text' });
+  if (first.startsWith('-')) {
+    const guess = suggest(first, ['--help', '--version']);
+    throw usageError(`Expected a command before ${first}`, guess ? `Did you mean \`oodle ${guess}\`?` : 'Usage: oodle <command> [flags]. Run `oodle help` for commands.');
+  }
+
+  const cmd = commandNamed(first);
+  const { values, positionals } = parse(cmd, rest);
+  const flags = values as Record<string, any>;
+  if (flags.color) {
+    if (!['auto', 'always', 'never'].includes(flags.color)) throw usageError(`--color must be auto, always or never, not "${flags.color}"`);
+    settings.color = flags.color as ColorMode;
+  }
+  if (flags['no-color']) settings.color = 'never';
+  if (flags.quiet) settings.quiet = true;
+  if (flags.debug) settings.debug = true;
+  if (flags.help) {
+    console.log(cmd.name === 'help' ? topHelp() : commandHelp(cmd));
+    return EXIT.ok;
+  }
+
+  const format = resolveFormat(cmd, flags);
+  jsonMode = format === 'json';
+  // In JSON mode stdout holds one document and stderr stays silent, for scripts and agents.
+  if (jsonMode) settings.quiet = true;
+
+  const required = cmd.args.filter((a) => a.required).length;
+  if (positionals.length < required) {
+    const missing = cmd.args.slice(positionals.length).filter((a) => a.required).map((a) => `<${a.name}>`).join(' ');
+    throw usageError(`\`oodle ${cmd.name}\` needs ${missing}`, `Usage: oodle ${cmd.name} ${cmd.args.map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`)).join(' ')}. See \`oodle ${cmd.name} --help\`.`);
+  }
+  if (positionals.length > cmd.args.length) {
+    const extra = positionals.slice(cmd.args.length);
+    throw usageError(`Unexpected argument${extra.length > 1 ? 's' : ''}: ${extra.join(' ')}`, `\`oodle ${cmd.name}\` takes ${cmd.args.length ? cmd.args.map((a) => `[${a.name}]`).join(' ') : 'no arguments'}. Quote globs, e.g. --only "checkout.*".`);
+  }
+  return cmd.run({ args: positionals, flags, format });
+}
+
+function asOodleError(error: unknown): OodleError | null {
+  if (error instanceof OodleError) return error;
+  if (error instanceof CatalogError) {
+    return new OodleError('catalog', `The catalog has ${error.problems.length === 1 ? 'a problem' : `${error.problems.length} problems`}`, {
+      problems: error.problems,
+      hint: 'Fix the files listed above. The schema is in spec/catalog.schema.json.',
+    });
+  }
+  return null;
+}
+
+async function fail(error: unknown): Promise<number> {
+  clearSpinner();
+  const known = asOodleError(error);
+  if (jsonMode) {
+    printJson({
+      ok: false,
+      error: known
+        ? { code: known.code, message: known.message, hint: known.hint ?? null, problems: known.problems }
+        : { code: 'internal', message: (error as Error)?.message ?? String(error), hint: `Please report this: ${ISSUES}`, problems: [] },
+    });
+    return known?.exitCode ?? EXIT.usage;
+  }
+  if (known) {
+    if (known.code !== 'usage') await say('oops', 'I could not finish.');
+    process.stderr.write(`\n${e.red(e.bold(`${sym.fail} ${known.message}`))}\n`);
+    for (const p of known.problems) process.stderr.write(`  ${e.dim(sym.bar)} ${p}\n`);
+    if (known.hint) process.stderr.write(`  ${e.dim(sym.arrow)} ${known.hint}\n`);
+    if (settings.debug && known.stack) process.stderr.write(`\n${e.dim(known.stack)}\n`);
+    return known.exitCode;
+  }
+  // Not ours to explain: this is a bug, so make reporting it effortless.
+  await say('oops', 'That was not supposed to happen.');
+  const err = error as Error;
+  const body = encodeURIComponent(`**Command**\n\`oodle ${process.argv.slice(2).join(' ')}\`\n\n**Error**\n\`\`\`\n${err?.stack ?? err}\n\`\`\`\n\noodle ${VERSION} · node ${process.versions.node} · ${process.platform}-${process.arch}`);
+  const url = `${ISSUES}?title=${encodeURIComponent(`Crash: ${err?.message ?? err}`.slice(0, 120))}&body=${body}`;
+  process.stderr.write(`\n${e.red(e.bold(`${sym.fail} Unexpected error: ${err?.message ?? err}`))}\n`);
+  process.stderr.write(`  ${e.dim(sym.arrow)} This is a bug in Oodle. Report it: ${e.linkable() ? e.link('open a prefilled issue', url) : ISSUES}\n`);
+  if (settings.debug) process.stderr.write(`\n${e.dim(err?.stack ?? String(err))}\n`);
+  else process.stderr.write(`  ${e.dim(sym.arrow)} Run again with --debug for the stack trace.\n`);
+  return EXIT.usage;
+}
+
+main(process.argv.slice(2)).then(
   (code) => process.exit(code),
-  async (err) => {
-    await say('oops', 'I could not finish.');
-    if (err instanceof CatalogError) console.error(err.problems.map((p) => `error: ${p}`).join('\n'));
-    else console.error(`error: ${err.message}`);
-    process.exit(2);
-  },
+  async (error) => process.exit(await fail(error)),
 );

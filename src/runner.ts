@@ -6,6 +6,7 @@ import type { Behavior, Catalog, Condition, Config, EffectRecord, Gap, Given, Ob
 import { loadCatalog, loadConfig } from './catalog.ts';
 import { lint } from './lint.ts';
 import { evaluate } from './expect.ts';
+import { OodleError } from './errors.ts';
 
 const FIXED_NOW = '2026-01-01T00:00:00.000Z';
 
@@ -29,9 +30,22 @@ export function mergeGiven(...layers: (Given | undefined)[]): Given {
 
 export async function loadApp(projectDir: string, config: Config): Promise<CreateApp> {
   const url = pathToFileURL(resolve(projectDir, config.app)).href;
-  const mod = await import(url);
+  let mod: any;
+  try {
+    mod = await import(url);
+  } catch (err) {
+    const missing = (err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' && (err as Error).message.includes(resolve(projectDir, config.app));
+    throw new OodleError('app-load', missing ? `App not found at ${config.app}` : `Could not load the app at ${config.app}`, {
+      problems: missing ? [] : [(err as Error).message.split('\n')[0]],
+      hint: missing ? 'Point "app" in oodle.yaml at the module whose default export is createApp(ctx).' : 'Fix the error above, then run again. Add --debug for the full stack.',
+    });
+  }
   const createApp = mod.default ?? mod.createApp;
-  if (typeof createApp !== 'function') throw new Error(`${config.app}: must export default createApp(ctx)`);
+  if (typeof createApp !== 'function') {
+    throw new OodleError('app-contract', `${config.app} does not export createApp(ctx)`, {
+      hint: 'Export it as the default: export default function createApp(ctx) { return { routes, handle } }',
+    });
+  }
   return createApp as CreateApp;
 }
 
@@ -166,7 +180,19 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
   return gaps;
 }
 
-export async function runProject(projectDir: string): Promise<RunResult> {
+export interface RunOptions {
+  /** Only run outcomes and behaviors whose id matches one of these globs (`*` wildcard). */
+  only?: string[];
+  /** Called before each run, for progress display. */
+  onProgress?: (label: string, done: number, total: number) => void;
+}
+
+export const globMatcher = (patterns: string[]) => {
+  const res = patterns.map((p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
+  return (id: string) => res.some((r) => r.test(id));
+};
+
+export async function runProject(projectDir: string, opts: RunOptions = {}): Promise<RunResult> {
   const config = loadConfig(projectDir);
   const catalog = loadCatalog(projectDir, config);
   const lintResult = lint(catalog);
@@ -174,16 +200,34 @@ export async function runProject(projectDir: string): Promise<RunResult> {
   const conditions = new Map(catalog.conditions.map((c) => [c.id, c]));
 
   const observations: Observation[] = [];
+  const selected = opts.only?.length ? globMatcher(opts.only) : () => true;
   const subjects: Subject[] = [
     ...catalog.outcomes.map((item) => ({ kind: 'outcome' as const, item })),
     ...catalog.behaviors.map((item) => ({ kind: 'behavior' as const, item })),
-  ];
-  for (const subject of subjects) {
+  ].filter((s) => selected(s.item.id));
+  if (opts.only?.length && !subjects.length) {
+    const ids = [...catalog.outcomes, ...catalog.behaviors].map((x) => x.id);
+    throw new OodleError('no-match', `Nothing matches ${opts.only.map((p) => `"${p}"`).join(', ')}`, {
+      hint: `Ids in this catalog: ${ids.slice(0, 6).join(', ')}${ids.length > 6 ? ', …' : ''}. Use * as a wildcard, e.g. "checkout.*".`,
+    });
+  }
+  const plan = subjects.flatMap((subject) => {
     const conds = (subject.item.conditions ?? []).map((id) => conditions.get(id)).filter((c): c is Condition => !!c);
-    for (const c of conds.length ? conds : [null]) observations.push(await runSubject(createApp, catalog, config, subject, c));
+    return (conds.length ? conds : [null]).map((c) => ({ subject, c }));
+  });
+  for (const [i, { subject, c }] of plan.entries()) {
+    opts.onProgress?.(`${subject.item.id}${c ? ` · ${c.id}` : ''}`, i, plan.length);
+    observations.push(await runSubject(createApp, catalog, config, subject, c));
   }
 
-  const probeApp = createApp(simulate(mergeGiven(config.defaults?.given)).ctx);
+  let probeApp: OodleApp;
+  try {
+    probeApp = createApp(simulate(mergeGiven(config.defaults?.given)).ctx);
+  } catch (err) {
+    throw new OodleError('app-crash', `createApp(ctx) threw: ${(err as Error).message}`, {
+      hint: 'createApp runs with the state from defaults.given in oodle.yaml. Seed what it needs there, or make it tolerate an empty state.',
+    });
+  }
   const routes = probeApp.routes.map((r) => `${r.method} ${r.path}`);
   const gaps = await findGaps(createApp, catalog, config, probeApp);
   return { projectDir, config, catalog, lint: lintResult, routes, observations, gaps };

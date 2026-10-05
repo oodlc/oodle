@@ -7,8 +7,10 @@
  *
  * Oodle only talks on stderr, so stdout stays clean for --json and markdown,
  * and stays quiet when stderr is not a terminal or OODLE_QUIET is set.
- * Animation is skipped in CI or when OODLE_STILL is set. NO_COLOR is honoured.
+ * Animation is skipped in CI or when OODLE_STILL is set. Colour follows term.ts
+ * (NO_COLOR, FORCE_COLOR, --color).
  */
+import { err, settings } from './term.ts';
 
 export type Mood = 'hello' | 'happy' | 'worried' | 'curious' | 'oops' | 'blink';
 
@@ -25,7 +27,7 @@ const FACE: Record<Mood, string> = {
 const TINT: Record<Mood, number> = { hello: 43, happy: 43, blink: 43, worried: 214, curious: 141, oops: 203 };
 
 const env = process.env;
-const colorOn = () => !('NO_COLOR' in env) && (!!env.FORCE_COLOR || !!process.stderr.isTTY);
+const colorOn = () => err.enabled;
 const paint = (code: string, text: string) => (colorOn() ? `\x1b[${code}m${text}\x1b[0m` : text);
 
 /** Plain text frames; tail wiggles between `~` and `≈`. */
@@ -49,8 +51,8 @@ export function speak(mood: Mood, message: string, tail = '~'): string {
   return art.map((line, i) => (i === FACE_ROW && message ? `${paint(tint, line.padEnd(width))}  ${paint('1', message)}` : paint(tint, line))).join('\n');
 }
 
-const quiet = () => !!env.OODLE_QUIET || !process.stderr.isTTY;
-const still = () => !!env.CI || !!env.OODLE_STILL || !colorOn();
+const quiet = () => settings.quiet || !!env.OODLE_QUIET || !process.stderr.isTTY;
+const still = () => !!env.CI || !!env.OODLE_STILL || env.TERM === 'dumb' || !colorOn();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Draws frames in place, then leaves the last one on screen. */

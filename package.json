@@ -14,11 +14,15 @@
   "bin": {
     "oodle": "./bin/oodle.js"
   },
+  "files": ["bin", "src", "spec", "docs/cli.md"],
+  "engines": {
+    "node": ">=20.11"
+  },
   "scripts": {
-    "oodle": "tsx src/cli.ts",
+    "oodle": "node bin/oodle.js",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "demo": "tsx src/cli.ts run examples/checkout"
+    "demo": "node bin/oodle.js run examples/checkout"
   },
   "keywords": ["oodlc", "oodle", "outcomes", "ci", "testing", "agents", "behavior", "verification"],
   "license": "Apache-2.0",

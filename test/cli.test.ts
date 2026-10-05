@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -132,4 +132,29 @@ test('completion scripts are generated for each shell', () => {
 test('GitHub Actions: blocking findings become annotations on stderr', () => {
   const r = oodle(['lint', EXAMPLE], { GITHUB_ACTIONS: 'true' });
   assert.match(r.stderr, /::warning title=Oodle catalog warning,file=examples\/checkout\/catalog\/intents\.yaml::/);
+});
+
+test('a compile error in the app shows file:line:col, not just the first line', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'oodle-syntax-')), 'svc');
+  oodle(['init', dir, '--json']);
+  writeFileSync(join(dir, 'src', 'app.ts'), 'export const = ;\n');
+  const r = json(oodle(['run', dir, '--json']).stdout);
+  assert.equal(r.error.code, 'app-load');
+  assert.ok(r.error.problems.some((p: string) => /src\/app\.ts:1:\d+: ERROR/.test(p)), JSON.stringify(r.error.problems));
+});
+
+test('the same finding under several conditions is shown once', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'oodle-group-')), 'checkout');
+  cpSync(EXAMPLE, dir, { recursive: true });
+  const file = join(dir, 'src', 'checkout.ts');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('{ order_id: order.id,', '{ orderId: order.id,').replaceAll("'../../../src/", `'${ROOT}/src/`));
+  for (const f of ['app.ts', 'pricing.ts', 'server.ts']) {
+    const p = join(dir, 'src', f);
+    writeFileSync(p, readFileSync(p, 'utf8').replaceAll("'../../../src/", `'${ROOT}/src/`));
+  }
+  const r = oodle(['run', dir]);
+  assert.equal(r.code, 1);
+  assert.equal(r.stdout.match(/body\.order_id: missing/g)?.length, 1, r.stdout);
+  assert.match(r.stdout, /3 conditions\s+body\.order_id: missing/);
+  assert.match(r.stdout, /warnings only · not blocking/);
 });

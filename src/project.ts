@@ -27,7 +27,7 @@ function nearby(dir: string, depth = 2): string[] {
  * of an oodle.yaml passed directly). Without one, walks up from the current
  * directory like git does, so `oodle run` works from anywhere inside a project.
  */
-export function findProject(arg?: string): string {
+export function findProject(arg?: string, command = '<cmd>'): string {
   if (arg) {
     const path = resolve(arg);
     if (basename(path) === 'oodle.yaml' && existsSync(path)) return dirname(path);
@@ -46,7 +46,7 @@ export function findProject(arg?: string): string {
   const candidates = nearby(process.cwd());
   throw new OodleError('no-project', 'No oodle.yaml here or in any parent directory', {
     hint: candidates.length
-      ? `Found ${candidates.length === 1 ? 'a project' : 'projects'} below: ${candidates.slice(0, 3).map((c) => `\`oodle <cmd> ${display(c)}\``).join(', ')}`
+      ? `Found ${candidates.length === 1 ? 'a project' : 'projects'} below: ${candidates.slice(0, 3).map((c) => `\`oodle ${command} ${display(c)}\``).join(', ')}`
       : 'Run `oodle init` to start one.',
   });
 }

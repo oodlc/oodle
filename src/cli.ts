@@ -405,7 +405,7 @@ function runSummaryJson(run: RunResult, elapsed: number) {
 
 async function cmdRun(ctx: Ctx): Promise<number> {
   if (ctx.flags.watch) return watchLoop(ctx);
-  const dir = findProject(ctx.args[0]);
+  const dir = findProject(ctx.args[0], 'run');
   const t0 = performance.now();
   if (ctx.format === 'text') heading('run', dir);
   const run = await runWithProgress(dir, 'Running', ctx.flags.only);
@@ -440,7 +440,7 @@ async function cmdRun(ctx: Ctx): Promise<number> {
 
 async function cmdLint(ctx: Ctx): Promise<number> {
   if (ctx.flags.watch) return watchLoop(ctx);
-  const dir = findProject(ctx.args[0]);
+  const dir = findProject(ctx.args[0], 'lint');
   const catalog = loadCatalog(dir, loadConfig(dir));
   const result = lint(catalog);
   annotateLint(dir, result);
@@ -509,8 +509,18 @@ function checkoutBase(projectDir: string, ref: string): { dir: string; sha: stri
 }
 
 async function diffAndReport(ctx: Ctx, baseDir: string, headDir: string, labels: { base: string; head: string }, t0: number): Promise<number> {
-  const base = await runWithProgress(baseDir, `Running base ${e.dim(labels.base)}`);
-  const head = await runWithProgress(headDir, `Running head ${e.dim(labels.head)}`);
+  const side = async (dir: string, which: 'base' | 'head', label: string) => {
+    try {
+      return await runWithProgress(dir, `Running ${which} ${e.dim(label)}`);
+    } catch (error) {
+      // Say which side failed: a broken base needs a different fix from a broken head.
+      const known = asOodleError(error);
+      if (known) known.message = `${known.message} (in the ${which}: ${label})`;
+      throw known ?? error;
+    }
+  };
+  const base = await side(baseDir, 'base', labels.base);
+  const head = await side(headDir, 'head', labels.head);
   const report = diffRuns(base, head);
   const md = diffMarkdown(report);
   if (typeof ctx.flags.md === 'string') writeFileSync(ctx.flags.md, md);
@@ -525,17 +535,29 @@ async function diffAndReport(ctx: Ctx, baseDir: string, headDir: string, labels:
     else await say('happy', 'Nothing blocking. Every outcome intact.');
     const next: string[] = [];
     if (typeof ctx.flags.md === 'string') next.push(`PR comment written to ${e.cyan(ctx.flags.md)}`);
-    else next.push(`Write a PR comment: ${e.cyan(`oodle ${process.argv.slice(2).join(' ')} --md diff.md`)}`);
+    else next.push(`Write a PR comment: ${e.cyan(`oodle ${withoutFormat(process.argv.slice(2)).join(' ')} --md diff.md`)}`);
+    if (report.gaps.length) next.push(`See a proposed catalog entry for each unknown route: ${e.cyan(`oodle run ${display(headDir)} --verbose`)}`);
     if (report.blocking) next.push('Blocking changes need a human: fix the code, or update the catalog and get the change approved.');
     hints(next);
   }
   return report.blocking ? EXIT.blocking : EXIT.ok;
 }
 
+/** The user's own command line, minus output-format flags, for suggesting a variant of it. */
+function withoutFormat(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--json' || argv[i].startsWith('--format=')) continue;
+    if (argv[i] === '--format') { i++; continue; }
+    out.push(/[\s*?"'$]/.test(argv[i]) ? `"${argv[i]}"` : argv[i]);
+  }
+  return out;
+}
+
 async function cmdCheck(ctx: Ctx): Promise<number> {
   const t0 = performance.now();
-  const headDir = findProject(ctx.args[0]);
-  const ref: string = ctx.flags['base-ref'] ?? defaultBaseRef(headDir);
+  const headDir = findProject(ctx.args[0], 'check');
+  const ref: string = ctx.flags['base-ref']?.trim() || defaultBaseRef(headDir);
   if (ctx.format === 'text') heading('check', headDir);
   const spin = spinner(`Checking out ${ref}`);
   let base: ReturnType<typeof checkoutBase>;
@@ -608,7 +630,7 @@ async function cmdCompletion(ctx: Ctx): Promise<number> {
 
 /** Re-runs the command in a child process on every change, so the app is always freshly imported. */
 async function watchLoop(ctx: Ctx): Promise<number> {
-  const dir = findProject(ctx.args[0]);
+  const dir = findProject(ctx.args[0], process.argv[2]);
   const argv = process.argv.slice(2).filter((a) => a !== '--watch' && a !== '-w');
   let child: ChildProcess | undefined;
   let timer: NodeJS.Timeout | undefined;
@@ -734,7 +756,7 @@ function asOodleError(error: unknown): OodleError | null {
   if (error instanceof CatalogError) {
     return new OodleError('catalog', `The catalog has ${error.problems.length === 1 ? 'a problem' : `${error.problems.length} problems`}`, {
       problems: error.problems,
-      hint: 'Fix the files listed above. The schema is in spec/catalog.schema.json.',
+      hint: 'Fix the files listed above, then run `oodle lint` to confirm.',
     });
   }
   return null;
@@ -755,9 +777,14 @@ async function fail(error: unknown): Promise<number> {
   if (known) {
     if (known.code !== 'usage') await say('oops', 'I could not finish.');
     process.stderr.write(`\n${e.red(e.bold(`${sym.fail} ${known.message}`))}\n`);
-    for (const p of known.problems) process.stderr.write(`  ${e.dim(sym.bar)} ${p}\n`);
+    // Multi-line problems (YAML and compiler errors carry a code frame) stay inside the gutter.
+    for (const p of known.problems) for (const l of p.split('\n').filter((x) => x.trim())) process.stderr.write(`  ${e.dim(sym.bar)} ${l}\n`);
     if (known.hint) process.stderr.write(`  ${e.dim(sym.arrow)} ${known.hint}\n`);
-    if (settings.debug && known.stack) process.stderr.write(`\n${e.dim(known.stack)}\n`);
+    if (settings.debug) {
+      const cause = (known as Error & { cause?: Error }).cause;
+      process.stderr.write(`\n${e.dim(known.stack ?? '')}\n`);
+      if (cause?.stack) process.stderr.write(`\n${e.dim(`Caused by: ${cause.stack}`)}\n`);
+    }
     return known.exitCode;
   }
   // Not ours to explain: this is a bug, so make reporting it effortless.

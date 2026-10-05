@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import type { AppContext, OodleApp, CreateApp } from './contract.ts';
@@ -36,7 +36,9 @@ export async function loadApp(projectDir: string, config: Config): Promise<Creat
   } catch (err) {
     const missing = (err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' && (err as Error).message.includes(resolve(projectDir, config.app));
     throw new OodleError('app-load', missing ? `App not found at ${config.app}` : `Could not load the app at ${config.app}`, {
-      problems: missing ? [] : [(err as Error).message.split('\n')[0]],
+      // Compiler errors (esbuild via tsx) put the useful part, file:line:col and the message, after the first line.
+      problems: missing ? [] : (err as Error).message.split('\n').filter((l) => l.trim()).slice(0, 8).map((l) => l.replaceAll(`${resolve(projectDir)}/`, `${relative(process.cwd(), resolve(projectDir)) || '.'}/`)),
+      cause: err,
       hint: missing ? 'Point "app" in oodle.yaml at the module whose default export is createApp(ctx).' : 'Fix the error above, then run again. Add --debug for the full stack.',
     });
   }
@@ -225,6 +227,7 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
     probeApp = createApp(simulate(mergeGiven(config.defaults?.given)).ctx);
   } catch (err) {
     throw new OodleError('app-crash', `createApp(ctx) threw: ${(err as Error).message}`, {
+      cause: err,
       hint: 'createApp runs with the state from defaults.given in oodle.yaml. Seed what it needs there, or make it tolerate an empty state.',
     });
   }

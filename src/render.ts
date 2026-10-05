@@ -11,13 +11,21 @@ import { columns, ms, out as s, pad, plural, sym, visible } from './term.ts';
 const indent = (n: number) => ' '.repeat(n);
 const detail = (text: string) => `      ${s.dim(sym.bar)} ${text}`;
 
-/** "[first_purchase] body.order_id: missing" -> condition dimmed, message plain. */
-function conditioned(line: string, paint = (x: string) => x, width = 0): string {
-  const m = /^\[([^\]]+)\] (.*)$/.exec(line);
-  return m ? `${s.dim(m[1].padEnd(width))}  ${paint(m[2])}` : paint(line);
+/**
+ * Findings arrive one per condition. The same finding under several conditions
+ * is shown once, labelled with every condition it happened under.
+ */
+function grouped(found: string[], paint = (x: string) => x): string[] {
+  const byMessage = new Map<string, string[]>();
+  for (const line of found) {
+    const m = /^\[([^\]]+)\] (.*)$/s.exec(line);
+    const [cond, msg] = m ? [m[1], m[2]] : ['', line];
+    byMessage.set(msg, [...(byMessage.get(msg) ?? []), cond].filter(Boolean));
+  }
+  const label = (conds: string[]) => (conds.join(', ').length <= 40 ? conds.join(', ') : plural(conds.length, 'condition'));
+  const width = Math.max(0, ...[...byMessage.values()].map((c) => label(c).length));
+  return [...byMessage].map(([msg, conds]) => detail(conds.length ? `${s.dim(label(conds).padEnd(width))}  ${paint(msg)}` : paint(msg)));
 }
-
-const condWidth = (obs: Observation[]) => Math.max(0, ...obs.filter((x) => x.failures.length || x.violations.length).map((x) => x.condition.length));
 
 function timings(obs: Observation[], room: number): string {
   if (!obs.length) return '';
@@ -57,11 +65,8 @@ export function renderRun(run: RunResult, view: RunView): string {
       if (!ok) broken++;
       lines.push(row(ok ? s.green(sym.ok) : s.red(sym.fail), ok ? o.id : s.bold(o.id), o.boundary, obs));
       if (view.verbose || !ok) lines.push(`      ${s.dim(s.italic(o.statement))}`);
-      const w = condWidth(obs);
-      for (const x of obs) {
-        for (const f of x.failures) lines.push(detail(conditioned(`[${x.condition}] ${f}`, s.red, w)));
-        for (const v of x.violations) lines.push(detail(conditioned(`[${x.condition}] ${v}`, s.red, w)));
-      }
+      if (view.verbose && obs.length > 1) lines.push(`      ${s.dim(obs.map((x) => `${x.condition} ${ms(x.latency_ms)}`).join(` ${sym.dot} `))}`);
+      lines.push(...grouped(obs.flatMap((x) => [...x.failures, ...x.violations].map((f) => `[${x.condition}] ${f}`)), s.red));
     }
     lines.push('');
   }
@@ -79,9 +84,8 @@ export function renderRun(run: RunResult, view: RunView): string {
       const mark = violated ? s.red(sym.fail) : drift ? s.yellow(sym.drift) : s.cyan(sym.watch);
       lines.push(row(mark, b.id, b.boundary, obs));
       if (view.verbose) lines.push(`      ${s.dim(s.italic(b.statement))}`);
-      const w = condWidth(obs);
-      for (const x of obs) for (const v of x.violations) lines.push(detail(conditioned(`[${x.condition}] ${v}`, s.red, w)));
-      for (const x of obs) for (const f of x.failures) lines.push(detail(conditioned(`[${x.condition}] drift: ${f}`, s.yellow, w)));
+      lines.push(...grouped(obs.flatMap((x) => x.violations.map((v) => `[${x.condition}] ${v}`)), s.red));
+      lines.push(...grouped(obs.flatMap((x) => x.failures.map((f) => `[${x.condition}] drift: ${f}`)), s.yellow));
     }
     lines.push('');
   }
@@ -103,7 +107,7 @@ export function renderRun(run: RunResult, view: RunView): string {
   }
 
   if (run.lint.errors.length || run.lint.warnings.length) {
-    lines.push(heading('Catalog lint', 'errors block'));
+    lines.push(lintHeading(run.lint));
     lines.push(...lintLines(run.lint));
     lines.push('');
   }
@@ -129,6 +133,8 @@ export function renderRun(run: RunResult, view: RunView): string {
   lines.push(`${verdict}  ${s.dim(facts.join(` ${sym.dot} `))}`);
   return lines.join('\n');
 }
+
+const lintHeading = (l: LintResult) => heading('Catalog lint', l.errors.length ? 'errors block' : 'warnings only · not blocking');
 
 /** Lint strings look like "file: id: message" or "file: message". */
 function splitLint(line: string): { file: string; rest: string } {
@@ -195,8 +201,7 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
       const paint = STATUS[o.status];
       lines.push(`  ${paint(MARK[o.status])} ${paint(pad(o.status, 9))} ${pad(o.blocking ? s.bold(o.id) : o.id, idWidth)}  ${s.dim(o.boundary)}${o.blocking ? `  ${s.red(s.bold('blocking'))}` : ''}`);
       if (o.status !== 'held') lines.push(`      ${s.dim(s.italic(o.statement))}`);
-      const w = Math.max(0, ...o.details.map((d) => /^\[([^\]]+)\]/.exec(d)?.[1].length ?? 0));
-      for (const d of o.details.filter((d) => o.status !== 'new' || o.blocking)) lines.push(detail(conditioned(d, undefined, w)));
+      if (o.status !== 'new' || o.blocking) lines.push(...grouped(o.details));
     }
     lines.push('');
   }
@@ -218,7 +223,7 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     lines.push(heading('Constraint violations', 'constraints hold on every run · blocking'));
     for (const v of violating) {
       lines.push(`  ${s.red(sym.fail)} ${v.where}`);
-      for (const x of v.violations) lines.push(detail(conditioned(x, s.red)));
+      lines.push(...grouped(v.violations, s.red));
     }
     lines.push('');
   }
@@ -229,11 +234,11 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     lines.push(heading('Behavior changes', 'observed · report only, never blocking'));
     for (const o of inside) {
       lines.push(`  ${s.yellow(sym.drift)} under ${o.id}`);
-      for (const b of o.behavior) lines.push(detail(s.dim(conditioned(b))));
+      lines.push(...grouped(o.behavior, s.dim));
     }
     for (const b of behaviors) {
       lines.push(`  ${s.yellow(sym.drift)} ${b.id} ${s.dim(b.status)}`);
-      for (const d of b.details) lines.push(detail(s.dim(conditioned(d))));
+      lines.push(...grouped(b.details, s.dim));
     }
     lines.push('');
   }
@@ -245,7 +250,7 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
   }
 
   if (r.lint.errors.length || r.lint.warnings.length) {
-    lines.push(heading('Catalog lint', 'errors block'));
+    lines.push(lintHeading(r.lint));
     lines.push(...lintLines(r.lint));
     lines.push('');
   }

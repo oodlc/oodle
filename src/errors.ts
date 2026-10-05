@@ -20,8 +20,8 @@ export class OodleError extends Error {
   hint?: string;
   problems: string[];
   exitCode: number;
-  constructor(code: string, message: string, opts: { hint?: string; problems?: string[]; exitCode?: number } = {}) {
-    super(message);
+  constructor(code: string, message: string, opts: { hint?: string; problems?: string[]; exitCode?: number; cause?: unknown } = {}) {
+    super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
     this.code = code;
     this.hint = opts.hint;
     this.problems = opts.problems ?? [];

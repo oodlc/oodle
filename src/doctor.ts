@@ -39,7 +39,7 @@ export async function doctor(arg?: string): Promise<Check[]> {
 
   let dir: string;
   try {
-    dir = findProject(arg);
+    dir = findProject(arg, 'doctor');
     checks.push({ name: 'project', status: 'ok', detail: display(dir) });
   } catch (err) {
     checks.push({ name: 'project', status: 'fail', ...problemText(err) });

@@ -1,9 +1,9 @@
-# Oodle, dogfooded. The CLI is the system under test: oodlc/app.ts runs the
+# Oodle, dogfooded. The CLI is the system under test: test/dogfood.ts runs the
 # real bin/oodle.js and returns what a person, script or agent can rely on.
 # Every other .yaml file in this folder is the catalog of Oodle's promises.
 # `oodle check` at the repo root blocks any change that breaks one of Oodle's
 # own promises, using Oodle.
-app: oodlc/app.ts
+app: test/dogfood.ts
 defaults:
   given:
     state: {}

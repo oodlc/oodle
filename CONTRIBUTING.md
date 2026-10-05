@@ -32,7 +32,7 @@ Commands, flags, examples and formats are declared once, in the registry at the 
 
 ## Oodle checks itself
 
-The root [`oodlc/`](oodlc/) folder declares what Oodle promises its users: broken outcomes block, refactors go through, `--json` is always one clean document, typos get a suggestion, and so on. `oodlc/app.ts` runs the real `bin/oodle.js` behind the OODLC app contract, and returns only the contract (exit codes, error codes, statuses), so runs are deterministic.
+The root [`oodlc/`](oodlc/) folder declares what Oodle promises its users: broken outcomes block, refactors go through, `--json` is always one clean document, typos get a suggestion, and so on. `test/dogfood.ts` runs the real `bin/oodle.js` behind the OODLC app contract, and returns only the contract (exit codes, error codes, statuses), so runs are deterministic.
 
 ```bash
 npm run oodle -- run           # do Oodle's promises hold?

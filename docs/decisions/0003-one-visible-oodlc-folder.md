@@ -51,10 +51,10 @@ The catalog is effectively the product spec: what customers must experience, app
 ## Consequences
 
 - `oodle init` scaffolds `oodlc/`, and `oodle init --migrate` moves a v0 project.
-- This repository and `examples/checkout` use the new layout. This repository's dogfood adapter is `oodlc/app.ts`.
+- This repository and `examples/checkout` use the new layout. This repository's dogfood adapter is `test/dogfood.ts`: it is test harness, so it stays out of `oodlc/`.
 - `spec/config.schema.json` no longer requires `catalog`.
 - `oodle check` can compare a base on the old layout with a head on the new one, so the migration commit itself diffs cleanly.
-- Code and data now share `oodlc/` in projects that put a harness there, like this one. The catalog loader only reads `.yaml` files, so this is safe.
+- `oodlc/` holds declarations only: config and catalog YAML. Apps and test harnesses live with the code, and `config.yaml` points at them.
 
 ## Revisit if
 

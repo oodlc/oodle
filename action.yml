@@ -16,8 +16,14 @@ inputs:
     description: 'Post the outcome diff as a pull request comment, updated in place on every push. Needs `pull-requests: write`.'
     default: 'true'
   fail-on-blocking:
-    description: 'Fail the job when a human needs to approve something (a broken, changed, redefined or removed outcome, or a constraint change or violation).'
+    description: 'Fail the job when something blocks: a broken outcome, a constraint violation, or a change to a promise (changed, redefined or removed outcome, constraint change) nobody has approved.'
     default: 'true'
+  approvals:
+    description: 'Read `/oodle approve <id@fingerprint>` lines from pull request reviews and comments by people with write access. Add `pull_request_review: { types: [submitted] }` to the workflow triggers so a review re-runs the check.'
+    default: 'true'
+  allow-self-approval:
+    description: 'Let the pull request author approve their own changes to promises. Off by default; turn it on for a repository with a single maintainer.'
+    default: 'false'
   node-version:
     description: 'Node.js version to run Oodle with.'
     default: '22'
@@ -29,6 +35,9 @@ outputs:
   blocking:
     description: 'Number of blocking findings.'
     value: ${{ steps.check.outputs.blocking }}
+  approved:
+    description: 'Number of approvals that unblocked a change.'
+    value: ${{ steps.check.outputs.approved }}
   exit-code:
     description: "Oodle's exit code: 0 ok, 1 blocking, 2 could not run."
     value: ${{ steps.check.outputs.exit-code }}
@@ -56,9 +65,13 @@ runs:
         INPUT_PROJECT: ${{ inputs.project }}
         INPUT_BASE_REF: ${{ inputs.base-ref }}
         INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_APPROVALS: ${{ inputs.approvals }}
+        INPUT_ALLOW_SELF_APPROVAL: ${{ inputs.allow-self-approval }}
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        PR_BASE_REF: ${{ github.base_ref }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        # github.base_ref is only set on pull_request events; a review event carries the base in its payload.
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         PUSH_BEFORE: ${{ github.event.before }}
       run: bash "${{ github.action_path }}/scripts/action.sh"
 
@@ -68,7 +81,7 @@ runs:
       shell: bash
       run: |
         if [ "${{ steps.check.outputs.exit-code }}" = "1" ]; then
-          echo "::error title=Oodle::${{ steps.check.outputs.blocking }} blocking finding(s). A human needs to approve them; see the outcome diff."
+          echo "::error title=Oodle::${{ steps.check.outputs.blocking }} blocking finding(s). Fix a broken outcome; a change to a promise can be approved with /oodle approve in a pull request review. See the outcome diff."
         else
           echo "::error title=Oodle::Oodle could not run. See the 'Check outcomes' step."
         fi

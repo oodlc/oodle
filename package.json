@@ -1,6 +1,6 @@
 {
   "name": "oodle",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that protects declared outcomes and watches observed behavior.",
   "homepage": "https://github.com/oodlc/oodle#readme",
   "repository": {
@@ -13,6 +13,11 @@
   "type": "module",
   "bin": {
     "oodle": "./bin/oodle.js"
+  },
+  "exports": {
+    "./adapter": "./src/adapter.ts",
+    "./contract": "./src/contract.ts",
+    "./package.json": "./package.json"
   },
   "files": [
     "bin",
@@ -47,7 +52,12 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/koa": "^3.0.3",
     "@types/node": "^26.6.4",
+    "express": "^5.2.1",
+    "hono": "^4.13.13",
+    "koa": "^3.2.1",
     "typescript": "^7.0.2"
   }
 }

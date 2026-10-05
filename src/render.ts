@@ -216,7 +216,8 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     lines.push(heading('Outcomes', 'declared · any change needs a human'));
     for (const o of shown) {
       const paint = STATUS[o.status];
-      lines.push(`  ${paint(MARK[o.status])} ${paint(pad(o.status, 9))} ${pad(o.blocking ? s.bold(o.id) : o.id, idWidth)}  ${s.dim(o.boundary)}${o.blocking ? `  ${s.red(s.bold('blocking'))}` : ''}`);
+      const tag = o.approved_by ? `  ${s.green(`approved${o.approved_by.length ? ` by ${o.approved_by.join(', ')}` : ''}`)}` : o.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
+      lines.push(`  ${paint(MARK[o.status])} ${paint(pad(o.status, 9))} ${pad(o.blocking ? s.bold(o.id) : o.id, idWidth)}  ${s.dim(o.boundary)}${tag}`);
       if (o.status !== 'held') lines.push(`      ${s.dim(s.italic(o.statement))}`);
       if (o.status !== 'new' || o.blocking) lines.push(...grouped(o.details));
     }
@@ -226,7 +227,8 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
   if (r.constraints.length) {
     lines.push(heading('Constraints', 'durable · changing one needs a human'));
     for (const c of r.constraints) {
-      lines.push(`  ${c.blocking ? s.red(sym.fail) : s.cyan('+')} ${pad(c.status, 9)} ${c.id}${c.blocking ? `  ${s.red(s.bold('blocking'))}` : ''}`);
+      const tag = c.approved_by ? `  ${s.green(`approved${c.approved_by.length ? ` by ${c.approved_by.join(', ')}` : ''}`)}` : c.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
+      lines.push(`  ${c.blocking ? s.red(sym.fail) : c.approved_by ? s.green(sym.ok) : s.cyan('+')} ${pad(c.status, 9)} ${c.id}${tag}`);
       for (const d of c.details) lines.push(detail(d));
     }
     lines.push('');
@@ -269,6 +271,12 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
   if (r.lint.errors.length || r.lint.warnings.length) {
     lines.push(lintHeading(r.lint));
     lines.push(...lintLines(r.lint));
+    lines.push('');
+  }
+
+  if (r.approvals.stale.length) {
+    lines.push(heading('Stale approvals', 'matched nothing · not applied'));
+    for (const a of r.approvals.stale) lines.push(`  ${s.yellow(sym.warn)} ${a.id}@${a.fingerprint}${a.by ? s.dim(` by ${a.by}`) : ''}  ${s.dim(a.reason)}`);
     lines.push('');
   }
 
@@ -339,8 +347,13 @@ export function renderMutate(r: MutateReport, view: { verbose?: boolean; minScor
   if (r.tests) {
     lines.push(heading('Tests', s.dim(r.tests.command)));
     if (r.tests.redundant.length) {
-      lines.push(`  ${s.bold('Candidates to delete')}  ${s.dim('they catch nothing the catalog misses')}`);
+      lines.push(`  ${s.bold('Covered by the catalog')}  ${s.dim(`every planted bug they caught, an outcome caught too · ${plural(r.summary.mutants, 'bug')} planted`)}`);
       for (const t of r.tests.redundant) lines.push(`    ${s.dim(sym.dot)} ${t}`);
+      lines.push(`    ${s.dim(`Candidates to delete, after a read: a test can still guard inputs no outcome sends.`)}`);
+    }
+    if (r.tests.no_kills.length) {
+      lines.push(`  ${s.bold('Caught no planted bug')}  ${s.dim('no evidence either way · try more mutants with --max, or --files for the code they test')}`);
+      for (const t of r.tests.no_kills) lines.push(`    ${s.dim(sym.dot)} ${t}`);
     }
     const keep = r.tests.killers.filter((k) => k.beyond_catalog);
     if (keep.length) {

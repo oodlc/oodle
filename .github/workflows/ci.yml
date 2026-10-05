@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   test:
@@ -24,24 +23,3 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-
-  # Dogfood: the action from this checkout guards the example project and Oodle's
-  # own promises (the root catalog). On pull requests a blocking change fails the
-  # job until a human approves it; on main it is reported only, since there is no
-  # pull request left to approve it in.
-  outcomes:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: npm ci
-      - name: Example project
-        uses: ./
-        with:
-          project: examples/checkout
-          comment: 'false'
-          fail-on-blocking: ${{ github.event_name == 'pull_request' }}
-      - name: Oodle's own promises
-        uses: ./
-        with:
-          project: .
-          fail-on-blocking: ${{ github.event_name == 'pull_request' }}

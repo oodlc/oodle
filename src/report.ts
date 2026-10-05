@@ -19,6 +19,13 @@ export function groupByCondition(found: string[]): { message: string; conditions
 const mdFindings = (found: string[]) =>
   groupByCondition(found).map(({ message, conditions }) => `${message}${conditions.length ? ` _(${conditions.join(', ')})_` : ''}`);
 
+const approvedBy = (by: string[] | undefined) => (by?.length ? ` by ${by.join(', ')}` : '');
+
+/** The pending approvals as tokens, for a reviewer to paste. */
+export function approvalTokens(r: DiffReport): string[] {
+  return [...r.outcomes, ...r.constraints].filter((d) => d.blocking && d.fingerprint).map((d) => `${d.id}@${d.fingerprint}`);
+}
+
 const ICON: Record<string, string> = { held: '✅', changed: '🟡', broken: '❌', failing: '❌', new: '🆕', removed: '🗑️', redefined: '✏️', proposed: '📝' };
 
 export function diffMarkdown(r: DiffReport): string {
@@ -38,7 +45,8 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push('| --- | --- | --- | --- |');
     for (const o of notable) {
       const what = mdFindings(o.details).map((d) => d.replace(/\|/g, '\\|')).join('<br>');
-      lines.push(`| ${ICON[o.status]} ${o.status}${o.blocking ? ' **(blocking)**' : ''} | \`${o.id}\`<br>${o.statement} | ${o.boundary} | ${what} |`);
+      const tag = o.approved_by ? ` ✅ approved${approvedBy(o.approved_by)}` : o.blocking ? ' **(blocking)**' : '';
+      lines.push(`| ${ICON[o.status]} ${o.status}${tag} | \`${o.id}\`<br>${o.statement} | ${o.boundary} | ${what} |`);
     }
     lines.push('');
   }
@@ -46,7 +54,7 @@ export function diffMarkdown(r: DiffReport): string {
   if (r.constraints.length) {
     lines.push('### Constraint changes');
     lines.push('');
-    for (const c of r.constraints) lines.push(`- ${ICON[c.status]} \`${c.id}\` ${c.status}${c.blocking ? ' **(blocking)**' : ''}: ${c.details.join('; ')}`);
+    for (const c of r.constraints) lines.push(`- ${ICON[c.status]} \`${c.id}\` ${c.status}${c.approved_by ? ` ✅ approved${approvedBy(c.approved_by)}` : c.blocking ? ' **(blocking)**' : ''}: ${c.details.join('; ')}`);
     lines.push('');
   }
 
@@ -88,6 +96,24 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push(stringify({ behaviors: r.gaps.map((g) => g.proposal) }).trimEnd());
     lines.push('```');
     lines.push('');
+  }
+
+  const tokens = approvalTokens(r);
+  if (tokens.length || r.approvals.stale.length) {
+    lines.push('### Approve');
+    lines.push('');
+    if (tokens.length) {
+      lines.push('These change a promise on purpose? A maintainer other than the author can approve them by submitting a pull request review that contains:');
+      lines.push('');
+      lines.push('```');
+      lines.push(`/oodle approve ${tokens.join(' ')}`);
+      lines.push('```');
+      lines.push('');
+      lines.push('Each approval is bound to the change as it is now. If a later push changes it, it needs approving again.');
+      lines.push('');
+    }
+    for (const a of r.approvals.stale) lines.push(`- ⚠️ approval \`${a.id}@${a.fingerprint}\`${approvedBy(a.by ? [a.by] : undefined)} no longer applies: ${a.reason}`);
+    if (r.approvals.stale.length) lines.push('');
   }
 
   if (r.lint.errors.length || r.lint.warnings.length) {

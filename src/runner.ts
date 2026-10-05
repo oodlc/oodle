@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
@@ -36,7 +37,8 @@ export async function loadApp(projectDir: string, config: Config): Promise<Creat
   try {
     mod = await import(url);
   } catch (err) {
-    const missing = (err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' && (err as Error).message.includes(resolve(projectDir, config.app));
+    // The app file itself is missing, not something it imports (whose error also names the app, as "imported from").
+    const missing = !existsSync(resolve(projectDir, config.app));
     throw new OodleError('app-load', missing ? `App not found at ${config.app}` : `Could not load the app at ${config.app}`, {
       // Compiler errors (esbuild via tsx) put the useful part, file:line:col and the message, after the first line.
       problems: missing ? [] : (err as Error).message.split('\n').filter((l) => l.trim()).slice(0, 8).map((l) => l.replaceAll(`${resolve(projectDir)}/`, `${relative(process.cwd(), resolve(projectDir)) || '.'}/`)),

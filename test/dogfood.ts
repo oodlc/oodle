@@ -76,6 +76,7 @@ function contract(r: { code: number; stdout: string; stderr: string }, jsonMode:
       body.constraints = byStatus(doc.constraints);
       body.unknown = doc.gaps.map((g: any) => g.route).sort();
       // The reviewer-facing wording of behavior changes, one finding per line.
+      if (doc.approvals?.applied.length) body.approved = doc.approvals.applied.length;
       body.notes = [...new Set([...doc.outcomes.flatMap((o: any) => o.behavior), ...doc.behaviors.flatMap((b: any) => b.details)].map((l: string) => l.replace(/^\[[^\]]+\] /, '')))].sort().join('\n');
     }
   }
@@ -139,7 +140,12 @@ export default function createApp(ctx: AppContext): OodleApp {
         writeFileSync(path, after);
       }
       ctx.effects.emit('internal.cli', { args: ['diff', 'examples/checkout', body.mutation, '--json'] });
-      return contract(oodle(['diff', EXAMPLE, head, '--json'], body?.env ?? {}), true);
+      const first = oodle(['diff', EXAMPLE, head, '--json'], body?.env ?? {});
+      if (!body?.approve) return contract(first, true);
+      // A reviewer approves every change Oodle offers for approval, then the check runs again.
+      const offered = [...(parse(first.stdout)?.outcomes ?? []), ...(parse(first.stdout)?.constraints ?? [])].filter((d: any) => d.fingerprint).map((d: any) => `${d.id}@${d.fingerprint}`);
+      ctx.effects.emit('internal.cli', { args: ['diff', 'examples/checkout', body.mutation, '--json', '--approve', `(${offered.length})`] });
+      return contract(oodle(['diff', EXAMPLE, head, '--json', ...offered.flatMap((t) => ['--approve', t])], body?.env ?? {}), true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

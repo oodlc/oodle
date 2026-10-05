@@ -133,6 +133,11 @@ const OPERATOR_NAME: Record<string, string> = {
   '<=': 'boundary', '>=': 'boundary', '<': 'boundary', '>': 'boundary',
   '&&': 'logic', '||': 'logic', '+': 'arithmetic', '-': 'arithmetic', '*': 'arithmetic', '/': 'arithmetic',
 };
+/**
+ * Lines no simulated run reaches or should judge: starting a server for real (Oodle drives the app in
+ * process and never listens) and logging. A bug planted there survives every catalog, and says nothing.
+ */
+const BOILERPLATE = /\.listen\(|process\.argv\b|require\.main\b|import\.meta\.main\b|process\.env\.PORT\b|^\s*console\.\w+\(/;
 /** These read as generics, arrows or unary signs when they touch their neighbours, so only spaced ones are comparisons or arithmetic. */
 const NEEDS_SPACES = new Set(['<', '>', '<=', '>=', '+', '-', '*', '/']);
 const KEYWORD_LINE = /^\s*(if|for|while|switch|return|throw|const|let|var|else|case|do|try|catch|import|export|type|interface|function|class)\b/;
@@ -172,7 +177,7 @@ export function mutantsOf(src: string, file: string): Omit<Mutant, 'id'>[] {
     return { line: lo + 1, column: pos - lineStarts[lo] + 1 };
   };
   const typeLines = typeOnlyLines(lines);
-  const skipLine = (n: number) => typeLines.has(n - 1) || /^\s*(import|export\s+[^=]*\bfrom\b|export\s*\{)/.test(lines[n - 1]) || /\brequire\(|import\(/.test(lines[n - 1]);
+  const skipLine = (n: number) => typeLines.has(n - 1) || /^\s*(import|export\s+[^=]*\bfrom\b|export\s*\{)/.test(lines[n - 1]) || /\brequire\(|import\(/.test(lines[n - 1]) || BOILERPLATE.test(lines[n - 1]);
   const out: Omit<Mutant, 'id'>[] = [];
   const add = (start: number, end: number, operator: string, to: string) => {
     const at = where(start);
@@ -272,13 +277,16 @@ function importGraph(projectDir: string, entry: string): string[] {
   return [...seen].sort();
 }
 
-/** Files to mutate: the given globs, or every project file the app imports, minus tests. */
+/** An oodle/adapter module only wires the app into the simulation. Mutating it tests Oodle, not the app. */
+const isAdapter = (projectDir: string, file: string) => /\bfrom\s*['"]oodle\/adapter['"]/.test(readFileSync(join(projectDir, file), 'utf8'));
+
+/** Files to mutate: the given globs, or every project file the app imports, minus tests and adapters. */
 export function sourceFiles(projectDir: string, globs?: string[]): string[] {
   if (globs?.length) {
     const res = globs.map(globRe);
     return walk(projectDir, projectDir).filter((f) => SOURCE.test(f) && res.some((r) => r.test(f)));
   }
-  return importGraph(projectDir, loadConfig(projectDir).app);
+  return importGraph(projectDir, loadConfig(projectDir).app).filter((f) => !isAdapter(projectDir, f));
 }
 
 // ── Workspaces ──────────────────────────────────────────────────────────────
@@ -425,8 +433,13 @@ export interface MutateReport {
     /** Failing before any mutation; ignored. */
     baseline_failing: string[];
     killers: (Killer & { beyond_catalog: number })[];
-    /** Tests that catch nothing the catalog does not already catch: candidates to delete. */
+    /**
+     * Tests that caught at least one planted bug, and only bugs the catalog caught too. Evidence the
+     * outcomes cover them on these bugs, not proof: a test may still guard inputs no outcome sends.
+     */
     redundant: string[];
+    /** Tests that caught no planted bug at all. That says nothing either way: the sample may not reach them. */
+    no_kills: string[];
     /** Mutants the tests catch and the catalog misses: each is an outcome or condition worth writing. */
     catalog_misses: number[];
   };
@@ -610,7 +623,8 @@ export async function mutate(projectDir: string, opts: MutateOptions = {}): Prom
         command: opts.tests,
         baseline_failing: testBaseline,
         killers: tally(testKills, testUnion).map((k) => ({ ...k, beyond_catalog: [...testKills.get(k.id)!].filter((m) => !catalogKilled.has(m)).length })),
-        redundant: [...testKills].filter(([, s]) => [...s].every((m) => catalogKilled.has(m))).map(([k]) => k).sort(),
+        redundant: [...testKills].filter(([, s]) => s.size && [...s].every((m) => catalogKilled.has(m))).map(([k]) => k).sort(),
+        no_kills: [...testKills].filter(([, s]) => !s.size).map(([k]) => k).sort(),
         catalog_misses: results.filter((r) => r.tests_failed?.length && !catalogKilled.has(r.id)).map((r) => r.id),
       };
     }

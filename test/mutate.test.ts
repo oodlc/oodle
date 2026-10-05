@@ -82,6 +82,7 @@ test('cli: oodle mutate scores the catalog and finds which unit tests it makes r
   assert.ok(r.mutants.some((m: any) => m.from === '>=' && m.status === 'survived'));
   assert.ok(r.score > 0 && r.score < 100);
   assert.deepEqual(r.tests.redundant, ['single item price']);
+  assert.deepEqual(r.tests.no_kills, []);
   assert.ok(r.tests.killers.find((k: any) => k.id === 'bulk discount').beyond_catalog > 0);
   assert.ok(r.tests.catalog_misses.length > 0);
 

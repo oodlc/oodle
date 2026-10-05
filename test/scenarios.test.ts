@@ -111,6 +111,81 @@ test('editing an outcome expectation: redefined, needs approval', async () => {
   assert.equal(b.blocking, true);
 });
 
+test('approval: an approved change to a promise does not block, and says who approved it', async () => {
+  const head = copyExample();
+  edit(head, 'src/checkout.ts', "status: 'confirmed', total_cents }", "status: 'confirmed', total_cents, currency: 'usd' }");
+  const [base, after] = [await runProject(EXAMPLE), await runProject(head)];
+  const pending = diffRuns(base, after).outcomes.find((o) => o.id === 'checkout.payment-confirmed')!;
+  assert.match(pending.fingerprint!, /^[0-9a-f]{8}$/);
+  assert.match(diffMarkdown(diffRuns(base, after)), new RegExp(`/oodle approve checkout\\.payment-confirmed@${pending.fingerprint}`));
+
+  const report = diffRuns(base, after, [{ id: pending.id, fingerprint: pending.fingerprint!, by: 'reviewer' }]);
+  const approved = report.outcomes.find((o) => o.id === pending.id)!;
+  assert.equal(report.blocking, 0);
+  assert.equal(approved.status, 'changed');
+  assert.equal(approved.blocking, false);
+  assert.deepEqual(approved.approved_by, ['reviewer']);
+  assert.deepEqual(report.approvals.applied.map((a) => a.id), [pending.id]);
+  assert.match(diffMarkdown(report), /changed ✅ approved by reviewer/);
+});
+
+test('approval: a push that changes what was approved makes the approval stale', async () => {
+  const head = copyExample();
+  edit(head, 'src/checkout.ts', "status: 'confirmed', total_cents }", "status: 'confirmed', total_cents, currency: 'usd' }");
+  const base = await runProject(EXAMPLE);
+  const { fingerprint } = diffRuns(base, await runProject(head)).outcomes.find((o) => o.id === 'checkout.payment-confirmed')!;
+  // Same shape of change ("body.currency added"), different value: not what was approved.
+  // A fresh copy, since an app module is imported once per process.
+  const pushed = copyExample();
+  edit(pushed, 'src/checkout.ts', "status: 'confirmed', total_cents }", "status: 'confirmed', total_cents, currency: 'eur' }");
+  const report = diffRuns(base, await runProject(pushed), [{ id: 'checkout.payment-confirmed', fingerprint: fingerprint! }]);
+  assert.equal(report.blocking, 1);
+  assert.equal(report.approvals.stale.length, 1);
+  assert.match(report.approvals.stale[0].reason, /different now/);
+});
+
+test('approval: a broken outcome or a violated constraint is never approvable', async () => {
+  const { report, byId } = await diffAfter((dir) => edit(dir, 'src/checkout.ts', '{ order_id: order.id,', '{ orderId: order.id,'));
+  assert.equal(byId('checkout.payment-confirmed').status, 'broken');
+  assert.equal(byId('checkout.payment-confirmed').fingerprint, undefined);
+  const head = copyExample();
+  edit(head, 'src/checkout.ts', '{ order_id: order.id,', '{ orderId: order.id,');
+  const forced = diffRuns(await runProject(EXAMPLE), await runProject(head), [{ id: 'checkout.payment-confirmed', fingerprint: '00000000' }]);
+  assert.equal(forced.blocking, report.blocking);
+  assert.match(forced.approvals.stale[0].reason, /broken, which can't be approved/);
+});
+
+test('approval: redefining an outcome and approving the redefinition unblocks it', async () => {
+  const head = copyExample();
+  edit(head, 'oodlc/checkout.yaml', 'latency_ms_max: 2000', 'latency_ms_max: 3000');
+  const base = await runProject(EXAMPLE);
+  const after = await runProject(head);
+  const d = diffRuns(base, after).outcomes.find((o) => o.id === 'checkout.payment-confirmed')!;
+  assert.equal(d.status, 'redefined');
+  assert.equal(diffRuns(base, after, [{ id: d.id, fingerprint: d.fingerprint! }]).blocking, 0);
+});
+
+test('approval: the Action keeps approvals by maintainers other than the author', async () => {
+  // @ts-ignore: plain ESM script without types
+  const { collect } = await import('../scripts/approvals.mjs');
+  const item = (login: string, body: string, association = 'MEMBER', extra = {}) => ({ user: { login, type: 'User' }, author_association: association, body, ...extra });
+  const items = [
+    item('reviewer', 'Looks right.\n/oodle approve checkout.payment-confirmed@1a2b3c4d no-charge-without-order@deadbeef'),
+    item('author', '/oodle approve checkout.payment-confirmed@1a2b3c4d'),
+    item('drive-by', '/oodle approve checkout.payment-confirmed@1a2b3c4d', 'CONTRIBUTOR'),
+    item('dismissed', '/oodle approve checkout.payment-confirmed@1a2b3c4d', 'MEMBER', { state: 'DISMISSED' }),
+    { user: { login: 'bot', type: 'Bot' }, author_association: 'MEMBER', body: '/oodle approve checkout.payment-confirmed@1a2b3c4d' },
+    item('quoter', '> /oodle approve `checkout.payment-confirmed@1a2b3c4d`'),
+    item('typo', '/oodle approve checkout.payment-confirmed@zzz'),
+  ];
+  assert.deepEqual(collect(items, { author: 'Author', allowSelf: false }), [
+    { id: 'checkout.payment-confirmed', fingerprint: '1a2b3c4d', by: 'reviewer' },
+    { id: 'no-charge-without-order', fingerprint: 'deadbeef', by: 'reviewer' },
+    { id: 'checkout.payment-confirmed', fingerprint: '1a2b3c4d', by: 'quoter' },
+  ]);
+  assert.ok(collect(items, { author: 'author', allowSelf: true }).some((a: { by: string }) => a.by === 'author'));
+});
+
 test('lint: outcome without an intent is an error', () => {
   const dir = copyExample();
   edit(dir, 'oodlc/checkout.yaml', 'intent: buy-without-surprises\n    statement: After', 'statement: After');
@@ -230,6 +305,49 @@ test('cli: oodle check diffs the working tree against a git ref', () => {
   const res = spawnSync(process.execPath, [cli, 'check', join(repo, 'app'), '--base-ref', 'HEAD', '--md', join(repo, 'diff.md')], { encoding: 'utf8' });
   assert.equal(res.status, 1, res.stderr + res.stdout);
   assert.match(readFileSync(join(repo, 'diff.md'), 'utf8'), /1 blocking/);
+});
+
+test('cli: oodle check --approve unblocks an intended change, and refuses a malformed token', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'oodle-git-'));
+  cpSync(EXAMPLE, join(repo, 'app'), { recursive: true });
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  g('init', '-q', '-b', 'main');
+  g('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
+  g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base');
+  edit(join(repo, 'app'), 'src/checkout.ts', "status: 'confirmed', total_cents }", "status: 'confirmed', total_cents, currency: 'usd' }");
+
+  const cli = resolve(import.meta.dirname, '..', 'bin', 'oodle.js');
+  const check = (...extra: string[]) => spawnSync(process.execPath, [cli, 'check', join(repo, 'app'), '--base-ref', 'HEAD', '--json', ...extra], { encoding: 'utf8' });
+  const pending = JSON.parse(check().stdout);
+  const d = pending.outcomes.find((o: { fingerprint?: string }) => o.fingerprint);
+  const approved = check('--approve', `${d.id}@${d.fingerprint}`);
+  assert.equal(approved.status, 0, approved.stdout);
+  assert.equal(JSON.parse(approved.stdout).approvals.applied.length, 1);
+
+  writeFileSync(join(repo, 'approvals.json'), JSON.stringify([{ id: d.id, fingerprint: d.fingerprint, by: 'reviewer' }]));
+  const fromFile = JSON.parse(check('--approvals', join(repo, 'approvals.json')).stdout);
+  assert.deepEqual(fromFile.outcomes.find((o: { id: string }) => o.id === d.id).approved_by, ['reviewer']);
+
+  const bad = check('--approve', d.id);
+  assert.equal(bad.status, 2);
+  assert.equal(JSON.parse(bad.stdout).error.code, 'usage');
+});
+
+test('cli: the change that adds Oodle passes: the base promised nothing, so every outcome is new', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'oodle-git-'));
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  g('init', '-q', '-b', 'main');
+  writeFileSync(join(repo, 'README.md'), 'before Oodle\n');
+  g('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
+  g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base');
+  cpSync(EXAMPLE, join(repo, 'app'), { recursive: true });
+
+  const cli = resolve(import.meta.dirname, '..', 'bin', 'oodle.js');
+  const res = spawnSync(process.execPath, [cli, 'check', join(repo, 'app'), '--base-ref', 'main', '--json'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stdout);
+  const doc = JSON.parse(res.stdout);
+  assert.match(doc.base, /before Oodle/);
+  assert.deepEqual([...new Set(doc.outcomes.map((o: { status: string }) => o.status))], ['new']);
 });
 
 test('effect diffs read as added, removed, renamed, recounted or changed at a path', async () => {

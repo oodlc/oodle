@@ -1,0 +1,11 @@
+# An existing Express service, run through the oodle/adapter. See ../oodle.app.ts.
+app: oodle.app.ts
+defaults:
+  given:
+    state:
+      users:
+        u1: { id: u1, email: ada@example.com, plan: pro }
+    stubs:
+      payment.charge: { result: { id: ch_1, status: succeeded }, latency_ms: 250 }
+      payment.refund: { result: { id: re_1, status: succeeded } }
+      email.sent: { result: {} }

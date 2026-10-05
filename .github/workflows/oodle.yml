@@ -1,0 +1,48 @@
+name: Oodle
+
+# Dogfood: the action from this checkout guards the example projects and Oodle's
+# own promises (the root catalog). On pull requests a blocking change fails the
+# job until it is fixed, or, for a change to a promise, approved with
+# `/oodle approve` in a review (docs/decisions/0007). On main it is reported
+# only, since there is no pull request left to approve it in.
+#
+# Its own workflow, so a submitted review re-runs only this check and never
+# skips another required one.
+on:
+  pull_request:
+  pull_request_review:
+    types: [submitted]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: oodle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  outcomes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm ci
+      - name: Example project
+        uses: ./
+        with:
+          project: examples/checkout
+          comment: 'false'
+          fail-on-blocking: ${{ github.event_name != 'push' }}
+      - name: Existing Express service
+        uses: ./
+        with:
+          project: examples/express-orders
+          comment: 'false'
+          fail-on-blocking: ${{ github.event_name != 'push' }}
+      - name: Oodle's own promises
+        uses: ./
+        with:
+          project: .
+          fail-on-blocking: ${{ github.event_name != 'push' }}

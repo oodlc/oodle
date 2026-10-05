@@ -36,7 +36,7 @@ export function annotateLint(projectDir: string, lint: LintResult): void {
 export function annotateRun(run: RunResult): void {
   if (!inGitHubActions()) return;
   for (const o of run.observations) {
-    const problems = [...(o.kind === 'outcome' ? o.failures : []), ...o.violations];
+    const problems = [...(o.kind === 'outcome' && !o.proposed ? o.failures : []), ...o.violations];
     if (problems.length) annotate('error', problems.join('\n'), { title: `Oodle: ${o.kind} ${o.id} [${o.condition}]` });
   }
   for (const g of run.gaps) {

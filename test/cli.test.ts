@@ -38,7 +38,7 @@ test('help: top level, per command, and every spelling of it', () => {
 
 test('help --json describes every command, flag and exit code', () => {
   const spec = json(oodle(['help', '--json']).stdout);
-  assert.deepEqual(spec.commands.map((c: any) => c.name), ['run', 'check', 'diff', 'lint', 'init', 'doctor', 'completion', 'hello', 'help']);
+  assert.deepEqual(spec.commands.map((c: any) => c.name), ['run', 'check', 'diff', 'lint', 'init', 'doctor', 'mutate', 'propose', 'draft', 'mcp', 'hook', 'completion', 'hello', 'help']);
   assert.ok(spec.commands.find((c: any) => c.name === 'run').flags.some((f: any) => f.name === 'only' && f.multiple));
   assert.deepEqual(spec.exit_codes.map((e: any) => e.code), [0, 1, 2, 130]);
 });

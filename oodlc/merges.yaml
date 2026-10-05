@@ -104,3 +104,31 @@ outcomes:
       body:
         exit_code: 0
         unknown: [DELETE /orders/:id]
+
+  - id: oodle.network-escape-blocks
+    intent: merges-guard-outcomes
+    statement: An app that reaches the real network instead of going through ctx.effects is stopped, even on a route that only has a behavior
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: app-calls-network }
+    expect:
+      status: 200
+      body:
+        exit_code: 1
+        blocking: 1
+
+  - id: oodle.proposal-never-blocks
+    intent: agents-propose-humans-approve
+    statement: A proposed outcome that does not hold yet is reported, and blocks nothing until a human approves it
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: propose-unmet-outcome }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        outcomes.proposed: [orders.lookup]

@@ -122,3 +122,18 @@ outcomes:
       body:
         exit_code: 0
       latency_ms_max: 3000
+
+  - id: cli.propose-only-adds
+    intent: agents-propose-humans-approve
+    statement: oodle propose refuses to touch an outcome that already exists, and says so with a stable error code
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[propose, $EXAMPLE/oodlc/checkout.yaml, $EXAMPLE, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 2
+        ok: false
+        error_code: proposal-exists

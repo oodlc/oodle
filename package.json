@@ -1,6 +1,6 @@
 {
   "name": "oodle",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that protects declared outcomes and watches observed behavior.",
   "homepage": "https://github.com/oodlc/oodle#readme",
   "repository": {
@@ -14,7 +14,13 @@
   "bin": {
     "oodle": "./bin/oodle.js"
   },
-  "files": ["bin", "src", "spec", "docs/cli.md"],
+  "files": [
+    "bin",
+    "src",
+    "spec",
+    "docs/cli.md",
+    "docs/agents.md"
+  ],
   "engines": {
     "node": ">=20.11"
   },
@@ -24,7 +30,16 @@
     "typecheck": "tsc --noEmit",
     "demo": "node bin/oodle.js run examples/checkout"
   },
-  "keywords": ["oodlc", "oodle", "outcomes", "ci", "testing", "agents", "behavior", "verification"],
+  "keywords": [
+    "oodlc",
+    "oodle",
+    "outcomes",
+    "ci",
+    "testing",
+    "agents",
+    "behavior",
+    "verification"
+  ],
   "license": "Apache-2.0",
   "dependencies": {
     "ajv": "^8.20.0",

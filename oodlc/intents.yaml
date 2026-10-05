@@ -7,5 +7,7 @@ intents:
     statement: Teams see how their system's behavior moves, in words a reviewer understands, without it ever blocking them.
   - id: scriptable
     statement: Scripts, CI and agents can drive Oodle and trust what it returns.
+  - id: agents-propose-humans-approve
+    statement: Coding agents can build against outcomes and propose new ones, but only a human can approve or change what blocks a merge.
   - id: self-serve
     statement: A developer who gets Oodle wrong is told how to get it right, and can start from nothing.

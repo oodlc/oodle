@@ -7,6 +7,7 @@ import { stringify } from 'yaml';
 import type { DiffReport, OutcomeStatus } from './diff.ts';
 import { groupByCondition } from './report.ts';
 import type { Catalog, LintResult, Observation, RunResult } from './types.ts';
+import type { MutantResult, MutateReport } from './mutate.ts';
 import { columns, ms, out as s, pad, plural, sym, visible } from './term.ts';
 
 const indent = (n: number) => ' '.repeat(n);
@@ -41,9 +42,11 @@ export interface RunView {
 export function renderRun(run: RunResult, view: RunView): string {
   const lines: string[] = [];
   const ran = new Set(run.observations.map((o) => `${o.kind}:${o.id}`));
-  const outcomes = run.catalog.outcomes.filter((o) => ran.has(`outcome:${o.id}`));
+  const outcomes = run.catalog.outcomes.filter((o) => ran.has(`outcome:${o.id}`) && o.status !== 'proposed');
+  const proposals = run.catalog.outcomes.filter((o) => ran.has(`outcome:${o.id}`) && o.status === 'proposed');
   const behaviors = run.catalog.behaviors.filter((b) => ran.has(`behavior:${b.id}`));
-  const idWidth = Math.max(0, ...[...outcomes, ...behaviors].map((x) => x.id.length));
+  const idWidth = Math.max(0, ...[...outcomes, ...proposals, ...behaviors].map((x) => x.id.length));
+  const notices = (obs: Observation[]) => grouped(obs.flatMap((x) => x.notices.map((n) => `[${x.condition}] ${n}`)), s.yellow);
   const room = columns() - idWidth - 22;
   const obsOf = (kind: string, id: string) => run.observations.filter((o) => o.kind === kind && o.id === id);
   const row = (mark: string, id: string, boundary: string, obs: Observation[]) =>
@@ -60,6 +63,23 @@ export function renderRun(run: RunResult, view: RunView): string {
       if (view.verbose || !ok) lines.push(`      ${s.dim(s.italic(o.statement))}`);
       if (view.verbose && obs.length > 1) lines.push(`      ${s.dim(obs.map((x) => `${x.condition} ${ms(x.latency_ms)}`).join(` ${sym.dot} `))}`);
       lines.push(...grouped(obs.flatMap((x) => [...x.failures, ...x.violations].map((f) => `[${x.condition}] ${f}`)), s.red));
+      lines.push(...notices(obs));
+    }
+    lines.push('');
+  }
+
+  let proposedHolding = 0;
+  if (proposals.length) {
+    lines.push(heading('Proposed', 'drafted · waiting for a human · never blocking'));
+    for (const o of proposals) {
+      const obs = obsOf('outcome', o.id);
+      const ok = obs.every((x) => !x.failures.length && !x.violations.length);
+      if (ok) proposedHolding++;
+      lines.push(row(ok ? s.blue(sym.ok) : s.blue(sym.unknown), o.id, o.boundary, obs));
+      lines.push(`      ${s.dim(s.italic(o.statement))}`);
+      lines.push(...grouped(obs.flatMap((x) => x.failures.map((f) => `[${x.condition}] not yet: ${f}`)), s.blue));
+      lines.push(...grouped(obs.flatMap((x) => x.violations.map((v) => `[${x.condition}] ${v}`)), s.red));
+      lines.push(...notices(obs));
     }
     lines.push('');
   }
@@ -79,6 +99,7 @@ export function renderRun(run: RunResult, view: RunView): string {
       if (view.verbose) lines.push(`      ${s.dim(s.italic(b.statement))}`);
       lines.push(...grouped(obs.flatMap((x) => x.violations.map((v) => `[${x.condition}] ${v}`)), s.red));
       lines.push(...grouped(obs.flatMap((x) => x.failures.map((f) => `[${x.condition}] drift: ${f}`)), s.yellow));
+      lines.push(...notices(obs));
     }
     lines.push('');
   }
@@ -90,6 +111,7 @@ export function renderRun(run: RunResult, view: RunView): string {
       const result = g.probe.status !== null ? `returned ${g.probe.status}` : `errored: ${g.probe.error}`;
       lines.push(`  ${mark} ${pad(g.route, idWidth)}  ${s.dim(result)}`);
       for (const v of g.violations) lines.push(detail(s.red(v)));
+      for (const n of g.notices ?? []) lines.push(detail(s.yellow(n)));
     }
     if (view.verbose) {
       lines.push('');
@@ -107,7 +129,8 @@ export function renderRun(run: RunResult, view: RunView): string {
 
   // The verdict goes last, where the eye lands.
   const gapViolations = run.gaps.filter((g) => g.violations.length).length;
-  const blocking = broken + violatedBehaviors + gapViolations + run.lint.errors.length;
+  const violatedProposals = proposals.filter((o) => obsOf('outcome', o.id).some((x) => x.violations.length)).length;
+  const blocking = broken + violatedBehaviors + violatedProposals + gapViolations + run.lint.errors.length;
   const verdict = blocking
     ? s.red(s.bold(`${sym.fail} ${broken ? `${broken} of ${plural(outcomes.length, 'outcome')} not holding` : `${plural(blocking, 'blocking problem')}`}`))
     : outcomes.length
@@ -116,6 +139,7 @@ export function renderRun(run: RunResult, view: RunView): string {
         ? s.green(s.bold(`${sym.ok} Nothing blocking`))
         : s.yellow(s.bold(`${sym.warn} No outcomes declared yet`));
   const facts = [
+    proposals.length && `${proposedHolding} of ${plural(proposals.length, 'proposed outcome')} holding`,
     behaviors.length && `${plural(behaviors.length, 'behavior')} watched${drifted ? `, ${drifted} drifted` : ''}`,
     run.gaps.length && plural(run.gaps.length, 'unknown route'),
     run.lint.errors.length && plural(run.lint.errors.length, 'lint error'),
@@ -174,10 +198,10 @@ export function renderLint(result: LintResult, catalog: Catalog): string {
 }
 
 const STATUS: Record<OutcomeStatus, (t: string) => string> = {
-  held: s.green, changed: s.yellow, broken: s.red, failing: s.red, new: s.cyan, removed: s.red, redefined: s.magenta,
+  held: s.green, changed: s.yellow, broken: s.red, failing: s.red, new: s.cyan, removed: s.red, redefined: s.magenta, proposed: s.blue,
 };
 const MARK: Record<OutcomeStatus, string> = {
-  held: sym.ok, changed: sym.drift, broken: sym.fail, failing: sym.fail, new: '+', removed: '-', redefined: sym.drift,
+  held: sym.ok, changed: sym.drift, broken: sym.fail, failing: sym.fail, new: '+', removed: '-', redefined: sym.drift, proposed: sym.unknown,
 };
 
 export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: string; head: string; elapsed: number }): string {
@@ -264,6 +288,85 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     ? s.red(s.bold(`${sym.fail} ${r.blocking} blocking`))
     : s.green(s.bold(`${sym.ok} Nothing blocking`));
   lines.push(`${verdict}  ${s.dim(tally)}`);
+  return lines.join('\n');
+}
+
+export function renderMutate(r: MutateReport, view: { verbose?: boolean; minScore?: number }): string {
+  const lines: string[] = [];
+  const pct = Math.round(r.score * 100);
+  const loc = (m: MutantResult) => `${m.file}:${m.line}`;
+  const change = (m: MutantResult) => (m.to ? `${m.from} ${sym.arrow} ${m.to}` : `removed ${m.from}`);
+  const locWidth = Math.max(0, ...r.mutants.map((m) => loc(m).length));
+  const row = (mark: string, m: MutantResult, note = '') => `  ${mark} ${pad(loc(m), locWidth)}  ${s.dim(pad(m.operator, 16))} ${change(m).length > 70 ? `${change(m).slice(0, 67)}...` : change(m)}${note ? `  ${s.dim(note)}` : ''}`;
+
+  const survived = r.mutants.filter((m) => m.status === 'survived');
+  const noticed = r.mutants.filter((m) => m.status === 'noticed');
+  if (survived.length) {
+    lines.push(heading('Survived', 'no outcome or constraint noticed these bugs'));
+    for (const m of survived) lines.push(row(s.red(sym.fail), m));
+    lines.push('');
+  }
+  if (noticed.length) {
+    lines.push(heading('Only noticed', 'output changed but every expectation passed · `oodle check` would hold it for review'));
+    for (const m of noticed) lines.push(row(s.yellow(sym.drift), m, m.changed.join(', ')));
+    lines.push('');
+  }
+  if (view.verbose) {
+    const caught = r.mutants.filter((m) => m.status === 'killed' || m.status === 'timeout');
+    if (caught.length) {
+      lines.push(heading('Caught', 'an outcome or constraint failed'));
+      for (const m of caught) lines.push(row(s.green(sym.ok), m, m.killed_by.join(', ')));
+      lines.push('');
+    }
+    const invalid = r.mutants.filter((m) => m.status === 'invalid');
+    if (invalid.length) {
+      lines.push(heading('Invalid', 'the mutant did not load · not counted'));
+      for (const m of invalid) lines.push(row(s.dim(sym.dot), m, m.reason));
+      lines.push('');
+    }
+  }
+  if (r.killers.length) {
+    lines.push(heading('What caught them', 'unique = bugs nothing else catches'));
+    const w = Math.max(...r.killers.map((k) => k.id.length));
+    for (const k of r.killers) lines.push(`  ${pad(k.id, w)}  ${s.dim(`${plural(k.kills, 'bug')} · ${k.unique} unique`)}`);
+    lines.push('');
+  }
+  if (r.redundant.length) {
+    lines.push(heading('Redundant outcomes', 'every bug they catch, a smaller set catches too'));
+    for (const id of r.redundant) lines.push(`  ${s.dim(sym.dot)} ${id}`);
+    lines.push('');
+  }
+  if (r.tests) {
+    lines.push(heading('Tests', s.dim(r.tests.command)));
+    if (r.tests.redundant.length) {
+      lines.push(`  ${s.bold('Candidates to delete')}  ${s.dim('they catch nothing the catalog misses')}`);
+      for (const t of r.tests.redundant) lines.push(`    ${s.dim(sym.dot)} ${t}`);
+    }
+    const keep = r.tests.killers.filter((k) => k.beyond_catalog);
+    if (keep.length) {
+      lines.push(`  ${s.bold('Worth keeping')}  ${s.dim('they catch bugs the catalog misses; consider an outcome instead')}`);
+      for (const k of keep) lines.push(`    ${s.green(sym.ok)} ${k.id}  ${s.dim(`${k.beyond_catalog} beyond the catalog`)}`);
+    }
+    if (r.tests.baseline_failing.length) lines.push(`  ${s.yellow(sym.warn)} ${plural(r.tests.baseline_failing.length, 'test')} already failing, ignored`);
+    lines.push('');
+  }
+
+  const sum = r.summary;
+  const verdict = view.minScore !== undefined && pct < view.minScore
+    ? s.red(s.bold(`${sym.fail} ${pct}% caught, below ${view.minScore}%`))
+    : sum.survived
+      ? s.yellow(s.bold(`${sym.warn} ${pct}% of planted bugs caught`))
+      : s.green(s.bold(`${sym.ok} ${pct}% of planted bugs caught`));
+  const facts = [
+    `${sum.killed + sum.timeout} caught`,
+    sum.noticed && `${sum.noticed} only noticed`,
+    sum.internal && `${sum.internal} internal only`,
+    sum.survived && `${sum.survived} survived`,
+    sum.invalid && `${sum.invalid} invalid`,
+    sum.generated > sum.mutants && `sampled ${sum.mutants} of ${sum.generated}`,
+    `${plural(r.files.length, 'file')} in ${ms(r.elapsed_ms)}`,
+  ].filter(Boolean);
+  lines.push(`${verdict}  ${s.dim(facts.join(` ${sym.dot} `))}`);
   return lines.join('\n');
 }
 

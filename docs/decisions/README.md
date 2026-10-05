@@ -7,6 +7,9 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0001](0001-outcomes-and-behaviors.md) | Outcomes are declared, behaviors are observed | Accepted |
 | [0002](0002-constraints-hold-on-every-run.md) | Constraints hold on every run | Accepted |
 | [0003](0003-one-visible-oodlc-folder.md) | Everything lives in one visible oodlc/ folder | Accepted |
+| [0004](0004-conditions-carry-expectations.md) | Conditions can carry their own expectations, and Oodle ships a security pack | Proposed |
+| [0005](0005-sealed-simulation.md) | The simulation is sealed: reaching the real network is a violation | Proposed |
+| [0006](0006-proposals-and-propose-only-agents.md) | Agents propose, humans approve: `status: proposed` and propose-only writes | Proposed |
 
 ## When to write one
 

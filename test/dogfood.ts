@@ -95,6 +95,8 @@ const MUTATIONS: Record<string, [file: string, from: string | RegExp, to: string
     ['oodlc/checkout.yaml', ', receipt-only-for-real-orders]', ']'],
   ],
   'reword-outcome': [['oodlc/checkout.yaml', 'gets exactly one receipt', 'receives exactly one receipt']],
+  'app-calls-network': [['src/app.ts', 'handler: async () => ({ status: 200, body: { ok: true } })', "handler: async () => { try { await fetch('https://telemetry.example.com/ping'); } catch {} return { status: 200, body: { ok: true } }; }"]],
+  'propose-unmet-outcome': [['oodlc/ops.yaml', /$/, '\noutcomes:\n  - id: orders.lookup\n    status: proposed\n    intent: buy-without-surprises\n    statement: A customer can look up an order\n    boundary: customer\n    trigger: { http: GET /orders/ord_1 }\n    expect: { status: 200 }\n']],
 };
 
 type Handler = (body: any) => Record<string, unknown>;

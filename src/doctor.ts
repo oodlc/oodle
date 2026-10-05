@@ -63,7 +63,7 @@ export async function doctor(arg?: string): Promise<Check[]> {
       : { name: 'config', status: 'ok', detail: `oodlc/config.yaml: app ${config.app}` });
     const catalog = loadCatalog(dir, config);
     checks.push({ name: 'catalog', status: 'ok', detail: `${plural(catalog.outcomes.length, 'outcome')}, ${plural(catalog.behaviors.length, 'behavior')}, ${plural(catalog.intents.length, 'intent')}` });
-    const result = lint(catalog);
+    const result = lint(catalog, config);
     checks.push(result.errors.length
       ? { name: 'lint', status: 'fail', detail: plural(result.errors.length, 'error'), hint: 'Run `oodle lint` for details.' }
       : result.warnings.length

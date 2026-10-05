@@ -1,9 +1,13 @@
 export const BOUNDARIES = ['customer', 'external', 'data', 'obligation', 'internal'] as const;
 export type Boundary = (typeof BOUNDARIES)[number];
 
+/** Drafted by an agent or the drafter and not yet approved by a human. Runs and is reported, never blocks. See docs/decisions/0006. */
+export type ProposalStatus = 'proposed';
+
 export interface Intent {
   id: string;
   statement: string;
+  status?: ProposalStatus;
 }
 
 export interface Stub {
@@ -12,10 +16,20 @@ export interface Stub {
   latency_ms?: number;
 }
 
+/** Generic ways to make a request hostile, with no knowledge of the app. See src/security.ts. */
+export const FUZZ = ['injection', 'oversize', 'extra-fields'] as const;
+export type Fuzz = (typeof FUZZ)[number];
+
 export interface Given {
   body?: unknown;
+  /** Request headers. A null value drops that header; `headers: null` sends none at all. */
+  headers?: Record<string, string | null> | null;
   state?: Record<string, unknown>;
   stubs?: Record<string, Stub>;
+  /** Send the same request this many times against the same state, e.g. 2 for a replay. Default 1. */
+  repeat?: number;
+  /** Rewrite the request body before sending it. */
+  fuzz?: Fuzz;
 }
 
 export interface Trigger {
@@ -31,7 +45,8 @@ export interface EffectExpect {
 }
 
 export interface Expect {
-  status?: number;
+  /** An exact status, or a matcher such as `{ gte: 400, lte: 499 }`. */
+  status?: number | Record<string, unknown>;
   body?: Record<string, unknown>;
   effects?: EffectExpect[];
   latency_ms_max?: number;
@@ -49,7 +64,10 @@ export interface Outcome {
   trigger: Trigger;
   conditions?: string[];
   expect: Expect;
+  /** Per-condition expectations. Each field named here replaces the same field of `expect` under that condition. See docs/decisions/0004. */
+  when?: Record<string, Expect>;
   constraints?: string[];
+  status?: ProposalStatus;
 }
 
 /**
@@ -75,8 +93,9 @@ export interface Condition {
 export interface Constraint {
   id: string;
   statement: string;
-  /** JS expression over `effects`, `state`, `response`; must be true. */
+  /** JS expression over `effects`, `state`, `response` and `request`; must be true. */
   check: string;
+  status?: ProposalStatus;
 }
 
 export interface Catalog {
@@ -93,6 +112,13 @@ export interface Config {
   app: string;
   catalog: string;
   defaults?: { given?: Given };
+  /** Extra conditions to probe every unknown route under, e.g. the security.* pack. Constraints are checked on each probe. */
+  probe?: { conditions?: string[] };
+  /**
+   * The simulation is sealed by default: real network access from the app is a violation of the
+   * built-in `oodle.sealed` constraint. `false` opens it; `allow` lists host or host:port pairs. See docs/decisions/0005.
+   */
+  sealed?: boolean | { allow?: string[] };
 }
 
 export interface EffectRecord {
@@ -115,14 +141,22 @@ export interface Observation {
   failures: string[];
   /** Constraint breaches. Constraints hold on every run, so these always block. See docs/decisions/0002. */
   violations: string[];
+  /** Breaches of proposed constraints. Reported, never blocking. See docs/decisions/0006. */
+  notices: string[];
+  /** A proposed outcome: its failures are reported, never blocking. */
+  proposed?: true;
   error?: string;
 }
 
 export interface Gap {
   route: string;
   probe: { status: number | null; body: unknown; error?: string };
-  /** Constraints breached while probing. Blocking, even though nothing describes the route. */
+  /** Conditions the route was probed under besides the default (config `probe.conditions`). */
+  probed_under?: string[];
+  /** Constraints breached while probing, prefixed "[condition] " for non-default probes. Blocking, even though nothing describes the route. */
   violations: string[];
+  /** Breaches of proposed constraints while probing. Reported only. */
+  notices: string[];
   /** The observed behavior, ready to add to the catalog or promote to an outcome. */
   proposal: Behavior;
 }

@@ -1,0 +1,16 @@
+{
+  "name": "oodlc",
+  "owner": {
+    "name": "OODLC"
+  },
+  "metadata": {
+    "description": "Oodle (OODLC) for coding agents: protect declared outcomes while the agent changes the code."
+  },
+  "plugins": [
+    {
+      "name": "oodle",
+      "source": "./integrations/claude-code",
+      "description": "Oodle for Claude Code: outcome-guarded hooks, the Oodle MCP tools, and a skill for working against a catalog."
+    }
+  ]
+}

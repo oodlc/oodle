@@ -14,6 +14,11 @@ oodle <command> [project] [flags]
 | `oodle lint [project]` | Validate the catalog and its traceability |
 | `oodle init [dir]` | Start a project: an `oodlc/` folder, a starter catalog and app. `--migrate` moves a v0 project in |
 | `oodle doctor [project]` | Check your environment and project setup |
+| `oodle mutate [project]` | Plant small bugs in the app and see which ones the catalog catches. `--tests <cmd>` finds redundant unit tests |
+| `oodle propose <file> [project]` | Add drafted entries as proposals in `oodlc/proposed.yaml`, never changing an existing one |
+| `oodle draft <brief> [project]` | Print the prompt that drafts catalog entries from a brief, for any agent |
+| `oodle mcp [project]` | Serve Oodle to coding agents over MCP (stdio) |
+| `oodle hook <event>` | Answer a coding agent's hook: `session-start`, `pre-tool-use`, `stop`. See [agents.md](agents.md) |
 | `oodle completion <shell>` | Print a bash, zsh or fish completion script |
 | `oodle hello` | Meet Oodle |
 | `oodle help [command]` | Help for oodle or one command |
@@ -33,14 +38,14 @@ Results go to **stdout**. Oodle's reactions, progress, hints and errors go to **
 | Format | Flag | Commands | Notes |
 | --- | --- | --- | --- |
 | text | default | all | Designed for people; may change between versions |
-| json | `--json` or `--format json` | run, check, diff, lint, init, doctor, help | Stable; for scripts and agents |
+| json | `--json` or `--format json` | run, check, diff, lint, init, doctor, mutate, propose, help | Stable; for scripts and agents |
 | md | `--format md` | check, diff | The PR comment. Default for `check` and `diff` when stdout is piped |
 
 Rules for `--json`:
 
 - stdout gets exactly one JSON document, even when the command fails.
 - Every document has an `ok` boolean.
-- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `exists`, `no-base-project`, `internal`.
+- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `sealed`, `exists`, `no-base-project`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `internal`.
 - stderr stays silent.
 
 `check --md diff.md` and `diff --md diff.md` also write the markdown to a file, whatever the output format.
@@ -68,7 +73,7 @@ Unicode symbols fall back to ASCII on the Linux console and legacy Windows termi
 | 2 | Could not run: bad usage, no project, invalid config, or the app failed to load |
 | 130 | Interrupted with Ctrl-C |
 
-Behavior drift and unknown routes never change the exit code.
+Behavior drift, unknown routes and proposals never change the exit code. `oodle mutate` exits 1 only below `--min-score`, or when the catalog doesn't hold before mutating (`not-holding`).
 
 ## Errors
 
@@ -176,8 +181,26 @@ oodle completion fish > ~/.config/fish/completions/oodle.fish
 | `OODLE_ASCII` | ASCII symbols instead of unicode |
 | `OODLE_DEBUG` | Same as `--debug` |
 | `GITHUB_ACTIONS` | Annotations and job summary |
+| `OODLE_HOOK_STRICT` | `oodle hook pre-tool-use` refuses catalog edits instead of asking |
+
+## Mutation testing
+
+`oodle mutate` plants small bugs (flipped comparisons and logic, arithmetic, negation, changed literals and strings, removed effects and assignments) in every file the app imports (or `--files`). It runs `oodle run --json` against each in a mirror of the repository under `.git/oodle/mutants/`, removed afterwards, with a timeout of five times the baseline run. Each mutant is:
+
+| Status | Meaning |
+| --- | --- |
+| killed | An outcome failed or a constraint was violated |
+| noticed | Customer-visible output changed but every expectation passed: only `oodle check`'s `changed` would catch it |
+| internal | Only `internal.*` effects changed, which outcomes allow. Not counted |
+| survived | Nothing that is checked changed |
+| timeout | The mutant hung. Counted as caught |
+| invalid | The mutant did not load. Not counted |
+
+The score is caught ÷ (all − invalid − internal). `--max` samples evenly (default 200), `--jobs` sets parallelism, and `--only` limits the outcomes run. With `--tests "<cmd>"`, the command runs in each mirror too, and failing tests are read from TAP (`not ok N - name`) or spec (`✖ name (1ms)`) output.
 
 ## For agents
+
+See [agents.md](agents.md) for the Claude Code plugin, the MCP server and the hooks.
 
 - `oodle help --json` describes every command, flag, format, exit code and environment variable.
 - Set `OODLE_FORMAT=json`, or pass `--json`, and parse stdout. Branch on `ok` and the exit code, not on text.

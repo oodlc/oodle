@@ -19,7 +19,7 @@ export function groupByCondition(found: string[]): { message: string; conditions
 const mdFindings = (found: string[]) =>
   groupByCondition(found).map(({ message, conditions }) => `${message}${conditions.length ? ` _(${conditions.join(', ')})_` : ''}`);
 
-const ICON: Record<string, string> = { held: '✅', changed: '🟡', broken: '❌', failing: '❌', new: '🆕', removed: '🗑️', redefined: '✏️' };
+const ICON: Record<string, string> = { held: '✅', changed: '🟡', broken: '❌', failing: '❌', new: '🆕', removed: '🗑️', redefined: '✏️', proposed: '📝' };
 
 export function diffMarkdown(r: DiffReport): string {
   const count = (s: string) => r.outcomes.filter((o) => o.status === s).length;
@@ -29,7 +29,7 @@ export function diffMarkdown(r: DiffReport): string {
   const drifted = r.behaviors.filter((b) => b.status !== 'held').length + r.outcomes.filter((o) => o.behavior.length).length;
   lines.push(`## Outcome diff: ${headline}`);
   lines.push('');
-  lines.push(`${count('held')} held · ${count('changed')} changed · ${count('broken') + count('failing')} broken · ${count('new')} new · ${count('removed')} removed · ${count('redefined')} redefined · ${r.gaps.length} unknown · ${drifted} behavior changes`);
+  lines.push(`${count('held')} held · ${count('changed')} changed · ${count('broken') + count('failing')} broken · ${count('new')} new · ${count('removed')} removed · ${count('redefined')} redefined · ${r.gaps.length} unknown · ${drifted} behavior changes${count('proposed') ? ` · ${count('proposed')} proposed` : ''}`);
   lines.push('');
 
   const notable = r.outcomes.filter((o) => o.status !== 'held');
@@ -109,7 +109,7 @@ export function runSummary(run: RunResult): string {
   for (const o of run.catalog.outcomes) {
     const obs = obsOf('outcome', o.id);
     const ok = obs.every((x) => x.failures.length === 0 && x.violations.length === 0);
-    lines.push(`${ok ? '✅' : '❌'} ${o.id} (outcome, ${o.boundary}) · ${timing(obs)}`);
+    lines.push(`${ok ? '✅' : o.status === 'proposed' ? '📝' : '❌'} ${o.id} (${o.status === 'proposed' ? 'proposed outcome' : 'outcome'}, ${o.boundary}) · ${timing(obs)}`);
     for (const x of obs) for (const f of [...x.failures, ...x.violations]) lines.push(`     [${x.condition}] ${f}`);
   }
   for (const b of run.catalog.behaviors) {

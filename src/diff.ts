@@ -1,7 +1,7 @@
 import type { Behavior, Boundary, Gap, LintResult, Observation, Outcome, RunResult } from './types.ts';
 import { jsonDiff, stableStringify } from './expect.ts';
 
-export type OutcomeStatus = 'held' | 'changed' | 'broken' | 'failing' | 'new' | 'removed' | 'redefined';
+export type OutcomeStatus = 'held' | 'changed' | 'broken' | 'failing' | 'new' | 'removed' | 'redefined' | 'proposed';
 export type BehaviorStatus = 'held' | 'changed' | 'new' | 'removed';
 
 export interface OutcomeDiff {
@@ -24,6 +24,8 @@ export interface BehaviorDiff {
   details: string[];
   /** Constraint breaches seen while running this behavior. The constraint is durable, so these block. */
   violations: string[];
+  /** Breaches of proposed constraints. Reported only. */
+  notices: string[];
   blocking: boolean;
 }
 
@@ -61,7 +63,7 @@ function internalView(o: Observation) {
 }
 
 function definition(o: Outcome) {
-  return stableStringify({ statement: o.statement, trigger: o.trigger, conditions: o.conditions ?? [], expect: o.expect, constraints: o.constraints ?? [] });
+  return stableStringify({ statement: o.statement, trigger: o.trigger, conditions: o.conditions ?? [], expect: o.expect, when: o.when ?? {}, constraints: o.constraints ?? [], status: o.status ?? null });
 }
 
 function failuresOf(obs: Observation[]): string[] {
@@ -92,14 +94,25 @@ function diffOutcomes(base: RunResult, head: RunResult): OutcomeDiff[] {
     const ref = (o ?? prev)!;
     const d: OutcomeDiff = { id, statement: ref.statement, boundary: ref.boundary, status: 'held', blocking: false, details: [], behavior: [] };
 
-    if (!prev) {
+    // A proposal never blocks while it stays a proposal. Approving one (deleting `status: proposed`) makes it
+    // a new outcome, which blocks if it does not hold. Marking an approved outcome proposed is a redefinition.
+    if (o?.status === 'proposed' && (!prev || prev.status === 'proposed')) {
+      const fails = problemsOf(obsBy(head, 'outcome', id));
+      d.status = 'proposed';
+      d.details = fails.length ? fails.map((f) => f.replace(/^(\[[^\]]+\] )/, '$1not yet: ')) : ['proposed, holding'];
+      out.push(d);
+      continue;
+    }
+    if (!prev || (prev.status === 'proposed' && o && !o.status)) {
+      if (prev) d.details.push('proposal approved');
       const fails = problemsOf(obsBy(head, 'outcome', id));
       d.status = fails.length ? 'failing' : 'new';
-      d.details = fails.length ? fails : ['new outcome, passing'];
+      d.details.push(...(fails.length ? fails : ['new outcome, passing']));
       d.blocking = fails.length > 0;
       out.push(d);
       continue;
     }
+    if (!o && prev.status === 'proposed') continue; // withdrawing a proposal changes nothing that was approved
     if (!o) {
       d.status = 'removed';
       d.details = ['outcome removed from the catalog; needs approval'];
@@ -138,7 +151,7 @@ function diffOutcomes(base: RunResult, head: RunResult): OutcomeDiff[] {
     out.push(d);
   }
 
-  const order: Record<OutcomeStatus, number> = { broken: 0, failing: 1, removed: 2, redefined: 3, changed: 4, new: 5, held: 6 };
+  const order: Record<OutcomeStatus, number> = { broken: 0, failing: 1, removed: 2, redefined: 3, changed: 4, new: 5, proposed: 6, held: 7 };
   return out.sort((a, b) => Number(b.blocking) - Number(a.blocking) || order[a.status] - order[b.status] || a.id.localeCompare(b.id));
 }
 
@@ -152,7 +165,7 @@ function diffBehaviors(base: RunResult, head: RunResult): BehaviorDiff[] {
     const b = headB.get(id);
     const prev = baseB.get(id);
     const ref: Behavior = (b ?? prev)!;
-    const d: BehaviorDiff = { id, statement: ref.statement, boundary: ref.boundary, status: 'held', details: [], violations: [], blocking: false };
+    const d: BehaviorDiff = { id, statement: ref.statement, boundary: ref.boundary, status: 'held', details: [], violations: [], notices: [], blocking: false };
 
     if (!prev) {
       d.status = 'new';
@@ -176,6 +189,7 @@ function diffBehaviors(base: RunResult, head: RunResult): BehaviorDiff[] {
     }
     if (b) {
       d.violations = violationsOf(obsBy(head, 'behavior', id));
+      d.notices = obsBy(head, 'behavior', id).flatMap((o) => o.notices.map((n) => `[${o.condition}] ${n}`));
       d.blocking = d.violations.length > 0;
     }
     out.push(d);
@@ -191,7 +205,9 @@ function diffConstraints(base: RunResult, head: RunResult): ConstraintDiff[] {
     const c = headC.get(id);
     const prev = baseC.get(id);
     const statement = (c ?? prev)!.statement;
-    if (!prev) out.push({ id, statement, status: 'new', blocking: false, details: ['new constraint'] });
+    if (!prev) out.push({ id, statement, status: 'new', blocking: false, details: [c!.status === 'proposed' ? 'new proposed constraint, reported only' : 'new constraint'] });
+    else if (prev.status === 'proposed' && c && !c.status) out.push({ id, statement, status: 'new', blocking: false, details: ['proposal approved', ...jsonDiff({ ...prev, status: undefined }, c)] });
+    else if (prev.status === 'proposed' && c?.status === 'proposed') continue;
     else if (!c) out.push({ id, statement, status: 'removed', blocking: true, details: ['constraint removed from the catalog; needs approval'] });
     else if (stableStringify(prev) !== stableStringify(c)) {
       out.push({ id, statement, status: 'redefined', blocking: true, details: ['constraint changed in the catalog; needs approval', ...jsonDiff(prev, c)] });

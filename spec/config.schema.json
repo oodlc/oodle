@@ -14,6 +14,21 @@
       "properties": {
         "given": { "type": "object", "description": "Baseline state, stubs and body merged under every run" }
       }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How unknown routes are probed",
+      "properties": {
+        "conditions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Extra conditions to probe every unknown route under, e.g. [security.no-credentials, security.injection]. Every constraint is checked on each probe" }
+      }
+    },
+    "sealed": {
+      "description": "The simulation is sealed by default: real network access from the app violates the built-in oodle.sealed constraint and blocks. false opens it; { allow: [host, host:port] } lets named hosts through. See docs/decisions/0005",
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "object", "additionalProperties": false, "properties": { "allow": { "type": "array", "items": { "type": "string" } } } }
+      ]
     }
   }
 }

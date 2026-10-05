@@ -1,12 +1,14 @@
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import type { AppContext, OodleApp, CreateApp } from './contract.ts';
-import type { Behavior, Catalog, Condition, Config, EffectRecord, Gap, Given, Observation, Outcome, RunResult, Stub } from './types.ts';
+import type { AppContext, OodleApp, CreateApp, Request } from './contract.ts';
+import type { Behavior, Catalog, Condition, Config, EffectRecord, Expect, Gap, Given, Observation, Outcome, RunResult, Stub } from './types.ts';
 import { loadCatalog, loadConfig } from './catalog.ts';
 import { lint } from './lint.ts';
 import { evaluate } from './expect.ts';
 import { OodleError } from './errors.ts';
+import { allConditions, fuzzBody, takePollution } from './security.ts';
+import { recordEscapes, seal, sealViolations } from './seal.ts';
 
 const FIXED_NOW = '2026-01-01T00:00:00.000Z';
 
@@ -91,22 +93,58 @@ function simulate(given: Given): Sim {
   return { ctx, effects, virtualMs: () => virtual };
 }
 
+/** The request a run sends: the merged body, fuzzed if asked, and headers with dropped ones removed. */
+export function requestFor(method: string, path: string, given: Given): Request {
+  const body = given.fuzz ? fuzzBody(structuredClone(given.body), given.fuzz) : structuredClone(given.body);
+  const headers = given.headers ? Object.fromEntries(Object.entries(given.headers).filter((e): e is [string, string] => typeof e[1] === 'string')) : undefined;
+  return { method, path, body, ...(headers ? { headers } : {}) };
+}
+
+interface Checked {
+  /** Breaches of approved constraints. Blocking. */
+  violations: string[];
+  /** Breaches of proposed constraints. Reported only. See docs/decisions/0006. */
+  notices: string[];
+}
+
 /**
  * Every constraint is checked on every run: outcomes, behaviors and probes of unknown routes.
  * An invariant that only holds on the paths someone described is not an invariant. See docs/decisions/0002.
  */
-function checkConstraints(catalog: Catalog, effects: EffectRecord[], state: unknown, response: unknown): string[] {
-  const violations: string[] = [];
+function checkConstraints(catalog: Catalog, effects: EffectRecord[], state: unknown, response: unknown, request: Request): Checked {
+  const out: Checked = { violations: [], notices: [] };
   for (const c of catalog.constraints) {
+    const into = c.status === 'proposed' ? out.notices : out.violations;
+    const tag = c.status === 'proposed' ? 'proposed constraint' : 'constraint';
     try {
-      const fn = new Function('effects', 'state', 'response', `return (${c.check});`);
-      if (!fn(effects, state, response)) violations.push(`constraint ${c.id} violated: ${c.statement}`);
+      const fn = new Function('effects', 'state', 'response', 'request', `return (${c.check});`);
+      if (!fn(effects, state, response, request)) into.push(`${tag} ${c.id} violated: ${c.statement}`);
     } catch (err) {
       // Fail closed: a check that cannot be evaluated is not evidence the invariant holds.
-      violations.push(`constraint ${c.id} errored: ${(err as Error).message}`);
+      into.push(`${tag} ${c.id} errored: ${(err as Error).message}`);
     }
   }
-  return violations;
+  return out;
+}
+
+/** Built-in invariants every run holds to, whatever the catalog says: the simulation is sealed, and the prototype stays clean. */
+function builtinViolations(escapes: string[]): string[] {
+  const out = sealViolations(escapes);
+  if (takePollution()) out.push('constraint oodle.prototype-pollution violated: a request body\'s __proto__ field reached Object.prototype');
+  return out;
+}
+
+/** Sends the request `repeat` times against one app instance; the last response is the one observed. */
+async function send(app: OodleApp, req: Request, repeat = 1) {
+  let res = await app.handle(structuredClone(req));
+  for (let i = 1; i < repeat; i++) res = await app.handle(structuredClone(req));
+  return res;
+}
+
+/** The expectation under one condition: `when` fields replace the same fields of `expect`. See docs/decisions/0004. */
+export function expectFor(outcome: Outcome, condition: string | undefined): Expect {
+  const override = condition ? outcome.when?.[condition] : undefined;
+  return override ? { ...outcome.expect, ...override } : outcome.expect;
 }
 
 export type Subject = { kind: 'outcome'; item: Outcome } | { kind: 'behavior'; item: Behavior };
@@ -120,23 +158,28 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   const given = mergeGiven(config.defaults?.given, item.trigger.given, condition?.given);
   const sim = simulate(given);
   const [method, path] = item.trigger.http.split(' ');
-  const obs: Observation = { kind: subject.kind, id: item.id, condition: condition?.id ?? 'default', status: null, body: undefined, effects: sim.effects, latency_ms: 0, failures: [], violations: [] };
+  const obs: Observation = { kind: subject.kind, id: item.id, condition: condition?.id ?? 'default', status: null, body: undefined, effects: sim.effects, latency_ms: 0, failures: [], violations: [], notices: [] };
+  if (subject.kind === 'outcome' && subject.item.status === 'proposed') obs.proposed = true;
+  const req = requestFor(method, path, given);
 
   const t0 = performance.now();
-  try {
-    const app = createApp(sim.ctx);
-    const res = await app.handle({ method, path, body: structuredClone(given.body) });
-    obs.status = res.status;
-    obs.body = res.body;
-  } catch (err) {
-    obs.error = (err as Error).message;
-  }
+  const { escapes } = await recordEscapes(async () => {
+    try {
+      const res = await send(createApp(sim.ctx), req, given.repeat);
+      obs.status = res.status;
+      obs.body = res.body;
+    } catch (err) {
+      obs.error = (err as Error).message;
+    }
+  });
   obs.latency_ms = Math.round(performance.now() - t0 + sim.virtualMs());
 
   if (obs.error) obs.failures.push(`app threw: ${obs.error}`);
-  if (subject.kind === 'outcome') obs.failures.push(...evaluate(subject.item.expect, obs));
+  if (subject.kind === 'outcome') obs.failures.push(...evaluate(expectFor(subject.item, condition?.id), obs));
   else if (subject.item.observed) obs.failures.push(...evaluate(subject.item.observed, obs));
-  obs.violations = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body });
+  const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body }, req);
+  obs.violations = [...checked.violations, ...builtinViolations(escapes)];
+  obs.notices = checked.notices;
   return obs;
 }
 
@@ -145,7 +188,7 @@ function routeRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp): Promise<Gap[]> {
+async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>): Promise<Gap[]> {
   const gaps: Gap[] = [];
   const triggers = [...catalog.outcomes, ...catalog.behaviors].map((x) => x.trigger.http.split(' '));
   for (const route of app.routes) {
@@ -153,23 +196,39 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
     if (covered) continue;
 
     // Nobody described this route. Probe it inside the simulation (every outbound effect is stubbed or recorded,
-    // never real) and propose what was observed as a behavior.
+    // never real) and propose what was observed as a behavior. Constraints are checked on the default probe and
+    // on one probe per condition in `probe.conditions`, so a new route meets the security pack too.
     const probePath = route.path.replace(/:[^/]+/g, 'probe');
-    const given = mergeGiven(config.defaults?.given);
-    const sim = simulate(given);
+    const extra = (config.probe?.conditions ?? []).map((id) => conditions.get(id)).filter((c): c is Condition => !!c);
     let probe: Gap['probe'] = { status: null, body: undefined };
-    try {
-      const res = await createApp(sim.ctx).handle({ method: route.method, path: probePath, body: route.method === 'GET' ? undefined : {} });
-      probe = { status: res.status, body: res.body };
-    } catch (err) {
-      probe = { status: null, body: undefined, error: (err as Error).message };
+    const violations: string[] = [];
+    const notices: string[] = [];
+    for (const c of [null, ...extra]) {
+      const given = mergeGiven(config.defaults?.given, { body: route.method === 'GET' ? undefined : {} }, c?.given);
+      const sim = simulate(given);
+      const req = requestFor(route.method, probePath, given);
+      let result: Gap['probe'];
+      const { escapes } = await recordEscapes(async () => {
+        try {
+          const res = await send(createApp(sim.ctx), req, given.repeat);
+          result = { status: res.status, body: res.body };
+        } catch (err) {
+          result = { status: null, body: undefined, error: (err as Error).message };
+        }
+      });
+      if (!c) probe = result!;
+      const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: result!.status, body: result!.body }, req);
+      const label = (v: string) => (c ? `[${c.id}] ${v}` : v);
+      violations.push(...[...checked.violations, ...builtinViolations(escapes)].map(label));
+      notices.push(...checked.notices.map(label));
     }
-    const violations = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: probe.status, body: probe.body });
     const slug = `${route.method.toLowerCase()}${route.path.replace(/[/:]+/g, '-').replace(/-+$/, '')}`;
     gaps.push({
       route: `${route.method} ${route.path}`,
       probe,
+      ...(extra.length ? { probed_under: extra.map((c) => c.id) } : {}),
       violations,
+      notices,
       proposal: {
         id: `observed.${slug}`,
         statement: `TODO: describe what ${route.method} ${route.path} does for the caller`,
@@ -197,9 +256,24 @@ export const globMatcher = (patterns: string[]) => {
 export async function runProject(projectDir: string, opts: RunOptions = {}): Promise<RunResult> {
   const config = loadConfig(projectDir);
   const catalog = loadCatalog(projectDir, config);
-  const lintResult = lint(catalog);
-  const createApp = await loadApp(projectDir, config);
-  const conditions = new Map(catalog.conditions.map((c) => [c.id, c]));
+  const lintResult = lint(catalog, config);
+  const unseal = config.sealed === false ? () => {} : seal(typeof config.sealed === 'object' ? config.sealed.allow : []);
+  try {
+    return await runSealed(projectDir, config, catalog, lintResult, opts);
+  } finally {
+    unseal();
+  }
+}
+
+async function runSealed(projectDir: string, config: Config, catalog: Catalog, lintResult: RunResult['lint'], opts: RunOptions): Promise<RunResult> {
+  const { value: createApp, escapes } = await recordEscapes(() => loadApp(projectDir, config));
+  if (escapes.length) {
+    throw new OodleError('sealed', `${config.app} reached the real network while loading`, {
+      problems: [...new Set(escapes)],
+      hint: 'Oodle runs apps in a sealed simulation. Move the call behind ctx.effects, or list the host under sealed.allow in oodlc/config.yaml.',
+    });
+  }
+  const conditions = allConditions(catalog);
 
   const observations: Observation[] = [];
   const selected = opts.only?.length ? globMatcher(opts.only) : () => true;
@@ -232,6 +306,6 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
     });
   }
   const routes = probeApp.routes.map((r) => `${r.method} ${r.path}`);
-  const gaps = await findGaps(createApp, catalog, config, probeApp);
+  const gaps = await findGaps(createApp, catalog, config, probeApp, conditions);
   return { projectDir, config, catalog, lint: lintResult, routes, observations, gaps };
 }

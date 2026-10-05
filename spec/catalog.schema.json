@@ -15,13 +15,18 @@
   },
   "definitions": {
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 128 },
+    "status": {
+      "description": "Drafted, not yet approved by a human. A proposed entry runs and is reported, but never blocks. Approving it means deleting this field. See docs/decisions/0006.",
+      "const": "proposed"
+    },
     "intent": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "statement"],
       "properties": {
         "id": { "$ref": "#/definitions/id" },
-        "statement": { "type": "string", "minLength": 1 }
+        "statement": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/definitions/status" }
       }
     },
     "stub": {
@@ -38,8 +43,20 @@
       "additionalProperties": false,
       "properties": {
         "body": {},
+        "headers": {
+          "description": "Request headers. A null value drops that header; null sends no headers at all.",
+          "oneOf": [{ "type": "null" }, { "type": "object", "additionalProperties": { "type": ["string", "null"] } }]
+        },
         "state": { "type": "object" },
-        "stubs": { "type": "object", "additionalProperties": { "$ref": "#/definitions/stub" } }
+        "stubs": { "type": "object", "additionalProperties": { "$ref": "#/definitions/stub" } },
+        "repeat": {
+          "description": "Send the same request this many times against the same state (2 is a replay). The last response is observed; effects accumulate.",
+          "type": "integer", "minimum": 1, "maximum": 10
+        },
+        "fuzz": {
+          "description": "Rewrite the request body before sending it: injection (every string becomes an attack payload), oversize (adds a 1MB field), extra-fields (adds privileged fields such as role: admin to every object).",
+          "enum": ["injection", "oversize", "extra-fields"]
+        }
       }
     },
     "boundary": { "enum": ["customer", "external", "data", "obligation", "internal"] },
@@ -57,7 +74,10 @@
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
-        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "status": {
+          "description": "An exact status, or a matcher such as { gte: 400, lte: 499 }",
+          "oneOf": [{ "type": "integer", "minimum": 100, "maximum": 599 }, { "type": "object", "minProperties": 1 }]
+        },
         "body": { "type": "object" },
         "effects": {
           "type": "array",
@@ -88,10 +108,15 @@
         "trigger": { "$ref": "#/definitions/trigger" },
         "conditions": { "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
         "expect": { "$ref": "#/definitions/expect" },
+        "when": {
+          "description": "Expectations per condition. Each key is a condition from `conditions`; each field it names replaces the same field of `expect` under that condition. See docs/decisions/0004.",
+          "type": "object", "additionalProperties": { "$ref": "#/definitions/expect" }
+        },
         "constraints": {
           "description": "Traceability only: the constraints this outcome depends on. Every constraint is checked on every run regardless. See docs/decisions/0002.",
           "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true
-        }
+        },
+        "status": { "$ref": "#/definitions/status" }
       }
     },
     "behavior": {
@@ -126,7 +151,8 @@
       "properties": {
         "id": { "$ref": "#/definitions/id" },
         "statement": { "type": "string", "minLength": 1 },
-        "check": { "type": "string", "minLength": 1 }
+        "check": { "description": "JS expression over effects, state, response and request; must be true", "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/definitions/status" }
       }
     }
   }

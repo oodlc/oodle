@@ -1,4 +1,5 @@
-import type { Catalog, LintResult } from './types.ts';
+import type { Catalog, Config, LintResult } from './types.ts';
+import { allConditions } from './security.ts';
 
 /**
  * Traceability checks from the spec:
@@ -7,12 +8,16 @@ import type { Catalog, LintResult } from './types.ts';
  * - intent with no outcomes               -> warning (backlog)
  * - behavior across a boundary            -> warning (needs a promotion decision)
  * - outcome on the internal boundary      -> warning (internals should stay replaceable)
+ * - `when` for a condition the outcome does not run under -> error (it would never apply)
+ * - approved outcome tracing to a proposed intent -> error (approve the intent first)
+ * - proposed entries                      -> warning (waiting for a human)
  */
-export function lint(catalog: Catalog): LintResult {
+export function lint(catalog: Catalog, config?: Config): LintResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const intents = new Set(catalog.intents.map((i) => i.id));
-  const conditions = new Set(catalog.conditions.map((c) => c.id));
+  const proposedIntents = new Set(catalog.intents.filter((i) => i.status === 'proposed').map((i) => i.id));
+  const conditions = new Set(allConditions(catalog).keys());
   const constraints = new Set(catalog.constraints.map((c) => c.id));
   const used = new Set<string>();
 
@@ -21,9 +26,14 @@ export function lint(catalog: Catalog): LintResult {
     if (!o.intent) errors.push(`${where}: outcome has no intent. Link it to an intent, or demote it to a behavior.`);
     else {
       if (!intents.has(o.intent)) errors.push(`${where}: unknown intent "${o.intent}"`);
+      else if (proposedIntents.has(o.intent) && o.status !== 'proposed') errors.push(`${where}: traces to the proposed intent "${o.intent}". Approve the intent first.`);
       used.add(o.intent);
     }
     for (const c of o.conditions ?? []) if (!conditions.has(c)) errors.push(`${where}: unknown condition "${c}"`);
+    for (const c of Object.keys(o.when ?? {})) {
+      if (!(o.conditions ?? []).includes(c)) errors.push(`${where}: "when" names ${c}, which is not in this outcome's conditions, so it would never apply`);
+    }
+    if (o.status === 'proposed') warnings.push(`${where}: proposed outcome, waiting for a human. Approve it by deleting "status: proposed".`);
     for (const c of o.constraints ?? []) if (!constraints.has(c)) errors.push(`${where}: unknown constraint "${c}"`);
     if (o.boundary === 'internal') warnings.push(`${where}: outcome on the internal boundary. Internals should stay replaceable.`);
   }
@@ -40,9 +50,17 @@ export function lint(catalog: Catalog): LintResult {
     if (!used.has(i.id)) warnings.push(`${catalog.sources[`intents:${i.id}`]}: ${i.id}: intent has no outcomes yet (backlog)`);
   }
 
+  for (const id of config?.probe?.conditions ?? []) {
+    if (!conditions.has(id)) errors.push(`oodlc/config.yaml: probe.conditions: unknown condition "${id}"`);
+  }
+  for (const i of catalog.intents) {
+    if (i.status === 'proposed') warnings.push(`${catalog.sources[`intents:${i.id}`]}: ${i.id}: proposed intent, waiting for a human. Approve it by deleting "status: proposed".`);
+  }
+
   for (const c of catalog.constraints) {
+    if (c.status === 'proposed') warnings.push(`${catalog.sources[`constraints:${c.id}`]}: ${c.id}: proposed constraint, checked and reported but not blocking. Approve it by deleting "status: proposed".`);
     try {
-      new Function('effects', 'state', 'response', `return (${c.check});`);
+      new Function('effects', 'state', 'response', 'request', `return (${c.check});`);
     } catch (err) {
       errors.push(`${catalog.sources[`constraints:${c.id}`]}: ${c.id}: check does not parse: ${(err as Error).message}`);
     }

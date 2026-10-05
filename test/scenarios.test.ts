@@ -242,3 +242,181 @@ test('effect diffs read as added, removed, renamed, recounted or changed at a pa
   assert.deepEqual(jsonDiff({ effects: base }, { effects: [] }), ['effects: internal.audit no longer emitted']);
   assert.deepEqual(jsonDiff({ effects: base }, { effects: [...base, ...base] }), ['effects: internal.audit emitted ×1 → ×2']);
 });
+
+// ── Conditions with their own expectations, and the security pack (docs/decisions/0004) ──
+
+const addRoute = (dir: string, route: string) =>
+  edit(dir, 'src/app.ts', "{ method: 'POST', path: '/checkout', handler: checkout },", `{ method: 'POST', path: '/checkout', handler: checkout },\n    ${route},`);
+
+/** Checkout behind a bearer token: the config sends one by default, and the outcome says what happens without it. */
+function withAuth(dir: string, enforce: boolean) {
+  edit(dir, 'oodlc/config.yaml', 'defaults:\n  given:\n', 'defaults:\n  given:\n    headers: { authorization: Bearer c1 }\n');
+  edit(dir, 'oodlc/checkout.yaml', 'conditions: [first_purchase, returning_customer, payment_provider_slow]', 'conditions: [first_purchase, returning_customer, payment_provider_slow, security.no-credentials]');
+  edit(dir, 'oodlc/checkout.yaml', '    constraints: [no-charge-without-order, receipt-only-for-real-orders]', [
+    '    when:',
+    '      security.no-credentials:',
+    '        status: 401',
+    '        body: { error: unauthorized }',
+    '        effects: [{ kind: payment.capture, count: 0 }]',
+    '    constraints: [no-charge-without-order, receipt-only-for-real-orders]',
+  ].join('\n'));
+  if (enforce) {
+    edit(dir, 'src/checkout.ts', 'const body = (req.body ?? {}) as CheckoutBody;', "if (!req.headers?.authorization) return { status: 401, body: { error: 'unauthorized' } };\n  const body = (req.body ?? {}) as CheckoutBody;");
+  }
+}
+
+const problems = (run: Awaited<ReturnType<typeof runProject>>, id: string, condition: string) => {
+  const o = run.observations.find((x) => x.id === id && x.condition === condition)!;
+  return [...o.failures, ...o.violations];
+};
+
+test('when: a condition can expect something else, e.g. 401 without credentials', async () => {
+  const open = copyExample();
+  withAuth(open, false);
+  const leaky = await runProject(open);
+  assert.ok(problems(leaky, 'checkout.payment-confirmed', 'security.no-credentials').includes('status: expected 401, got 200'));
+  assert.deepEqual(problems(leaky, 'checkout.payment-confirmed', 'first_purchase'), []);
+
+  const closed = copyExample();
+  withAuth(closed, true);
+  const run = await runProject(closed);
+  assert.deepEqual(run.observations.filter((o) => o.failures.length || o.violations.length), []);
+});
+
+test('when: editing a per-condition expectation is a redefinition', async () => {
+  const head = copyExample();
+  withAuth(head, true);
+  const base = copyExample();
+  withAuth(base, true);
+  edit(head, 'oodlc/checkout.yaml', 'status: 401', 'status: { gte: 400, lte: 403 }');
+  const report = diffRuns(await runProject(base), await runProject(head));
+  assert.equal(report.outcomes.find((o) => o.id === 'checkout.payment-confirmed')!.status, 'redefined');
+});
+
+test('lint: when names a condition the outcome does not run under', () => {
+  const dir = copyExample();
+  withAuth(dir, true);
+  edit(dir, 'oodlc/checkout.yaml', ', security.no-credentials]', ']');
+  const result = lint(loadCatalog(dir, loadConfig(dir)));
+  assert.ok(result.errors.some((e) => e.includes('"when" names security.no-credentials')), result.errors.join('\n'));
+});
+
+test('security.extra-fields: a mass-assignment bug breaks the outcome', async () => {
+  const pack = (dir: string) => edit(dir, 'oodlc/checkout.yaml', 'conditions: [first_purchase, returning_customer, payment_provider_slow]', 'conditions: [first_purchase, security.extra-fields]');
+  const safeDir = copyExample();
+  pack(safeDir);
+  const safe = await runProject(safeDir);
+  assert.deepEqual(problems(safe, 'checkout.payment-confirmed', 'security.extra-fields'), []);
+
+  // A fresh copy: the app's modules are cached per path.
+  const dir = copyExample();
+  pack(dir);
+  edit(dir, 'src/checkout.ts', 'const { total_cents, unknown } = priceCart(', 'const priced = priceCart(');
+  edit(dir, 'src/checkout.ts', "if (unknown.length)", "const unknown = priced.unknown;\n  const total_cents = (body as any).total_cents ?? priced.total_cents;\n  if (unknown.length)");
+  const run = await runProject(dir);
+  const found = problems(run, 'checkout.payment-confirmed', 'security.extra-fields');
+  assert.ok(found.includes('body.total_cents: expected 6200, got 0'), JSON.stringify(found));
+  assert.deepEqual(problems(run, 'checkout.payment-confirmed', 'first_purchase'), []);
+});
+
+test('security.replayed: a request sent twice must not charge twice', async () => {
+  const dir = copyExample();
+  edit(dir, 'oodlc/checkout.yaml', 'conditions: [first_purchase, returning_customer, payment_provider_slow]', 'conditions: [first_purchase, security.replayed]');
+  writeFileSync(join(dir, 'oodlc', 'idempotency.yaml'), "version: 0\nconstraints:\n  - id: charge-once\n    statement: One request never captures more than one payment, however often it is sent\n    check: effects.filter(e => e.kind === 'payment.capture').length <= 1\n");
+  const run = await runProject(dir);
+  assert.ok(problems(run, 'checkout.payment-confirmed', 'security.replayed').some((p) => p.includes('constraint charge-once violated')));
+  assert.deepEqual(problems(run, 'checkout.payment-confirmed', 'first_purchase'), []);
+});
+
+test('probe.conditions: an undescribed route that charges without credentials blocks', async () => {
+  const { report } = await diffAfter((dir) => {
+    edit(dir, 'oodlc/config.yaml', 'defaults:\n  given:\n', 'probe:\n  conditions: [security.no-credentials, security.injection]\ndefaults:\n  given:\n    headers: { authorization: Bearer c1 }\n');
+    writeFileSync(join(dir, 'oodlc', 'auth.yaml'), "version: 0\nconstraints:\n  - id: no-side-effects-without-credentials\n    statement: A request without credentials never causes an external effect\n    check: >-\n      !!(request.headers && request.headers.authorization) || effects.every(e => e.boundary === 'internal')\n");
+    addRoute(dir, "{ method: 'POST', path: '/tip', handler: async (c) => { await c.effects.call('payment.capture', { amount_cents: 100 }); c.state.orders = [{ id: 'o', payment_id: 'pay_1' }]; return { status: 200, body: {} }; } }");
+  });
+  const gap = report.gaps.find((g) => g.route === 'POST /tip')!;
+  assert.deepEqual(gap.probed_under, ['security.no-credentials', 'security.injection']);
+  assert.deepEqual(gap.violations, ['[security.no-credentials] constraint no-side-effects-without-credentials violated: A request without credentials never causes an external effect']);
+  assert.ok(report.blocking >= 1);
+});
+
+test('security.extra-fields: a body __proto__ that reaches Object.prototype is a violation', async () => {
+  const { report } = await diffAfter((dir) => {
+    edit(dir, 'oodlc/config.yaml', 'defaults:\n', 'probe:\n  conditions: [security.extra-fields]\ndefaults:\n');
+    addRoute(dir, "{ method: 'POST', path: '/prefs', handler: async (_c, r) => { const merge = (t: any, s: any): any => { for (const k in s) { if (s[k] && typeof s[k] === 'object') merge(t[k] ??= {}, s[k]); else t[k] = s[k]; } return t; }; merge({}, r.body); return { status: 204 }; } }");
+  });
+  assert.ok(report.gaps[0].violations.some((v) => v.includes('oodle.prototype-pollution')), JSON.stringify(report.gaps));
+  assert.equal(({} as any).oodle_polluted, undefined);
+});
+
+// ── The sealed simulation (docs/decisions/0005) ──
+
+test('sealed: an app that reaches the real network directly is a blocking violation, and nothing is sent', async () => {
+  const { report } = await diffAfter((dir) =>
+    edit(dir, 'src/app.ts', "handler: async () => ({ status: 200, body: { ok: true } })", "handler: async () => { try { await fetch('https://telemetry.example.com/ping'); } catch {} return { status: 200, body: { ok: true } }; }"),
+  );
+  const b = report.behaviors.find((x) => x.id === 'ops.health')!;
+  assert.deepEqual(b.violations, ['[default] constraint oodle.sealed violated: the app reached the real network (telemetry.example.com:443) instead of going through ctx.effects']);
+  assert.equal(report.blocking, 1);
+});
+
+test('sealed: raw sockets are caught too, and sealed.allow lets a named host through', async () => {
+  const dir = copyExample();
+  edit(dir, 'src/app.ts', "handler: async () => ({ status: 200, body: { ok: true } })", "handler: async () => { const net = await import('node:net'); await new Promise((done) => { try { const s = net.connect(9, '127.0.0.1'); s.on('error', done); s.on('connect', () => { s.destroy(); done(null); }); } catch (e) { done(e); } }); return { status: 200, body: { ok: true } }; }");
+  const sealed = await runProject(dir);
+  assert.ok(sealed.observations.find((o) => o.id === 'ops.health')!.violations.some((v) => v.includes('127.0.0.1:9')));
+  // Same path, same cached modules: only the config changes, which is read fresh on every run.
+
+  edit(dir, 'oodlc/config.yaml', 'defaults:\n', 'sealed: { allow: [127.0.0.1] }\ndefaults:\n');
+  const allowed = await runProject(dir);
+  assert.deepEqual(allowed.observations.find((o) => o.id === 'ops.health')!.violations, []);
+});
+
+// ── Proposals (docs/decisions/0006) ──
+
+const PROPOSAL = `version: 0
+outcomes:
+  - id: orders.lookup
+    status: proposed
+    intent: buy-without-surprises
+    statement: A customer can look up an order they placed
+    boundary: customer
+    trigger: { http: GET /orders/ord_1 }
+    expect: { status: 200 }
+`;
+
+test('proposed outcome: runs and reports, never blocks; approving it makes it a new outcome that must hold', async () => {
+  const head = copyExample();
+  writeFileSync(join(head, 'oodlc', 'proposed.yaml'), PROPOSAL);
+  const run = await runProject(head);
+  const o = run.observations.find((x) => x.id === 'orders.lookup')!;
+  assert.equal(o.proposed, true);
+  assert.ok(o.failures.length > 0);
+  const proposed = diffRuns(await runProject(EXAMPLE), run);
+  assert.equal(proposed.blocking, 0);
+  assert.equal(proposed.outcomes.find((x) => x.id === 'orders.lookup')!.status, 'proposed');
+  assert.ok(lint(run.catalog).warnings.some((w) => w.includes('orders.lookup: proposed outcome')));
+
+  const approved = copyExample();
+  writeFileSync(join(approved, 'oodlc', 'proposed.yaml'), PROPOSAL.replace('    status: proposed\n', ''));
+  const report = diffRuns(run, await runProject(approved));
+  const d = report.outcomes.find((x) => x.id === 'orders.lookup')!;
+  assert.equal(d.status, 'failing');
+  assert.equal(d.blocking, true);
+  assert.equal(d.details[0], 'proposal approved');
+});
+
+test('proposed: marking an approved outcome as proposed is a redefinition, so it cannot be used to silence one', async () => {
+  const { byId } = await diffAfter((dir) => edit(dir, 'oodlc/checkout.yaml', '  - id: checkout.payment-declined\n', '  - id: checkout.payment-declined\n    status: proposed\n'));
+  const d = byId('checkout.payment-declined');
+  assert.equal(d.status, 'redefined');
+  assert.equal(d.blocking, true);
+});
+
+test('proposed constraint: a breach is a notice, not a violation', async () => {
+  const { report } = await diffAfter((dir) =>
+    writeFileSync(join(dir, 'oodlc', 'draft.yaml'), "version: 0\nconstraints:\n  - id: no-email-ever\n    status: proposed\n    statement: Never send email\n    check: effects.every(e => e.kind !== 'email.sent')\n"),
+  );
+  assert.equal(report.blocking, 0);
+  assert.deepEqual(report.constraints.map((c) => [c.id, c.status, c.blocking]), [['no-email-ever', 'new', false]]);
+});

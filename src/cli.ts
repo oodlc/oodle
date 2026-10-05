@@ -9,10 +9,15 @@ import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
 import { diffRuns } from './diff.ts';
 import { diffMarkdown } from './report.ts';
-import { renderDiff, renderLint, renderRun, wrap } from './render.ts';
+import { renderDiff, renderLint, renderMutate, renderRun, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
 import { init, migrate } from './init.ts';
 import { doctor } from './doctor.ts';
+import { mutate, type MutateReport } from './mutate.ts';
+import { propose } from './propose.ts';
+import { draftPrompt } from './draft.ts';
+import { serveMcp } from './mcp.ts';
+import { runHook, HOOKS } from './hooks.ts';
 import { completion, SHELLS, type Shell } from './completion.ts';
 import { findProject, display } from './project.ts';
 import { EXIT, OodleError, suggest, usageError } from './errors.ts';
@@ -175,6 +180,95 @@ const COMMANDS: Command[] = [
     run: cmdDoctor,
   },
   {
+    name: 'mutate',
+    summary: 'Plant small bugs in the app and see which ones the catalog catches',
+    description:
+      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite, and tests that catch nothing the catalog does not are listed as candidates to delete.',
+    args: [PROJECT_ARG],
+    flags: [
+      { name: 'files', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Mutate these files, relative to the project, e.g. "src/**/*.ts" (repeatable). Default: the app\'s directory, minus tests' },
+      { name: 'only', short: 'o', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Run only outcomes and behaviors whose id matches (repeatable)' },
+      { name: 'max', type: 'string', value: 'n', complete: 'none', description: 'At most this many mutants, sampled evenly across files. Default: 200' },
+      { name: 'jobs', short: 'j', type: 'string', value: 'n', complete: 'none', description: 'Mutants to run in parallel. Default: CPU cores minus one' },
+      { name: 'tests', type: 'string', value: 'cmd', complete: 'none', description: 'Also run this test command on every mutant, e.g. "npm test", to find tests the catalog makes redundant' },
+      { name: 'min-score', type: 'string', value: 'pct', complete: 'none', description: 'Exit 1 when fewer than this percentage of mutants are caught, e.g. 80' },
+      VERBOSE,
+    ],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle mutate', 'How many planted bugs does the catalog catch?'],
+      ['oodle mutate --files "src/checkout.ts" --only "checkout.*"', 'Focus on one file and its outcomes'],
+      ['oodle mutate --tests "npm test"', 'Which unit tests catch nothing the outcomes miss?'],
+      ['oodle mutate --min-score 80 --json', 'Gate CI on mutation score'],
+    ],
+    run: cmdMutate,
+  },
+  {
+    name: 'propose',
+    summary: 'Add drafted catalog entries as proposals, never changing an existing one',
+    description:
+      'Reads a YAML catalog fragment (from a file, or - for stdin) and adds it to oodlc/proposed.yaml. Every intent, outcome and constraint is marked status: proposed, so it runs and is reported but never blocks until a human approves it by deleting that line. An id that already exists is refused: a proposal can add, never change or remove. This is how agents and the drafter write to the catalog.',
+    args: [
+      { name: 'file', required: true, description: 'YAML with any of intents, outcomes, behaviors, conditions, constraints; - reads stdin' },
+      PROJECT_ARG,
+    ],
+    flags: [],
+    formats: ['text', 'json'],
+    positional: 'files',
+    examples: [
+      ['oodle propose draft.yaml', 'Add a drafted outcome as a proposal'],
+      ['oodle draft brief.md | claude -p | oodle propose -', 'Draft from a brief with an agent, straight into proposals'],
+    ],
+    run: cmdPropose,
+  },
+  {
+    name: 'draft',
+    summary: 'Print the prompt that drafts catalog entries from a brief',
+    description:
+      'Writes a prompt for any coding agent or model: the rules of a good catalog, this project\'s intents, outcomes, conditions, constraints and stubs, and your brief. The answer is a YAML fragment for `oodle propose`. Oodle never calls a model itself. With `oodle mcp`, agents get the same prompt as the `draft` MCP prompt.',
+    args: [
+      { name: 'brief', required: true, description: 'A file with the brief (PRD, ticket, a few sentences); - reads stdin' },
+      PROJECT_ARG,
+    ],
+    flags: [],
+    formats: ['text'],
+    positional: 'files',
+    examples: [
+      ['oodle draft brief.md > prompt.md', 'Write the drafting prompt'],
+      ['oodle draft brief.md | claude -p | oodle propose -', 'Draft and propose in one go'],
+    ],
+    run: cmdDraft,
+  },
+  {
+    name: 'mcp',
+    summary: 'Serve Oodle to coding agents over the Model Context Protocol',
+    description:
+      'Runs an MCP server on stdio. Agents get tools to run, check, lint, explain and mutate, to read the catalog, and to propose new entries, plus a `draft` prompt. There is no tool that edits or removes an outcome, a constraint or an intent: those stay human decisions. Add it to Claude Code with `claude mcp add oodle -- npx oodle mcp`.',
+    args: [PROJECT_ARG],
+    flags: [],
+    formats: ['text'],
+    examples: [
+      ['claude mcp add oodle -- npx oodle mcp', 'Give Claude Code the Oodle tools'],
+      ['oodle mcp services/checkout', 'Serve one project'],
+    ],
+    run: cmdMcp,
+  },
+  {
+    name: 'hook',
+    summary: 'Answer a coding agent\'s lifecycle hook (Claude Code)',
+    description:
+      'Reads a hook event as JSON on stdin and answers it on stdout. session-start tells the agent how the project is guarded. pre-tool-use asks before any edit that would change or remove an approved outcome, constraint or intent. stop keeps the agent working while an outcome it broke is still broken, and tells the person what needs their approval. The Claude Code plugin in integrations/claude-code wires these up.',
+    args: [{ name: 'event', required: true, description: HOOKS.join(', ') }],
+    flags: [],
+    formats: ['text'],
+    positional: [...HOOKS],
+    examples: [
+      ['echo \'{"cwd":"."}\' | oodle hook session-start', 'What the agent is told at the start of a session'],
+      ['claude plugin install oodle@oodlc', 'Install the hooks in Claude Code'],
+    ],
+    run: async (ctx) => runHook(ctx.args[0], VERSION),
+  },
+  {
     name: 'completion',
     summary: 'Print a shell completion script',
     description: 'Prints a completion script for bash, zsh or fish, generated from the same registry as this help, so it never goes stale.',
@@ -228,6 +322,7 @@ const ENV: [string, string][] = [
   ['OODLE_ASCII', 'Use ASCII symbols instead of unicode'],
   ['OODLE_DEBUG', 'Same as --debug'],
   ['GITHUB_ACTIONS', 'When "true", findings become annotations and diffs go to the job summary'],
+  ['OODLE_HOOK_STRICT', '`oodle hook pre-tool-use` refuses edits to approved catalog entries instead of asking'],
 ];
 
 const EXIT_DOCS: [number, string][] = [
@@ -390,19 +485,25 @@ async function runWithProgress(dir: string, label: string, only?: string[]): Pro
   }
 }
 
+/** An observation that blocks: an approved outcome not holding, or a constraint violated anywhere. */
+export const blocks = (x: RunResult['observations'][number]) => x.violations.length > 0 || (x.kind === 'outcome' && !x.proposed && x.failures.length > 0);
+
 function runSummaryJson(run: RunResult, elapsed: number) {
-  const outcomes = new Set(run.observations.filter((x) => x.kind === 'outcome').map((x) => x.id));
-  const broken = new Set(run.observations.filter((x) => x.kind === 'outcome' && (x.failures.length || x.violations.length)).map((x) => x.id));
+  const outcomes = new Set(run.observations.filter((x) => x.kind === 'outcome' && !x.proposed).map((x) => x.id));
+  const broken = new Set(run.observations.filter((x) => x.kind === 'outcome' && !x.proposed && (x.failures.length || x.violations.length)).map((x) => x.id));
+  const proposed = new Set(run.observations.filter((x) => x.proposed).map((x) => x.id));
   const behaviors = new Set(run.observations.filter((x) => x.kind === 'behavior').map((x) => x.id));
   const drifted = new Set(run.observations.filter((x) => x.kind === 'behavior' && x.failures.length).map((x) => x.id));
   return {
     outcomes: outcomes.size,
     held: outcomes.size - broken.size,
     broken: broken.size,
+    proposed: proposed.size,
     behaviors: behaviors.size,
     drifted: drifted.size,
     unknown_routes: run.gaps.length,
     constraint_violations: run.observations.reduce((n, x) => n + x.violations.length, 0) + run.gaps.reduce((n, g) => n + g.violations.length, 0),
+    proposed_constraint_notices: run.observations.reduce((n, x) => n + x.notices.length, 0) + run.gaps.reduce((n, g) => n + g.notices.length, 0),
     lint_errors: run.lint.errors.length,
     lint_warnings: run.lint.warnings.length,
     runs: run.observations.length,
@@ -418,7 +519,7 @@ async function cmdRun(ctx: Ctx): Promise<number> {
   const run = await runWithProgress(dir, 'Running', ctx.flags.only);
   const elapsed = performance.now() - t0;
   const failing =
-    run.observations.some((x) => x.violations.length || (x.kind === 'outcome' && x.failures.length)) ||
+    run.observations.some(blocks) ||
     run.gaps.some((g) => g.violations.length) ||
     run.lint.errors.length > 0;
   const drifting = run.observations.some((x) => x.kind === 'behavior' && x.failures.length);
@@ -431,7 +532,7 @@ async function cmdRun(ctx: Ctx): Promise<number> {
 
   console.log(renderRun(run, { verbose: ctx.flags.verbose, elapsed, only: ctx.flags.only }));
   const summary = runSummaryJson(run, elapsed);
-  const notHolding = [...new Set(run.observations.filter((x) => x.violations.length || (x.kind === 'outcome' && x.failures.length)).map((x) => x.id))];
+  const notHolding = [...new Set(run.observations.filter(blocks).map((x) => x.id))];
   reportToWatcher({
     ok: !failing,
     headline: failing
@@ -447,7 +548,7 @@ async function cmdRun(ctx: Ctx): Promise<number> {
   else await say('happy', 'Every outcome holds.');
 
   const next: string[] = [];
-  const first = run.observations.find((x) => x.kind === 'outcome' && (x.failures.length || x.violations.length));
+  const first = run.observations.find((x) => x.kind === 'outcome' && blocks(x));
   if (first && !ctx.flags.only) next.push(`Focus on one: ${e.cyan(`oodle run --only ${first.id}`)}`);
   if (run.lint.errors.length) next.push(`Catalog details: ${e.cyan('oodle lint')}`);
   if (run.gaps.length && !ctx.flags.verbose) next.push(`See proposed catalog entries for unknown routes: ${e.cyan('oodle run --verbose')}`);
@@ -456,11 +557,91 @@ async function cmdRun(ctx: Ctx): Promise<number> {
   return failing ? EXIT.blocking : EXIT.ok;
 }
 
+function numberFlag(ctx: Ctx, name: string, min: number, max = Infinity): number | undefined {
+  const raw = ctx.flags[name];
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < min || n > max) throw usageError(`--${name} must be a number from ${min}${max === Infinity ? ' up' : ` to ${max}`}, not "${raw}"`);
+  return n;
+}
+
+async function cmdMutate(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0], 'mutate');
+  const max = numberFlag(ctx, 'max', 1);
+  const jobs = numberFlag(ctx, 'jobs', 1);
+  const minScore = numberFlag(ctx, 'min-score', 0, 100);
+  if (ctx.format === 'text') heading('mutate', dir);
+  const spin = spinner('Planting bugs');
+  let report: MutateReport;
+  try {
+    report = await mutate(dir, {
+      files: ctx.flags.files,
+      only: ctx.flags.only,
+      max,
+      jobs,
+      tests: ctx.flags.tests,
+      onProgress: (done, total) => spin.update(`Running mutants ${e.dim(`${done}/${total}`)}`),
+      track: (cleanup) => (cleanups.add(cleanup), () => cleanups.delete(cleanup)),
+    });
+  } finally {
+    spin.stop();
+  }
+  const pct = Math.round(report.score * 100);
+  const below = minScore !== undefined && pct < minScore;
+  if (ctx.format === 'json') {
+    printJson({ ok: !below, oodle: VERSION, ...report, score: pct, ...(minScore !== undefined ? { min_score: minScore } : {}) });
+    return below ? EXIT.blocking : EXIT.ok;
+  }
+  console.log(renderMutate(report, { verbose: ctx.flags.verbose, minScore }));
+  if (below) await say('worried', `Only ${pct}% of planted bugs were caught.`);
+  else if (report.summary.survived) await say('curious', `${report.summary.survived} planted bug(s) went unnoticed. Worth a look.`);
+  else await say('happy', 'Every planted bug was caught.');
+  const next: string[] = [];
+  const first = report.mutants.find((m) => m.status === 'survived');
+  if (first) next.push(`Tighten the outcome that runs through ${e.cyan(`${first.file}:${first.line}`)}, or add a condition that reaches it`);
+  if (report.redundant.length) next.push(`Outcomes that catch nothing extra may be merged or dropped: ${report.redundant.slice(0, 3).join(', ')}`);
+  if (!ctx.flags.tests) next.push(`Find redundant unit tests: ${e.cyan('oodle mutate --tests "npm test"')}`);
+  hints(next);
+  return below ? EXIT.blocking : EXIT.ok;
+}
+
+function readInput(path: string, what: string): string {
+  if (path === '-') return readFileSync(0, 'utf8');
+  if (!existsSync(path)) throw usageError(`${what} ${path} does not exist`, `Pass a file, or - to read stdin.`);
+  return readFileSync(path, 'utf8');
+}
+
+async function cmdPropose(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[1], 'propose');
+  const result = propose(dir, readInput(ctx.args[0], 'Proposal'));
+  if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+  heading('propose', dir);
+  for (const a of result.added) console.log(`  ${o.green('+')} ${a.section.slice(0, -1).padEnd(10)} ${a.id}`);
+  console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(result.added.length, 'entry', 'entries')} in ${result.file} · reported, not blocking`)}`);
+  await say('curious', 'Proposals noted. A human gets the final say.');
+  hints([`See how they do: ${e.cyan('oodle run')}`, `Approve one by deleting its ${e.cyan('status: proposed')} line in ${result.file}`]);
+  return EXIT.ok;
+}
+
+async function cmdDraft(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[1], 'draft');
+  process.stdout.write(draftPrompt(dir, readInput(ctx.args[0], 'Brief')));
+  return EXIT.ok;
+}
+
+async function cmdMcp(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0], 'mcp');
+  settings.quiet = true;
+  await serveMcp(dir, VERSION);
+  return EXIT.ok;
+}
+
 async function cmdLint(ctx: Ctx): Promise<number> {
   if (ctx.flags.watch) return watchLoop(ctx);
   const dir = findProject(ctx.args[0], 'lint');
-  const catalog = loadCatalog(dir, loadConfig(dir));
-  const result = lint(catalog);
+  const config = loadConfig(dir);
+  const catalog = loadCatalog(dir, config);
+  const result = lint(catalog, config);
   annotateLint(dir, result);
   if (ctx.format === 'json') {
     printJson({ ok: !result.errors.length, ...result });

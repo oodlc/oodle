@@ -64,7 +64,11 @@ export interface Observed {
 
 export function evaluate(expect: Expect, obs: Observed): string[] {
   const failures: string[] = [];
-  if (expect.status !== undefined && obs.status !== expect.status) failures.push(`status: expected ${expect.status}, got ${obs.status}`);
+  if (typeof expect.status === 'number' && obs.status !== expect.status) failures.push(`status: expected ${expect.status}, got ${obs.status}`);
+  else if (expect.status !== undefined && typeof expect.status === 'object') {
+    const reason = matchValue(obs.status, expect.status);
+    if (reason) failures.push(`status: ${reason}`);
+  }
   for (const [path, want] of Object.entries(expect.body ?? {})) {
     const reason = matchValue(getPath(obs.body, path), want);
     if (reason) failures.push(`body.${path}: ${reason}`);

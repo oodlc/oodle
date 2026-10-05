@@ -17,7 +17,7 @@ Agents make code cheap and replaceable. What has to survive every rewrite is wha
 - `ops.health` changed: [default] body.version added
 ```
 
-Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action. The drafter and MCP server come next.
+Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action, and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin.
 
 ## Quick start
 
@@ -40,6 +40,11 @@ oodle diff <base> <head>       Outcome diff between two project checkouts
 oodle lint [project]           Validate the catalog and its traceability
 oodle init [dir]               Start a project: an oodlc/ folder, a starter catalog and app
 oodle doctor [project]         Check your environment and project setup
+oodle mutate [project]         Plant small bugs and see which ones the catalog catches
+oodle propose <file>           Add drafted entries as proposals, never changing an existing one
+oodle draft <brief>            Print the prompt that drafts catalog entries from a brief
+oodle mcp [project]            Serve Oodle to coding agents over MCP
+oodle hook <event>             Answer a coding agent's hook (Claude Code)
 oodle completion <shell>       Print a bash, zsh or fish completion script
 ```
 
@@ -52,6 +57,15 @@ oodle completion <shell>       Print a bash, zsh or fish completion script
 - **Predictable exit codes.** `0` ok, `1` blocking, `2` could not run, `130` interrupted. Ctrl-C cleans up after itself.
 
 The full reference is in [`docs/cli.md`](docs/cli.md).
+
+## For coding agents
+
+```
+/plugin marketplace add oodlc/oodle
+/plugin install oodle@oodlc
+```
+
+The Claude Code plugin tells the agent how the project is guarded. It asks you before the agent touches an approved outcome or constraint, and it keeps the agent working while an outcome it broke is still broken. It also adds the Oodle MCP tools. Agents **propose** outcomes (`status: proposed` runs and reports but never blocks), and you approve them by deleting one line. `oodle mutate` shows which planted bugs your outcomes miss, and with `--tests` which unit tests they make redundant. See [`docs/agents.md`](docs/agents.md).
 
 Oodle checks itself, too. The root [`oodlc/`](oodlc/) folder declares Oodle's own promises, and CI blocks any pull request that breaks one. See [CONTRIBUTING](CONTRIBUTING.md#oodle-checks-itself).
 
@@ -140,6 +154,10 @@ behaviors:
 - **Conditions** are named variants (`given` state, stubs or body) layered over the outcome or behavior: `defaults` → item → condition.
 - **Constraints** are invariants written as a JS expression over `effects`, `state` and `response`. Every constraint is checked on every run, and a check that throws counts as a violation. The `constraints:` list on an outcome is traceability only. See [0002](docs/decisions/0002-constraints-hold-on-every-run.md).
 - **Latency** is real in-process time plus the simulated latency of stubbed calls, so `payment_provider_slow` costs 1.5s of simulated time and zero real time.
+- **`when`** gives a condition its own expectations. Each field it names replaces that field of `expect`, e.g. `when: { security.no-credentials: { status: 401 } }`. `status` also takes a matcher such as `{ gte: 400, lte: 499 }`. See [0004](docs/decisions/0004-conditions-carry-expectations.md).
+- **The security pack** is a set of built-in conditions that need no app knowledge: `security.no-credentials`, `security.injection`, `security.oversize`, `security.extra-fields` (mass assignment and `__proto__` pollution) and `security.replayed`. `given` also takes `headers`, `repeat` and `fuzz`, and constraints see the `request`. `probe: { conditions: [...] }` in `oodlc/config.yaml` probes every unknown route with them.
+- **The simulation is sealed.** Reaching the real network instead of going through `ctx.effects` is an `oodle.sealed` violation and blocks. `sealed: { allow: [host] }` lets named hosts through. See [0005](docs/decisions/0005-sealed-simulation.md).
+- **`status: proposed`** on an intent, outcome or constraint means it runs and is reported, but never blocks until a human deletes that line. `oodle propose` writes proposals, and only proposals. See [0006](docs/decisions/0006-proposals-and-propose-only-agents.md).
 
 Full schema: [`spec/catalog.schema.json`](spec/catalog.schema.json).
 
@@ -202,10 +220,18 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 | Add `POST /quick-buy` that charges without an order | constraint violated on an unknown route, blocking |
 | Loosen `no-charge-without-order` | constraint `redefined`, blocking until approved |
 | A constraint check throws | fails closed, blocking |
+| Checkout without credentials still charges (`when` says 401) | outcome broken under `security.no-credentials` |
+| Checkout trusts a `total_cents` from the body | outcome broken under `security.extra-fields` |
+| The same request sent twice charges twice | `charge-once` violated under `security.replayed` |
+| A new route charges without credentials | blocking under `probe.conditions` |
+| A route merges a body's `__proto__` into an object | `oodle.prototype-pollution` violated |
+| The health check calls `fetch` directly | `oodle.sealed` violated, blocking |
+| A proposed outcome does not hold yet | reported, nothing blocks |
+| Marking an approved outcome `proposed` | `redefined`, blocking |
 
 ## Not yet
 
-Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes, the drafter (`oodle draft brief.md`) and the MCP server.
+Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes, and an OS-level sandbox for child processes.
 
 ## Contributing
 

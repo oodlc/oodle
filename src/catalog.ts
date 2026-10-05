@@ -11,6 +11,9 @@ const ajv = new Ajv({ allErrors: true });
 const validateCatalogFile = ajv.compile(JSON.parse(readFileSync(join(specDir, 'catalog.schema.json'), 'utf8')));
 const validateConfig = ajv.compile(JSON.parse(readFileSync(join(specDir, 'config.schema.json'), 'utf8')));
 
+/** Schema problems in one catalog document, as "file: /path message" lines. */
+export const validateCatalogDoc = (doc: unknown, file: string): string[] => (validateCatalogFile(doc) ? [] : formatAjv(file, validateCatalogFile.errors));
+
 export class CatalogError extends Error {
   constructor(public problems: string[]) {
     super(problems.join('\n'));

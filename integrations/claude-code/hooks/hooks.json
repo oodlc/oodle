@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "npx --no-install oodle hook session-start", "timeout": 30 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write|Bash",
+        "hooks": [{ "type": "command", "command": "npx --no-install oodle hook pre-tool-use", "timeout": 30 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "npx --no-install oodle hook stop", "timeout": 600 }]
+      }
+    ]
+  }
+}

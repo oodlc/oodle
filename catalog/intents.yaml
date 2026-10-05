@@ -1,0 +1,5 @@
+version: 0
+# Intents say why the product exists. Every outcome traces to one.
+intents:
+  - id: service-available
+    statement: Callers can rely on the service being there when they need it.

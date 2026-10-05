@@ -1,0 +1,7 @@
+# Oodle project config. Docs: https://github.com/oodlc/oodle#writing-a-catalog
+app: src/app.ts            # default export createApp(ctx)
+catalog: catalog
+defaults:
+  given:
+    state: {}
+    stubs: {}               # every external call the app makes needs a stub, e.g. payment.capture

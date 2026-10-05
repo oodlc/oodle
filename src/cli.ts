@@ -775,7 +775,8 @@ async function fail(error: unknown): Promise<number> {
     return known?.exitCode ?? EXIT.usage;
   }
   if (known) {
-    if (known.code !== 'usage') await say('oops', 'I could not finish.');
+    // Oodle reacts to real failures, not to "wrong directory" or a typo the hint already fixes.
+    if (!['usage', 'no-project', 'no-match', 'exists'].includes(known.code)) await say('oops', 'I could not finish.');
     process.stderr.write(`\n${e.red(e.bold(`${sym.fail} ${known.message}`))}\n`);
     // Multi-line problems (YAML and compiler errors carry a code frame) stay inside the gutter.
     for (const p of known.problems) for (const l of p.split('\n').filter((x) => x.trim())) process.stderr.write(`  ${e.dim(sym.bar)} ${l}\n`);

@@ -21,10 +21,10 @@ Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, g
 
 ## Quick start
 
-In your own service (Oodle isn't on npm yet, so it installs from GitHub):
+In your own service:
 
 ```bash
-npm i -D github:oodlc/oodle
+npm i -D oodle
 npx oodle init --ci                      # wraps the service already here, adds the GitHub workflow
 npx oodle doctor                         # is everything wired up?
 npx oodle run                            # run every outcome and behavior under every condition

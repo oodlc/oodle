@@ -1,0 +1,15 @@
+{
+  // Compiles the package's public entry points (oodle/adapter, oodle/contract) to dist/ with
+  // type declarations, so an app's own tsc never type-checks Oodle's source. The CLI itself
+  // runs from src/ through tsx, which it needs anyway to load TypeScript apps.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": [],
+  "files": ["src/adapter.ts", "src/contract.ts"]
+}

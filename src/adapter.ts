@@ -28,7 +28,8 @@ import http from 'node:http';
 import net from 'node:net';
 import nodeCrypto from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
-import type { AppContext, CreateApp, Request, Response, Route } from './contract.ts';
+// .js, not .ts: this is the path the published adapter.d.ts keeps, next to contract.d.ts.
+import type { AppContext, CreateApp, Request, Response, Route } from './contract.js';
 
 type NodeHandler = (req: http.IncomingMessage, res: http.ServerResponse) => unknown;
 type FetchHandler = (req: globalThis.Request) => globalThis.Response | Promise<globalThis.Response>;

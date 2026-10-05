@@ -858,7 +858,7 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     hints([
       ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
-      ...(existsSync(join(result.dir, 'node_modules', 'oodle')) ? [] : [`Install Oodle so ${app} can import oodle/adapter: ${e.cyan('npm i -D github:oodlc/oodle')}`]),
+      ...(existsSync(join(result.dir, 'node_modules', 'oodle')) ? [] : [`Install Oodle so ${app} can import oodle/adapter: ${e.cyan('npm i -D oodle')}`]),
       `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
       `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
       `Then check the wiring: ${e.cyan(`oodle doctor${where}`)}`,

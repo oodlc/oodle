@@ -61,7 +61,8 @@ runs:
         if [ -d node_modules/tsx ] && [ -d node_modules/yaml ] && [ -d node_modules/ajv ]; then
           echo "Oodle's dependencies are already installed here."
         else
-          npm ci --omit=dev --no-audit --no-fund --loglevel=error
+          # --ignore-scripts: `prepare` builds the published entry points, which the CLI doesn't use.
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
         fi
 
     - name: Check outcomes

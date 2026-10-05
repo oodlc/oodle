@@ -1,6 +1,6 @@
 {
   "name": "oodle",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that protects declared outcomes and watches observed behavior.",
   "homepage": "https://github.com/oodlc/oodle#readme",
   "repository": {
@@ -15,13 +15,20 @@
     "oodle": "./bin/oodle.js"
   },
   "exports": {
-    "./adapter": "./src/adapter.ts",
-    "./contract": "./src/contract.ts",
+    "./adapter": {
+      "types": "./dist/adapter.d.ts",
+      "default": "./dist/adapter.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "default": "./dist/contract.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "bin",
     "src",
+    "dist",
     "spec",
     "docs/cli.md",
     "docs/agents.md"
@@ -30,10 +37,13 @@
     "node": ">=20.11"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "oodle": "node bin/oodle.js",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "demo": "node bin/oodle.js run examples/checkout"
+    "demo": "node bin/oodle.js run examples/checkout",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "keywords": [
     "oodlc",

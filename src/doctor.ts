@@ -26,7 +26,7 @@ const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'oodle.js
 function problemText(err: unknown): { detail: string; hint?: string } {
   if (err instanceof CatalogError) return { detail: err.problems.join('; '), hint: 'Fix the catalog files listed, then run `oodle lint`.' };
   if (err instanceof OodleError && err.problems.some((p) => /Cannot find (package|module) 'oodle'/.test(p))) {
-    return { detail: `${err.message}: the oodle package isn't installed here`, hint: 'Install it so the app can import oodle/adapter: `npm i -D github:oodlc/oodle`.' };
+    return { detail: `${err.message}: the oodle package isn't installed here`, hint: 'Install it so the app can import oodle/adapter: `npm i -D oodle`.' };
   }
   if (err instanceof OodleError) return { detail: [err.message, ...err.problems].join(': '), hint: err.hint };
   return { detail: (err as Error).message };

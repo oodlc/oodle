@@ -25,8 +25,8 @@ const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'oodle.js
 
 function problemText(err: unknown): { detail: string; hint?: string } {
   if (err instanceof CatalogError) return { detail: err.problems.join('; '), hint: 'Fix the catalog files listed, then run `oodle lint`.' };
-  if (err instanceof OodleError && err.problems.some((p) => /Cannot find (package|module) 'oodle'/.test(p))) {
-    return { detail: `${err.message}: the oodle package isn't installed here`, hint: 'Install it so the app can import oodle/adapter: `npm i -D oodle`.' };
+  if (err instanceof OodleError && err.problems.some((p) => /Cannot find (package|module) '@oodlc\/oodle'/.test(p))) {
+    return { detail: `${err.message}: the @oodlc/oodle package isn't installed here`, hint: 'Install it so the app can import @oodlc/oodle/adapter: `npm i -D @oodlc/oodle`.' };
   }
   if (err instanceof OodleError) return { detail: [err.message, ...err.problems].join(': '), hint: err.hint };
   return { detail: (err as Error).message };
@@ -135,7 +135,7 @@ export async function doctor(arg?: string): Promise<Check[]> {
     if (unstubbed.length) {
       checks.push({ name: 'app', status: 'fail', detail: `external calls with no stub: ${unstubbed.join(', ')}`, hint: 'Add each one under defaults.given.stubs in oodlc/config.yaml, or in a condition.' });
     } else if (escaped.length) {
-      checks.push({ name: 'app', status: 'fail', detail: `reaches the real network: ${escaped.join(', ')}`, hint: `Name each host under effects in ${config.app} (oodle/adapter), or route the call through ctx.effects.call. Then stub the effect in oodlc/config.yaml.` });
+      checks.push({ name: 'app', status: 'fail', detail: `reaches the real network: ${escaped.join(', ')}`, hint: `Name each host under effects in ${config.app} (@oodlc/oodle/adapter), or route the call through ctx.effects.call. Then stub the effect in oodlc/config.yaml.` });
     } else if (threw.length) {
       checks.push({ name: 'app', status: 'fail', detail: `${plural(threw.length, 'run')} threw, e.g. ${threw[0].id}: ${threw[0].error}`, hint: 'Run `oodle run` to see each failure.' });
     } else {
@@ -147,7 +147,7 @@ export async function doctor(arg?: string): Promise<Check[]> {
     if (run.observations.length) {
       const drift = unstable(dir, run.observations);
       checks.push(drift.length
-        ? { name: 'stable', status: 'warn', detail: `output differs between two identical runs: ${drift.slice(0, 3).join('; ')}${drift.length > 3 ? `; and ${drift.length - 3} more` : ''}`, hint: 'Every pull request would show these as changed. Take time and ids from ctx.now() and ctx.id(), use oodle/adapter (deterministic by default), or reset module state in setup(ctx).' }
+        ? { name: 'stable', status: 'warn', detail: `output differs between two identical runs: ${drift.slice(0, 3).join('; ')}${drift.length > 3 ? `; and ${drift.length - 3} more` : ''}`, hint: 'Every pull request would show these as changed. Take time and ids from ctx.now() and ctx.id(), use @oodlc/oodle/adapter (deterministic by default), or reset module state in setup(ctx).' }
         : { name: 'stable', status: 'ok', detail: 'two runs give the same output' });
     }
   } catch (err) {

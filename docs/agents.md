@@ -20,7 +20,7 @@ Install the plugin. It bundles the hooks, the MCP server and a skill:
 /plugin install oodle@oodlc
 ```
 
-The project needs Oodle installed locally (`npm install -D oodle`), since the plugin runs `npx --no-install oodle`.
+The project needs Oodle installed locally (`npm install -D @oodlc/oodle`), since the plugin runs `npx --no-install oodle`.
 
 What it does:
 
@@ -35,7 +35,7 @@ What it does:
 Without the plugin, wire the same pieces by hand:
 
 ```bash
-claude mcp add oodle -- npx oodle mcp
+claude mcp add oodle -- npx --no-install oodle mcp
 ```
 
 ```jsonc

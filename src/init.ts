@@ -142,7 +142,7 @@ const ADAPTER = (svc: Service) => {
  *${todo.length ? `\n * Before the first run:\n${todo.join('\n')}\n *` : ''}
  * Then: \`oodle doctor\`. Docs: https://github.com/oodlc/oodle#adopting-an-existing-service
  */
-import { httpApp } from 'oodle/adapter';
+import { httpApp } from '@oodlc/oodle/adapter';
 ${importLine}
 
 export default httpApp(${target}, {

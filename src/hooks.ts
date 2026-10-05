@@ -80,9 +80,9 @@ function sessionStart(cwd: string, version: string) {
   const proposed = [...c.intents, ...c.outcomes, ...c.constraints].filter((x) => x.status === 'proposed').length;
   const context = `This project is guarded by Oodle ${version} (OODLC). The catalog in ${join(where, config.catalog)}/ is the spec: ${c.outcomes.length} outcomes, ${c.constraints.length} constraints, ${c.behaviors.length} behaviors${proposed ? `, ${proposed} proposals waiting for a human` : ''}.
 - Outcomes and constraints are human-approved and block merges. Behaviors are observed and never block. Internals (anything not visible at the boundary) are yours to change.
-- Work against the outcomes: \`npx oodle run --only "<id or glob>" --json\` while iterating, \`npx oodle check --json\` before you finish. A Stop hook runs the check too.
-- Never edit, delete or approve an outcome, constraint or intent to make something pass, and never add \`status: proposed\` to an approved one. Never pass \`--approve\` or post \`/oodle approve\`: approving a change to a promise is the person's call. To add one, propose it: \`npx oodle propose <file.yaml>\` (or the oodle MCP propose tool). Editing approved entries asks the person first.
-- For variants use conditions, and \`when\` to say what a condition changes; for hostile input use the built-in security.* conditions. \`npx oodle mutate --files <glob> --only <glob>\` shows which planted bugs the outcomes miss.
+- Work against the outcomes: \`npx --no-install oodle run --only "<id or glob>" --json\` while iterating, \`npx --no-install oodle check --json\` before you finish. A Stop hook runs the check too.
+- Never edit, delete or approve an outcome, constraint or intent to make something pass, and never add \`status: proposed\` to an approved one. Never pass \`--approve\` or post \`/oodle approve\`: approving a change to a promise is the person's call. To add one, propose it: \`npx --no-install oodle propose <file.yaml>\` (or the oodle MCP propose tool). Editing approved entries asks the person first.
+- For variants use conditions, and \`when\` to say what a condition changes; for hostile input use the built-in security.* conditions. \`npx --no-install oodle mutate --files <glob> --only <glob>\` shows which planted bugs the outcomes miss.
 - External calls go through ctx.effects only; the simulation is sealed and real network access is a blocking violation.`;
   emit({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } });
 }

@@ -277,8 +277,8 @@ function importGraph(projectDir: string, entry: string): string[] {
   return [...seen].sort();
 }
 
-/** An oodle/adapter module only wires the app into the simulation. Mutating it tests Oodle, not the app. */
-const isAdapter = (projectDir: string, file: string) => /\bfrom\s*['"]oodle\/adapter['"]/.test(readFileSync(join(projectDir, file), 'utf8'));
+/** An @oodlc/oodle/adapter module only wires the app into the simulation. Mutating it tests Oodle, not the app. */
+const isAdapter = (projectDir: string, file: string) => /\bfrom\s*['"]@oodlc\/oodle\/adapter['"]/.test(readFileSync(join(projectDir, file), 'utf8'));
 
 /** Files to mutate: the given globs, or every project file the app imports, minus tests and adapters. */
 export function sourceFiles(projectDir: string, globs?: string[]): string[] {

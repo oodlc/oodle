@@ -24,7 +24,7 @@ Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, g
 In your own service:
 
 ```bash
-npm i -D oodle
+npm i -D @oodlc/oodle
 npx oodle init --ci                      # wraps the service already here, adds the GitHub workflow
 npx oodle doctor                         # is everything wired up?
 npx oodle run                            # run every outcome and behavior under every condition
@@ -43,11 +43,11 @@ npm test                                 # the seeded scenarios
 
 ## Adopting an existing service
 
-`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono or `node:http`) and writes `oodle.app.ts`, which runs it through `oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
+`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono or `node:http`) and writes `oodle.app.ts`, which runs it through `@oodlc/oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
 
 ```ts
 // oodle.app.ts
-import { httpApp } from 'oodle/adapter';
+import { httpApp } from '@oodlc/oodle/adapter';
 import { app } from './src/server.ts';
 import { store } from './src/repo.ts';
 
@@ -216,7 +216,7 @@ Full schema: [`spec/catalog.schema.json`](spec/catalog.schema.json).
 ## The app contract
 
 ```ts
-import type { CreateApp } from 'oodle/contract';
+import type { CreateApp } from '@oodlc/oodle/contract';
 
 const createApp: CreateApp = (ctx) => ({
   routes: [{ method: 'POST', path: '/checkout' }],

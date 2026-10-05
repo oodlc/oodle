@@ -1,4 +1,4 @@
-# An existing Express service, run through the oodle/adapter. See ../oodle.app.ts.
+# An existing Express service, run through the @oodlc/oodle/adapter. See ../oodle.app.ts.
 app: oodle.app.ts
 defaults:
   given:

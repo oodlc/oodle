@@ -2,7 +2,7 @@
  * Runs an existing HTTP app under the OODLC contract without rewriting it.
  *
  *   // oodle.app.ts
- *   import { httpApp } from 'oodle/adapter';
+ *   import { httpApp } from '@oodlc/oodle/adapter';
  *   import { app } from './src/server.ts';
  *   export default httpApp(app, {
  *     effects: { 'POST api.stripe.com/v1/charges': 'payment.charge', 'api.sendgrid.com': 'email.send' },

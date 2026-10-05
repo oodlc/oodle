@@ -215,7 +215,7 @@ oodle completion fish > ~/.config/fish/completions/oodle.fish
 
 ## Mutation testing
 
-`oodle mutate` plants small bugs (flipped comparisons and logic, arithmetic, negation, changed literals and strings, removed effects and assignments) in every file the app imports (or `--files`). It skips `oodle/adapter` modules, which only wire the app in, and entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines. It runs `oodle run --json` against each in a mirror of the repository under `.git/oodle/mutants/`, removed afterwards, with a timeout of five times the baseline run. Each mutant is:
+`oodle mutate` plants small bugs (flipped comparisons and logic, arithmetic, negation, changed literals and strings, removed effects and assignments) in every file the app imports (or `--files`). It skips `@oodlc/oodle/adapter` modules, which only wire the app in, and entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines. It runs `oodle run --json` against each in a mirror of the repository under `.git/oodle/mutants/`, removed afterwards, with a timeout of five times the baseline run. Each mutant is:
 
 | Status | Meaning |
 | --- | --- |

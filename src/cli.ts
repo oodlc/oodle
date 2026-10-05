@@ -160,7 +160,7 @@ const COMMANDS: Command[] = [
   {
     name: 'init',
     summary: 'Start a project: an oodlc/ folder with config, a starter catalog and app',
-    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through oodle/adapter, instead of a starter app. Otherwise it writes a starter app that passes `oodle run` straight away. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
+    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through @oodlc/oodle/adapter, instead of a starter app. Otherwise it writes a starter app that passes `oodle run` straight away. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
     args: [{ name: 'dir', description: 'Where to create the project. Default: the current directory' }],
     flags: [
       { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
@@ -191,7 +191,7 @@ const COMMANDS: Command[] = [
     name: 'mutate',
     summary: 'Plant small bugs in the app and see which ones the catalog catches',
     description:
-      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite. Tests whose every caught bug an outcome caught too are listed as covered by the catalog: candidates to delete after a read, since a test can guard inputs no outcome sends. Entry-point boilerplate (listen, process.argv, logging) and oodle/adapter modules are never mutated.',
+      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite. Tests whose every caught bug an outcome caught too are listed as covered by the catalog: candidates to delete after a read, since a test can guard inputs no outcome sends. Entry-point boilerplate (listen, process.argv, logging) and @oodlc/oodle/adapter modules are never mutated.',
     args: [PROJECT_ARG],
     flags: [
       { name: 'files', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Mutate these files, relative to the project, e.g. "src/**/*.ts" (repeatable). Default: the app\'s directory, minus tests' },
@@ -251,12 +251,12 @@ const COMMANDS: Command[] = [
     name: 'mcp',
     summary: 'Serve Oodle to coding agents over the Model Context Protocol',
     description:
-      'Runs an MCP server on stdio. Agents get tools to run, check, lint, explain and mutate, to read the catalog, and to propose new entries, plus a `draft` prompt. There is no tool that edits or removes an outcome, a constraint or an intent: those stay human decisions. Add it to Claude Code with `claude mcp add oodle -- npx oodle mcp`.',
+      'Runs an MCP server on stdio. Agents get tools to run, check, lint, explain and mutate, to read the catalog, and to propose new entries, plus a `draft` prompt. There is no tool that edits or removes an outcome, a constraint or an intent: those stay human decisions. Add it to Claude Code with `claude mcp add oodle -- npx --no-install oodle mcp`.',
     args: [PROJECT_ARG],
     flags: [],
     formats: ['text'],
     examples: [
-      ['claude mcp add oodle -- npx oodle mcp', 'Give Claude Code the Oodle tools'],
+      ['claude mcp add oodle -- npx --no-install oodle mcp', 'Give Claude Code the Oodle tools'],
       ['oodle mcp services/checkout', 'Serve one project'],
     ],
     run: cmdMcp,
@@ -858,7 +858,7 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     hints([
       ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
-      ...(existsSync(join(result.dir, 'node_modules', 'oodle')) ? [] : [`Install Oodle so ${app} can import oodle/adapter: ${e.cyan('npm i -D oodle')}`]),
+      ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import @oodlc/oodle/adapter: ${e.cyan('npm i -D @oodlc/oodle')}`]),
       `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
       `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
       `Then check the wiring: ${e.cyan(`oodle doctor${where}`)}`,

@@ -1,6 +1,6 @@
 // How Oodle runs the service: the real Express app, in process, with every outbound
 // fetch routed through ctx.effects and the data layer seeded from ctx.state.
-import { httpApp } from 'oodle/adapter';
+import { httpApp } from '@oodlc/oodle/adapter';
 import { app } from './src/server.ts';
 import { store } from './src/repo.ts';
 

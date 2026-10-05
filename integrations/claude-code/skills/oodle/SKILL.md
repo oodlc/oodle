@@ -10,9 +10,9 @@ The `oodlc/` folder is the spec. **Outcomes** and **constraints** are approved b
 ## The loop
 
 1. **Read the catalog first**: the `catalog` MCP tool, or the YAML files in `oodlc/`. Find the outcomes your task touches.
-2. **New behavior? Propose before you build.** Draft outcomes for what someone outside the system will experience, and `propose` them (MCP tool, or `npx oodle propose draft.yaml`). They run and report from then on but block nothing, so you can build towards them. For a brief or PRD, use the `draft` MCP prompt or `npx oodle draft brief.md`.
-3. **Iterate on one slice**: `run` with `only: ["checkout.*"]` (or `npx oodle run --only "checkout.*" --json`). Use `explain <id>` to see exactly what the app returned and emitted under each condition.
-4. **Check before you finish**: `check` (or `npx oodle check --json`), then do what `what_to_do` says. The Stop hook runs this too and keeps you working while an outcome you broke is still broken.
+2. **New behavior? Propose before you build.** Draft outcomes for what someone outside the system will experience, and `propose` them (MCP tool, or `npx --no-install oodle propose draft.yaml`). They run and report from then on but block nothing, so you can build towards them. For a brief or PRD, use the `draft` MCP prompt or `npx --no-install oodle draft brief.md`.
+3. **Iterate on one slice**: `run` with `only: ["checkout.*"]` (or `npx --no-install oodle run --only "checkout.*" --json`). Use `explain <id>` to see exactly what the app returned and emitted under each condition.
+4. **Check before you finish**: `check` (or `npx --no-install oodle check --json`), then do what `what_to_do` says. The Stop hook runs this too and keeps you working while an outcome you broke is still broken.
 5. **In the PR**, paste the outcome diff and give one line per behavior change: intended, or a side effect you didn't mean.
 
 ## Write fewer, better tests
@@ -24,8 +24,8 @@ The `oodlc/` folder is the spec. **Outcomes** and **constraints** are approved b
   when:
     security.no-credentials: { status: 401, effects: [{ kind: payment.capture, count: 0 }] }
   ```
-- **Measure, don't guess**: `npx oodle mutate --files "src/checkout.ts" --only "checkout.*"` plants small bugs. A *survived* mutant is a bug no outcome catches: tighten an expectation or add a condition, then propose it. *Only noticed* means a reviewer reading the diff would have to spot it.
-- **Delete what adds nothing**: `npx oodle mutate --tests "npm test"` lists tests that catch nothing the catalog doesn't already catch (*candidates to delete*), and tests worth keeping (or turning into an outcome). Scaffolding tests you wrote while debugging go before the PR.
+- **Measure, don't guess**: `npx --no-install oodle mutate --files "src/checkout.ts" --only "checkout.*"` plants small bugs. A *survived* mutant is a bug no outcome catches: tighten an expectation or add a condition, then propose it. *Only noticed* means a reviewer reading the diff would have to spot it.
+- **Delete what adds nothing**: `npx --no-install oodle mutate --tests "npm test"` lists tests that catch nothing the catalog doesn't already catch (*candidates to delete*), and tests worth keeping (or turning into an outcome). Scaffolding tests you wrote while debugging go before the PR.
 
 ## Security
 

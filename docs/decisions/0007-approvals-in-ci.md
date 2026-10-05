@@ -49,7 +49,7 @@ Two things make approval harder than a button:
 
 - An intended change to a promise can merge with a green check, and the comment says who approved it.
 - A broken outcome still can't merge without changing the catalog, which is itself a reviewed, approvable change.
-- Fingerprints depend on the observed output, so an app whose output isn't deterministic (wall-clock time, random ids) produces a new fingerprint on every run. `oodle doctor` now runs the catalog twice and reports any output that differs between identical runs, and the `oodle/adapter` makes time, uuids and `Math.random` deterministic.
+- Fingerprints depend on the observed output, so an app whose output isn't deterministic (wall-clock time, random ids) produces a new fingerprint on every run. `oodle doctor` now runs the catalog twice and reports any output that differs between identical runs, and the `@oodlc/oodle/adapter` makes time, uuids and `Math.random` deterministic.
 - The repository's own Oodle check runs in its own workflow, so a review re-runs only that check and never skips another required check.
 
 ## Revisit if

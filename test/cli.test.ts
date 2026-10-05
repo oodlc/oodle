@@ -136,7 +136,7 @@ test('init on an existing service wraps it in an adapter instead of writing a st
   assert.deepEqual(made.created, ['oodlc/config.yaml', 'oodlc/intents.yaml', 'oodlc/outcomes.yaml', 'oodle.app.ts']);
   assert.deepEqual(made.service, { entry: 'src/server.ts', framework: 'express', exportName: 'app', listensOnImport: true });
   const adapter = readFileSync(join(dir, 'oodle.app.ts'), 'utf8');
-  assert.match(adapter, /import \{ httpApp \} from 'oodle\/adapter';/);
+  assert.match(adapter, /import \{ httpApp \} from '@oodlc\/oodle\/adapter';/);
   assert.match(adapter, /import \{ app \} from '\.\/src\/server\.ts';/);
   assert.match(adapter, /calls listen\(\) when it is imported/);
   assert.equal(existsSync(join(dir, 'src', 'app.ts')), false);

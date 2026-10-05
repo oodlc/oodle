@@ -1,7 +1,15 @@
 {
   "name": "oodle",
   "version": "0.1.0",
-  "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that verifies behaviors, not code.",
+  "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that protects declared outcomes and watches observed behavior.",
+  "homepage": "https://github.com/oodlc/oodle#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oodlc/oodle.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oodlc/oodle/issues"
+  },
   "type": "module",
   "bin": {
     "oodle": "./bin/oodle.js"

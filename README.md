@@ -2,7 +2,7 @@
 
 # OODLC · Open Outcome Delivery Lifecycle
 
-**OODLC** is an open framework for delivering outcomes, not code. **Oodle** is its CLI: CI that protects outcomes and watches behavior.
+**OODLC** (say "oodle-see") is an open framework for delivering outcomes, not code. **Oodle** is its CLI: CI that protects outcomes and watches behavior.
 
 Agents make code cheap and replaceable. What has to survive every rewrite is what the customer experiences. In OODLC you declare those **outcomes**, and Oodle protects them: every change runs against them in a simulated world, and Oodle reports an **outcome diff** instead of a wall of green checks. Everything else the system does is **behavior**. Oodle notices it and tells you when it drifts, but never blocks on it.
 

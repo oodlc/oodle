@@ -55,7 +55,14 @@ runs:
     - name: Install Oodle
       shell: bash
       working-directory: ${{ github.action_path }}
-      run: npm ci --omit=dev --no-audit --no-fund --loglevel=error
+      # When the action runs from the repository it checks (`uses: ./`), its path is the workspace:
+      # `npm ci --omit=dev` there would delete the workspace's own dev dependencies. Reuse what's installed.
+      run: |
+        if [ -d node_modules/tsx ] && [ -d node_modules/yaml ] && [ -d node_modules/ajv ]; then
+          echo "Oodle's dependencies are already installed here."
+        else
+          npm ci --omit=dev --no-audit --no-fund --loglevel=error
+        fi
 
     - name: Check outcomes
       id: check

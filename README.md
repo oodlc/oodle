@@ -17,19 +17,71 @@ Agents make code cheap and replaceable. What has to survive every rewrite is wha
 - `ops.health` changed: [default] body.version added
 ```
 
-Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action, and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin.
+Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action with approvals from reviews, the adapter for existing Express, Fastify, Koa, Hono and `node:http` services, and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin.
 
 ## Quick start
+
+In your own service (Oodle isn't on npm yet, so it installs from GitHub):
+
+```bash
+npm i -D github:oodlc/oodle
+npx oodle init --ci                      # wraps the service already here, adds the GitHub workflow
+npx oodle doctor                         # is everything wired up?
+npx oodle run                            # run every outcome and behavior under every condition
+npx oodle check                          # outcome diff against your default branch
+```
+
+In this repository:
 
 ```bash
 npm install
 npx oodle hello                          # meet Oodle
-npx oodle doctor examples/checkout       # is everything wired up?
-npx oodle run examples/checkout          # run every outcome and behavior under every condition
-npx oodle check examples/checkout        # outcome diff against your default branch
-npx oodle init my-service                # start your own project
+npx oodle run examples/checkout          # a service built for OODLC
+npx oodle run examples/express-orders    # an ordinary Express service, run through the adapter
 npm test                                 # the seeded scenarios
 ```
+
+## Adopting an existing service
+
+`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono or `node:http`) and writes `oodle.app.ts`, which runs it through `oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
+
+```ts
+// oodle.app.ts
+import { httpApp } from 'oodle/adapter';
+import { app } from './src/server.ts';
+import { store } from './src/repo.ts';
+
+export default httpApp(app, {
+  effects: {                                   // outbound fetch calls, by "METHOD host/path-prefix" or "host"
+    'POST api.stripe.com/v1/charges': 'payment.charge',
+    'POST api.stripe.com/v1/refunds': 'payment.refund',
+    'api.sendgrid.com': 'email.sent',
+  },
+  setup(ctx) {                                 // before each run: point module-level stores at ctx.state
+    store.users = new Map(Object.entries(ctx.state.users ?? {}));
+    store.orders = new Map(Object.entries(ctx.state.orders ?? {}));
+  },
+});
+```
+
+- **Requests** go through the app's own middleware, in process. No port opens.
+- **Outbound `fetch` calls** that match an `effects` rule become `ctx.effects.call(kind, payload)`: stubbed from `oodlc/config.yaml` and recorded. The payload is the parsed JSON, form or query. A stub result with `$status: 402` answers with that HTTP status. Anything else that reaches for the network is refused and blocks as an `oodle.sealed` violation, so nothing slips through untested. Clients built on `node:http` instead of `fetch` (axios, some SDKs) are refused too: give them a fetch-based client (Stripe: `Stripe.createFetchHttpClient()`), or call them through `ctx.effects`.
+- **Time, `crypto.randomUUID`, random bytes and `Math.random`** are deterministic while a request runs, so identical code gives identical output and the outcome diff shows only real changes. `deterministic: false` turns this off.
+- **Routes** are found on their own for Express and Hono, or listed with `routes: ['GET /health', ...]`, so Oodle can probe the ones no outcome describes.
+
+`oodle doctor` then tells you whether Oodle is running your code or still a starter app, whether anything escapes the simulation, and whether two identical runs agree.
+
+## In CI
+
+`oodle init --ci` writes `.github/workflows/oodle.yml`. On every pull request, Oodle comments one outcome diff and fails the check only when something blocks. The pull request that adds Oodle passes: the base promised nothing yet, so every outcome is `new`.
+
+When a change to a promise is intended (a new field in a confirmation, a price that really did change), the comment ends with a line like:
+
+```
+/oodle approve checkout.payment-confirmed@1a2b3c4d
+```
+
+A maintainer other than the author submits a review containing it, and the check re-runs green, with the change marked approved and by whom. The approval covers that change exactly as it is. If a later push changes it, it needs approving again. A broken outcome is never approvable: fix the code, or redefine the outcome and approve that. See [`docs/cli.md`](docs/cli.md#ci) and [0007](docs/decisions/0007-approvals-in-ci.md).
 
 ## The CLI
 
@@ -38,7 +90,7 @@ oodle run [project]            Run every outcome and behavior under every condit
 oodle check [project]          Outcome diff of the working tree against a git ref
 oodle diff <base> <head>       Outcome diff between two project checkouts
 oodle lint [project]           Validate the catalog and its traceability
-oodle init [dir]               Start a project: an oodlc/ folder, a starter catalog and app
+oodle init [dir]               Start a project: wraps the service already here, or a starter app
 oodle doctor [project]         Check your environment and project setup
 oodle mutate [project]         Plant small bugs and see which ones the catalog catches
 oodle propose <file>           Add drafted entries as proposals, never changing an existing one
@@ -53,7 +105,7 @@ oodle completion <shell>       Print a bash, zsh or fish completion script
 - **Made for scripts and agents.** `--json` (or `OODLE_FORMAT=json`) prints exactly one JSON document, errors included. `oodle help --json` describes the whole CLI.
 - **Helps you get unstuck.** Every error says what to do next, typos get a "did you mean", and each run ends with a suggested next step.
 - **Fits the inner loop.** `oodle run --watch --only "checkout.*"` re-runs one slice on every save.
-- **Native in CI.** `uses: oodlc/oodle@v0` keeps one outcome-diff comment updated on every pull request. Findings become annotations and the diff goes to the job summary.
+- **Native in CI.** `uses: oodlc/oodle@v0` keeps one outcome-diff comment updated on every pull request, and takes approvals from reviews. Findings become annotations and the diff goes to the job summary.
 - **Predictable exit codes.** `0` ok, `1` blocking, `2` could not run, `130` interrupted. Ctrl-C cleans up after itself.
 
 The full reference is in [`docs/cli.md`](docs/cli.md).
@@ -65,7 +117,7 @@ The full reference is in [`docs/cli.md`](docs/cli.md).
 /plugin install oodle@oodlc
 ```
 
-The Claude Code plugin tells the agent how the project is guarded. It asks you before the agent touches an approved outcome or constraint, and it keeps the agent working while an outcome it broke is still broken. It also adds the Oodle MCP tools. Agents **propose** outcomes (`status: proposed` runs and reports but never blocks), and you approve them by deleting one line. `oodle mutate` shows which planted bugs your outcomes miss, and with `--tests` which unit tests they make redundant. See [`docs/agents.md`](docs/agents.md).
+The Claude Code plugin tells the agent how the project is guarded. It asks you before the agent touches an approved outcome or constraint, and it keeps the agent working while an outcome it broke is still broken. It also adds the Oodle MCP tools. Agents **propose** outcomes (`status: proposed` runs and reports but never blocks), and you approve them by deleting one line. `oodle mutate` shows which planted bugs your outcomes miss, and with `--tests` which unit tests they already cover. See [`docs/agents.md`](docs/agents.md).
 
 Oodle checks itself, too. The root [`oodlc/`](oodlc/) folder declares Oodle's own promises, and CI blocks any pull request that breaks one. See [CONTRIBUTING](CONTRIBUTING.md#oodle-checks-itself).
 
@@ -164,7 +216,7 @@ Full schema: [`spec/catalog.schema.json`](spec/catalog.schema.json).
 ## The app contract
 
 ```ts
-import type { CreateApp } from 'oodle/src/contract';
+import type { CreateApp } from 'oodle/contract';
 
 const createApp: CreateApp = (ctx) => ({
   routes: [{ method: 'POST', path: '/checkout' }],
@@ -228,6 +280,10 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 | The health check calls `fetch` directly | `oodle.sealed` violated, blocking |
 | A proposed outcome does not hold yet | reported, nothing blocks |
 | Marking an approved outcome `proposed` | `redefined`, blocking |
+| Approve the `currency` change with its `id@fingerprint` | still `changed`, marked approved, nothing blocks |
+| Approve it, then push a different `currency` value | approval stale, blocking again |
+| Approve a broken outcome | never approvable, still blocking |
+| The pull request that adds Oodle | every outcome `new`, nothing blocks if they hold |
 
 ## Not yet
 

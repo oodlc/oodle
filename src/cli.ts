@@ -7,8 +7,8 @@ import { parseArgs } from 'node:util';
 import { CatalogError, FOLDER, configFile, isProject, loadCatalog, loadConfig } from './catalog.ts';
 import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
-import { diffRuns } from './diff.ts';
-import { diffMarkdown } from './report.ts';
+import { diffRuns, parseApproval, type Approval } from './diff.ts';
+import { approvalTokens, diffMarkdown } from './report.ts';
 import { renderDiff, renderLint, renderMutate, renderRun, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
 import { init, migrate } from './init.ts';
@@ -78,6 +78,10 @@ const GLOBAL_FLAGS: Flag[] = [
 ];
 
 const MD_FLAG: Flag = { name: 'md', type: 'string', value: 'file', description: 'Also write the diff as markdown, for a PR comment' };
+const APPROVE_FLAGS: Flag[] = [
+  { name: 'approve', type: 'string', multiple: true, value: 'id@fingerprint', complete: 'none', description: 'Approve one blocking change to a promise, as printed in the diff (repeatable)' },
+  { name: 'approvals', type: 'string', value: 'file', description: 'Read approvals from a JSON file: [{ "id", "fingerprint", "by" }]. The GitHub Action writes this from pull request reviews' },
+];
 const VERBOSE: Flag = { name: 'verbose', short: 'v', type: 'boolean', description: 'Show statements, held outcomes and proposed catalog entries' };
 const WATCH: Flag = { name: 'watch', short: 'w', type: 'boolean', description: 'Re-run whenever a file in the project changes' };
 
@@ -108,10 +112,11 @@ const COMMANDS: Command[] = [
     name: 'check',
     summary: 'Outcome diff of the working tree against a git ref',
     description:
-      'Checks out the base ref in a temporary worktree, runs base and head, and reports what changed outcome by outcome. Exit code 1 means a human must approve: an outcome broke, changed, was redefined or removed, or a constraint was touched or violated.',
+      'Checks out the base ref in a temporary worktree, runs base and head, and reports what changed outcome by outcome. Exit code 1 means something blocks: an outcome broke, or a promise changed (an outcome changed, was redefined or removed, or a constraint was touched) and nobody has approved it yet, or a constraint was violated. A change to a promise is approved with --approve id@fingerprint; a broken outcome is never approvable.',
     args: [PROJECT_ARG],
     flags: [
       { name: 'base-ref', short: 'b', type: 'string', value: 'ref', complete: 'refs', description: 'Git ref to compare against. Default: origin/HEAD, then main, then master' },
+      ...APPROVE_FLAGS,
       MD_FLAG,
       VERBOSE,
     ],
@@ -121,6 +126,7 @@ const COMMANDS: Command[] = [
       ['oodle check', 'Compare the working tree with the default branch'],
       ['oodle check --base-ref HEAD~1', 'What did the last commit change?'],
       ['oodle check --md diff.md', 'Also write a PR comment'],
+      ['oodle check --approve orders.paid@1a2b3c4d', 'A human approves one intended change'],
     ],
     run: cmdCheck,
   },
@@ -132,7 +138,7 @@ const COMMANDS: Command[] = [
       { name: 'base', required: true, description: 'Project directory before the change' },
       { name: 'head', required: true, description: 'Project directory after the change' },
     ],
-    flags: [MD_FLAG, VERBOSE],
+    flags: [...APPROVE_FLAGS, MD_FLAG, VERBOSE],
     formats: ['text', 'md', 'json'],
     defaultFormat: () => (process.stdout.isTTY ? 'text' : 'md'),
     examples: [['oodle diff ../before ./app --md diff.md', 'Diff two checkouts and write a PR comment']],
@@ -154,16 +160,18 @@ const COMMANDS: Command[] = [
   {
     name: 'init',
     summary: 'Start a project: an oodlc/ folder with config, a starter catalog and app',
-    description: 'Creates oodlc/ with config.yaml and a catalog of one intent and one outcome, plus a starter app if none exists. Your own app is never overwritten. The result passes `oodle run` straight away. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
+    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through oodle/adapter, instead of a starter app. Otherwise it writes a starter app that passes `oodle run` straight away. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
     args: [{ name: 'dir', description: 'Where to create the project. Default: the current directory' }],
     flags: [
       { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
       { name: 'force', short: 'f', type: 'boolean', description: 'Overwrite an existing oodlc/config.yaml and starter catalog' },
+      { name: 'ci', type: 'boolean', description: 'Also write .github/workflows/oodle.yml: the outcome diff on every pull request, approvals from reviews' },
       { name: 'migrate', type: 'boolean', description: 'Move an old-layout project (oodle.yaml + catalog/) into oodlc/' },
     ],
     formats: ['text', 'json'],
     examples: [
-      ['oodle init', 'Scaffold in the current directory'],
+      ['oodle init', 'Scaffold in the current directory, wrapping the service already there'],
+      ['oodle init --ci', 'Also add the GitHub workflow'],
       ['oodle init services/api --app src/server.ts', 'Point Oodle at an existing app'],
       ['oodle init --migrate', 'Move an oodle.yaml project into oodlc/'],
     ],
@@ -183,7 +191,7 @@ const COMMANDS: Command[] = [
     name: 'mutate',
     summary: 'Plant small bugs in the app and see which ones the catalog catches',
     description:
-      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite, and tests that catch nothing the catalog does not are listed as candidates to delete.',
+      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite. Tests whose every caught bug an outcome caught too are listed as covered by the catalog: candidates to delete after a read, since a test can guard inputs no outcome sends. Entry-point boilerplate (listen, process.argv, logging) and oodle/adapter modules are never mutated.',
     args: [PROJECT_ARG],
     flags: [
       { name: 'files', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Mutate these files, relative to the project, e.g. "src/**/*.ts" (repeatable). Default: the app\'s directory, minus tests' },
@@ -679,7 +687,7 @@ function defaultBaseRef(dir: string): string {
   throw usageError('Could not work out which ref to compare against', 'Pass one: `oodle check --base-ref <branch|tag|sha>`.');
 }
 
-function checkoutBase(projectDir: string, ref: string): { dir: string; sha: string; cleanup: () => void } {
+function checkoutBase(projectDir: string, ref: string): { dir: string | null; sha: string; cleanup: () => void } {
   let root: string;
   try {
     root = git(projectDir, 'rev-parse', '--show-toplevel');
@@ -705,16 +713,25 @@ function checkoutBase(projectDir: string, ref: string): { dir: string; sha: stri
   const modules = join(root, 'node_modules');
   if (existsSync(modules) && !existsSync(join(tree, 'node_modules'))) symlinkSync(modules, join(tree, 'node_modules'), 'dir');
   const dir = join(tree, relative(root, realpathSync(projectDir)));
-  if (!isProject(dir)) {
-    remove();
-    throw new OodleError('no-base-project', `${ref} has no Oodle project at ${relative(root, realpathSync(projectDir)) || '.'}`, {
-      hint: 'Oodle was set up after that ref. Compare against a later ref, or use `oodle run` for now.',
-    });
-  }
+  // Oodle arrives in this very change: the base promised nothing yet, so every outcome is new.
+  if (!isProject(dir)) return { dir: null, sha, cleanup: remove };
   return { dir, sha, cleanup: remove };
 }
 
-async function diffAndReport(ctx: Ctx, baseDir: string, headDir: string, labels: { base: string; head: string }, t0: number): Promise<number> {
+/** The run of a base that has no Oodle project: nothing declared, nothing observed. */
+function emptyRun(head: string): RunResult {
+  return {
+    projectDir: head,
+    config: { app: '', catalog: FOLDER },
+    catalog: { intents: [], outcomes: [], behaviors: [], conditions: [], constraints: [], sources: {} },
+    lint: { errors: [], warnings: [] },
+    routes: [],
+    observations: [],
+    gaps: [],
+  };
+}
+
+async function diffAndReport(ctx: Ctx, baseDir: string | null, headDir: string, labels: { base: string; head: string }, t0: number): Promise<number> {
   const side = async (dir: string, which: 'base' | 'head', label: string) => {
     try {
       return await runWithProgress(dir, `Running ${which} ${e.dim(label)}`);
@@ -725,9 +742,9 @@ async function diffAndReport(ctx: Ctx, baseDir: string, headDir: string, labels:
       throw known ?? error;
     }
   };
-  const base = await side(baseDir, 'base', labels.base);
+  const base = baseDir ? await side(baseDir, 'base', labels.base) : emptyRun(headDir);
   const head = await side(headDir, 'head', labels.head);
-  const report = diffRuns(base, head);
+  const report = diffRuns(base, head, approvalsFrom(ctx));
   const md = diffMarkdown(report);
   if (typeof ctx.flags.md === 'string') writeFileSync(ctx.flags.md, md);
   annotateDiff(report, headDir, md);
@@ -743,10 +760,38 @@ async function diffAndReport(ctx: Ctx, baseDir: string, headDir: string, labels:
     if (typeof ctx.flags.md === 'string') next.push(`PR comment written to ${e.cyan(ctx.flags.md)}`);
     else next.push(`Write a PR comment: ${e.cyan(`oodle ${withoutFormat(process.argv.slice(2)).join(' ')} --md diff.md`)}`);
     if (report.gaps.length) next.push(`See a proposed catalog entry for each unknown route: ${e.cyan(`oodle run ${display(headDir)} --verbose`)}`);
-    if (report.blocking) next.push('Blocking changes need a human: fix the code, or update the catalog and get the change approved.');
+    const tokens = approvalTokens(report);
+    if (tokens.length) next.push(`Intended? A human approves with: ${e.cyan(`--approve ${tokens.join(' --approve ')}`)}`);
+    if (report.blocking > tokens.length) next.push('A broken outcome or a violated constraint is never approvable: fix the code, or redefine the outcome and get that approved.');
     hints(next);
   }
   return report.blocking ? EXIT.blocking : EXIT.ok;
+}
+
+/** Approvals from --approve tokens and an --approvals file. */
+function approvalsFrom(ctx: Ctx): Approval[] {
+  const out: Approval[] = [];
+  for (const token of ctx.flags.approve ?? []) {
+    const a = parseApproval(token);
+    if (!a) throw usageError(`--approve expects id@fingerprint, not "${token}"`, 'Copy the token from the outcome diff, e.g. --approve checkout.payment-confirmed@1a2b3c4d.');
+    out.push(a);
+  }
+  const file: string | undefined = ctx.flags.approvals;
+  if (file) {
+    let list: unknown;
+    try {
+      list = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (err) {
+      throw usageError(`Could not read approvals from ${file}: ${(err as Error).message}`, 'Pass a JSON array of { "id", "fingerprint", "by" }.');
+    }
+    if (!Array.isArray(list)) throw usageError(`${file} must hold a JSON array of approvals`, 'Pass a JSON array of { "id", "fingerprint", "by" }.');
+    for (const item of list) {
+      const a = parseApproval(`${item?.id}@${item?.fingerprint}`, typeof item?.by === 'string' ? item.by : undefined);
+      if (!a) throw usageError(`${file} has an approval without a valid id and fingerprint: ${JSON.stringify(item)}`, 'Each entry needs "id" and an 8-character hex "fingerprint".');
+      out.push(a);
+    }
+  }
+  return out;
 }
 
 /** The user's own command line, minus output-format flags, for suggesting a variant of it. */
@@ -774,7 +819,7 @@ async function cmdCheck(ctx: Ctx): Promise<number> {
   }
   cleanups.add(base.cleanup);
   try {
-    return await diffAndReport(ctx, base.dir, headDir, { base: `${ref} (${base.sha})`, head: 'working tree' }, t0);
+    return await diffAndReport(ctx, base.dir, headDir, { base: `${ref} (${base.sha}${base.dir ? '' : ', before Oodle'})`, head: 'working tree' }, t0);
   } finally {
     base.cleanup();
     cleanups.delete(base.cleanup);
@@ -799,14 +844,29 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     hints([`Check nothing changed: ${e.cyan(`oodle run${display(result.dir) === '.' ? '' : ` ${display(result.dir)}`}`)}`, 'Commit the move on its own, so the history stays easy to read.']);
     return EXIT.ok;
   }
-  const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force });
+  const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force, ci: ctx.flags.ci });
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
   heading('init', result.dir);
   for (const f of result.created) console.log(`  ${o.green('+')} ${f}`);
   for (const f of result.kept) console.log(`  ${o.dim(`${sym.dot} ${f} (kept)`)}`);
+  const where = display(result.dir) === '.' ? '' : ` ${display(result.dir)}`;
+  const svc = result.service;
+  if (svc) {
+    const app = loadConfig(result.dir).app;
+    console.log(`\n${o.green(o.bold(`${sym.ok} Wrapped your service`))}  ${o.dim(`${svc.framework} app in ${svc.entry}, run through ${app}`)}`);
+    await say('curious', 'Found your service. Show me what it promises.');
+    hints([
+      ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
+      ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
+      ...(existsSync(join(result.dir, 'node_modules', 'oodle')) ? [] : [`Install Oodle so ${app} can import oodle/adapter: ${e.cyan('npm i -D github:oodlc/oodle')}`]),
+      `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
+      `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
+      `Then check the wiring: ${e.cyan(`oodle doctor${where}`)}`,
+    ]);
+    return EXIT.ok;
+  }
   console.log(`\n${o.green(o.bold(`${sym.ok} Project ready`))}  ${o.dim(display(result.dir))}`);
   await say('happy', 'A fresh catalog! Tell me what matters.');
-  const where = display(result.dir) === '.' ? '' : ` ${display(result.dir)}`;
   hints([
     `Run it: ${e.cyan(`oodle run${where}`)}`,
     `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,

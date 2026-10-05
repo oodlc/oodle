@@ -48,6 +48,38 @@ outcomes:
         exit_code: 1
         outcomes.changed: [checkout.payment-confirmed]
 
+  - id: oodle.approved-change-goes-through
+    intent: merges-guard-outcomes
+    statement: Once a human approves a change to a promise, it no longer blocks, and the diff still shows it
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: extra-response-field, approve: true }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        blocking: 0
+        approved: 1
+        outcomes.changed: [checkout.payment-confirmed]
+
+  - id: oodle.broken-outcome-not-approvable
+    intent: merges-guard-outcomes
+    statement: Approving everything Oodle offers never unblocks a broken outcome
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: break-response-field, approve: true }
+    expect:
+      status: 200
+      body:
+        exit_code: 1
+        approved: { exists: false }
+        outcomes.broken: [checkout.payment-confirmed]
+
   - id: oodle.constraint-removal-needs-approval
     intent: merges-guard-outcomes
     statement: Removing a constraint blocks until a human approves it

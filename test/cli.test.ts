@@ -117,7 +117,78 @@ test('init scaffolds a project that passes run straight away', () => {
 test('doctor reports each check', () => {
   const r = json(oodle(['doctor', EXAMPLE, '--json']).stdout);
   assert.equal(r.ok, true);
-  assert.deepEqual(r.checks.map((c: any) => c.name), ['node', 'git', 'project', 'repository', 'config', 'catalog', 'lint', 'app']);
+  assert.deepEqual(r.checks.map((c: any) => c.name), ['node', 'git', 'project', 'repository', 'config', 'catalog', 'lint', 'app', 'stable']);
+});
+
+/** An Express service as a team would have it before Oodle: no oodlc/, an app that listens on import. */
+function existingService(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'oodle-svc-'));
+  cpSync(join(ROOT, 'examples', 'express-orders', 'src'), join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ type: 'module', dependencies: { express: '^5' }, scripts: { start: 'node src/server.ts' } }));
+  const server = join(dir, 'src', 'server.ts');
+  writeFileSync(server, readFileSync(server, 'utf8').replace('if (import.meta.main) app.listen', 'app.listen'));
+  return dir;
+}
+
+test('init on an existing service wraps it in an adapter instead of writing a starter app', () => {
+  const dir = existingService();
+  const made = json(oodle(['init', dir, '--json']).stdout);
+  assert.deepEqual(made.created, ['oodlc/config.yaml', 'oodlc/intents.yaml', 'oodlc/outcomes.yaml', 'oodle.app.ts']);
+  assert.deepEqual(made.service, { entry: 'src/server.ts', framework: 'express', exportName: 'app', listensOnImport: true });
+  const adapter = readFileSync(join(dir, 'oodle.app.ts'), 'utf8');
+  assert.match(adapter, /import \{ httpApp \} from 'oodle\/adapter';/);
+  assert.match(adapter, /import \{ app \} from '\.\/src\/server\.ts';/);
+  assert.match(adapter, /calls listen\(\) when it is imported/);
+  assert.equal(existsSync(join(dir, 'src', 'app.ts')), false);
+  assert.match(readFileSync(join(dir, 'oodlc', 'config.yaml'), 'utf8'), /^app: oodle\.app\.ts/m);
+  // The service has a /health route, so the starter outcome describes it.
+  assert.match(readFileSync(join(dir, 'oodlc', 'outcomes.yaml'), 'utf8'), /GET \/health/);
+  const text = oodle(['init', existingService()]);
+  assert.match(text.stderr, /Guard it, e\.g\. if \(import\.meta\.main\) app\.listen\(port\)/);
+});
+
+test('init --ci writes the GitHub workflow at the repository root, pointing at the project', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'oodle-ci-'));
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  const made = json(oodle(['init', join(repo, 'services', 'api'), '--ci', '--json']).stdout);
+  assert.ok(made.created.includes('../../.github/workflows/oodle.yml'), made.created.join(', '));
+  const wf = readFileSync(join(repo, '.github', 'workflows', 'oodle.yml'), 'utf8');
+  assert.match(wf, /pull_request_review:\n\s+types: \[submitted\]/);
+  assert.match(wf, /uses: oodlc\/oodle@v0\n\s+with:\n\s+project: services\/api/);
+  assert.match(wf, /\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
+});
+
+test('doctor fails when Oodle runs the starter app instead of the service beside it', () => {
+  const dir = existingService();
+  const starter = mkdtempSync(join(tmpdir(), 'oodle-starter-'));
+  oodle(['init', starter]);
+  cpSync(join(starter, 'oodlc'), join(dir, 'oodlc'), { recursive: true });
+  cpSync(join(starter, 'src', 'app.ts'), join(dir, 'src', 'app.ts'));
+  const r = json(oodle(['doctor', dir, '--json']).stdout);
+  assert.equal(r.ok, false);
+  const app = r.checks.find((c: any) => c.name === 'app');
+  assert.equal(app.status, 'fail');
+  assert.match(app.detail, /running the starter app in src\/app\.ts, not your service in src\/server\.ts/);
+  // Greenfield: the starter is fine to start from, but doctor still says so.
+  assert.equal(json(oodle(['doctor', starter, '--json']).stdout).checks.find((c: any) => c.name === 'starter').status, 'warn');
+});
+
+test('doctor warns when nothing is declared, and when output differs between identical runs', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'oodle-')), 'checkout');
+  cpSync(EXAMPLE, dir, { recursive: true });
+  const checkout = join(dir, 'src', 'checkout.ts');
+  writeFileSync(checkout, readFileSync(checkout, 'utf8').replace("status: 'confirmed', total_cents }", "status: 'confirmed', total_cents, at: Date.now() + Math.random() }"));
+  const r = json(oodle(['doctor', dir, '--json']).stdout);
+  const stable = r.checks.find((c: any) => c.name === 'stable');
+  assert.equal(stable.status, 'warn');
+  assert.match(stable.detail, /checkout\.payment-confirmed \[first_purchase\] body\.at: /);
+
+  const empty = mkdtempSync(join(tmpdir(), 'oodle-empty-'));
+  oodle(['init', empty]);
+  writeFileSync(join(empty, 'oodlc', 'outcomes.yaml'), 'version: 0\noutcomes: []\n');
+  const catalog = json(oodle(['doctor', empty, '--json']).stdout).checks.find((c: any) => c.name === 'catalog');
+  assert.equal(catalog.status, 'warn');
+  assert.match(catalog.detail, /nothing blocks a merge yet/);
 });
 
 test('completion scripts are generated for each shell', () => {

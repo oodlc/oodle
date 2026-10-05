@@ -81,7 +81,7 @@ function sessionStart(cwd: string, version: string) {
   const context = `This project is guarded by Oodle ${version} (OODLC). The catalog in ${join(where, config.catalog)}/ is the spec: ${c.outcomes.length} outcomes, ${c.constraints.length} constraints, ${c.behaviors.length} behaviors${proposed ? `, ${proposed} proposals waiting for a human` : ''}.
 - Outcomes and constraints are human-approved and block merges. Behaviors are observed and never block. Internals (anything not visible at the boundary) are yours to change.
 - Work against the outcomes: \`npx oodle run --only "<id or glob>" --json\` while iterating, \`npx oodle check --json\` before you finish. A Stop hook runs the check too.
-- Never edit, delete or approve an outcome, constraint or intent to make something pass, and never add \`status: proposed\` to an approved one. To add one, propose it: \`npx oodle propose <file.yaml>\` (or the oodle MCP propose tool). Editing approved entries asks the person first.
+- Never edit, delete or approve an outcome, constraint or intent to make something pass, and never add \`status: proposed\` to an approved one. Never pass \`--approve\` or post \`/oodle approve\`: approving a change to a promise is the person's call. To add one, propose it: \`npx oodle propose <file.yaml>\` (or the oodle MCP propose tool). Editing approved entries asks the person first.
 - For variants use conditions, and \`when\` to say what a condition changes; for hostile input use the built-in security.* conditions. \`npx oodle mutate --files <glob> --only <glob>\` shows which planted bugs the outcomes miss.
 - External calls go through ctx.effects only; the simulation is sealed and real network access is a blocking violation.`;
   emit({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } });
@@ -234,10 +234,10 @@ async function stop(input: HookInput, cwd: string) {
     const d = agentDiff(doc);
     for (const o of d.outcomes) {
       if (o.status === 'broken' || o.status === 'failing') fixable.push(`outcome ${o.id} ${o.status}: ${o.details.slice(0, 4).join('; ')}`);
-      else if (['changed', 'redefined', 'removed'].includes(o.status)) human.push(`outcome ${o.id} ${o.status}`);
+      else if (['changed', 'redefined', 'removed'].includes(o.status)) human.push(`outcome ${o.id} ${o.status}${o.fingerprint ? ` (approve: ${o.id}@${o.fingerprint})` : ''}`);
       else if (o.status === 'proposed' && !o.details.includes('proposed, holding')) fyi.push(`proposed outcome ${o.id} does not hold yet`);
     }
-    for (const c of d.constraints ?? []) if (c.blocking) human.push(`constraint ${c.id} ${c.status}`);
+    for (const c of d.constraints ?? []) if (c.blocking) human.push(`constraint ${c.id} ${c.status}${c.fingerprint ? ` (approve: ${c.id}@${c.fingerprint})` : ''}`);
     for (const b of d.behavior_changes) if (b.violations?.length) fixable.push(`behavior ${b.id} violates: ${b.violations.join('; ')}`);
     for (const g of d.unknown_routes) if (g.violations.length) fixable.push(`route ${g.route} (described by nothing) violates: ${g.violations.join('; ')}`);
     for (const l of d.lint?.errors ?? []) fixable.push(`catalog lint: ${l}`);

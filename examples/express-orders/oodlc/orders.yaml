@@ -1,0 +1,65 @@
+version: 0
+conditions:
+  - id: card_declined
+    statement: The card issuer declines the charge
+    given:
+      stubs:
+        payment.charge: { result: { $status: 402, status: failed } }
+
+outcomes:
+  - id: orders.paid-with-receipt
+    intent: pay-the-right-price
+    statement: A pro customer is charged the discounted price once and gets one receipt
+    boundary: customer
+    trigger:
+      http: POST /orders
+      given:
+        body: { userId: u1, items: [{ priceCents: 1000, qty: 2 }] }
+    expect:
+      status: 201
+      body: { id: { exists: true }, amountCents: 1800, status: paid }
+      effects:
+        - { kind: payment.charge, match: { amount: "1800" }, count: 1 }
+        - { kind: email.sent, match: { template: receipt }, count: 1 }
+
+  - id: orders.declined-no-receipt
+    intent: pay-the-right-price
+    statement: A declined card gets a clear error and no receipt
+    boundary: customer
+    trigger:
+      http: POST /orders
+      given:
+        body: { userId: u1, items: [{ priceCents: 1000, qty: 1 }] }
+    conditions: [card_declined]
+    expect:
+      status: 402
+      body: { error: payment_failed }
+      effects:
+        - { kind: payment.charge, count: 1 }
+        - { kind: email.sent, count: 0 }
+
+  - id: orders.refund-returns-money
+    intent: get-money-back
+    statement: Refunding a paid order returns the money to the card exactly once
+    boundary: customer
+    trigger:
+      http: POST /orders/ord_9/refund
+      given:
+        state:
+          orders:
+            ord_9: { id: ord_9, userId: u1, amountCents: 1800, chargeId: ch_9, status: paid, createdAt: "2026-01-01T00:00:00.000Z" }
+    expect:
+      status: 200
+      body: { status: refunded }
+      effects:
+        - { kind: payment.refund, match: { charge: ch_9 }, count: 1 }
+
+behaviors:
+  - id: ops.health
+    statement: The health check answers ok
+    boundary: internal
+    trigger:
+      http: GET /health
+    observed:
+      status: 200
+      body: { ok: true }

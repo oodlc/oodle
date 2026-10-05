@@ -36,6 +36,16 @@ fi
 
 args=(check "$project" --json --md "$md")
 [ -n "$base" ] && args+=(--base-ref "$base")
+
+# Approvals: `/oodle approve <id@fingerprint>` in reviews and comments by people with write access.
+if [ "${INPUT_APPROVALS:-true}" = "true" ] && [ -n "${PR_NUMBER:-}" ]; then
+  repo="$GITHUB_REPOSITORY"
+  gh api "repos/$repo/pulls/$PR_NUMBER/reviews" --paginate >"$out/reviews.json" 2>/dev/null || echo '[]' >"$out/reviews.json"
+  gh api "repos/$repo/issues/$PR_NUMBER/comments" --paginate >"$out/comments.json" 2>/dev/null || echo '[]' >"$out/comments.json"
+  node "$(dirname "$OODLE_BIN")/../scripts/approvals.mjs" "$out/reviews.json" "$out/comments.json" "${PR_AUTHOR:-}" "${INPUT_ALLOW_SELF_APPROVAL:-false}" >"$out/approvals.json"
+  echo "Approvals found: $(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).length))' "$out/approvals.json")"
+  args+=(--approvals "$out/approvals.json")
+fi
 echo "oodle ${args[*]}"
 node "$OODLE_BIN" "${args[@]}" >"$json"
 code=$?
@@ -43,9 +53,11 @@ code=$?
 field() { node -e 'const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const v = process.argv[2].split(".").reduce((o, k) => (o == null ? o : o[k]), j); process.stdout.write(v == null ? "" : String(v));' "$json" "$1" 2>/dev/null; }
 
 blocking="$(field blocking)"
+approved="$(field approvals.applied.length)"
 {
   echo "exit-code=$code"
   echo "blocking=${blocking:-0}"
+  echo "approved=${approved:-0}"
   echo "markdown-file=$md"
 } >>"${GITHUB_OUTPUT:-/dev/null}"
 

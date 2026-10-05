@@ -1,5 +1,36 @@
+import { createHash } from 'node:crypto';
 import type { Behavior, Boundary, Gap, LintResult, Observation, Outcome, RunResult } from './types.ts';
 import { jsonDiff, stableStringify } from './expect.ts';
+
+/**
+ * A human's approval of one blocking change to a promise, bound to exactly what changed.
+ * The fingerprint is a hash of the finding, so a later push that changes the finding
+ * makes the approval stale instead of quietly carrying it over. See docs/decisions/0007.
+ */
+export interface Approval {
+  id: string;
+  fingerprint: string;
+  /** Who approved, e.g. a GitHub login. Shown in the report. */
+  by?: string;
+}
+
+export interface StaleApproval extends Approval {
+  reason: string;
+}
+
+/** Changes to a promise a human may approve. A broken outcome or a violated constraint is never approvable: fix the code, or redefine the promise and approve that. */
+const APPROVABLE = { outcome: new Set(['changed', 'redefined', 'removed']), constraint: new Set(['redefined', 'removed']) };
+
+/** A hash of everything the change is: the definitions before and after, and what was observed before and after. */
+function fingerprint(kind: 'outcome' | 'constraint', id: string, status: string, evidence: unknown): string {
+  return createHash('sha256').update(stableStringify({ kind, id, status, evidence })).digest('hex').slice(0, 8);
+}
+
+/** Parses "id@fingerprint". */
+export function parseApproval(token: string, by?: string): Approval | null {
+  const m = /^([^\s@]+)@([0-9a-f]{8})$/.exec(token.trim());
+  return m ? { id: m[1], fingerprint: m[2], ...(by ? { by } : {}) } : null;
+}
 
 export type OutcomeStatus = 'held' | 'changed' | 'broken' | 'failing' | 'new' | 'removed' | 'redefined' | 'proposed';
 export type BehaviorStatus = 'held' | 'changed' | 'new' | 'removed';
@@ -14,6 +45,10 @@ export interface OutcomeDiff {
   details: string[];
   /** Behavior that changed inside this outcome's runs without touching the outcome, e.g. internal effects. Report only. */
   behavior: string[];
+  /** Set on a change a human may approve: approve it with `id@fingerprint`. */
+  fingerprint?: string;
+  /** Who approved this change. An approved change does not block. */
+  approved_by?: string[];
 }
 
 export interface BehaviorDiff {
@@ -36,6 +71,8 @@ export interface ConstraintDiff {
   /** Constraints are durable: loosening or deleting one needs approval, like an outcome. */
   blocking: boolean;
   details: string[];
+  fingerprint?: string;
+  approved_by?: string[];
 }
 
 export interface DiffReport {
@@ -47,6 +84,12 @@ export interface DiffReport {
   gaps: Gap[];
   lint: LintResult;
   blocking: number;
+  approvals: {
+    /** Approvals that matched a blocking change and unblocked it. */
+    applied: Approval[];
+    /** Approvals that matched nothing: the change moved on since, or never needed approval. */
+    stale: StaleApproval[];
+  };
 }
 
 /** What someone outside the system can observe. */
@@ -117,6 +160,7 @@ function diffOutcomes(base: RunResult, head: RunResult): OutcomeDiff[] {
       d.status = 'removed';
       d.details = ['outcome removed from the catalog; needs approval'];
       d.blocking = true;
+      d.fingerprint = fingerprint('outcome', id, d.status, definition(prev));
       out.push(d);
       continue;
     }
@@ -134,6 +178,7 @@ function diffOutcomes(base: RunResult, head: RunResult): OutcomeDiff[] {
       d.status = 'redefined';
       d.details = ['outcome definition changed in the catalog; needs approval', ...jsonDiff(JSON.parse(JSON.stringify(prev)), JSON.parse(JSON.stringify(o)))];
       d.blocking = true;
+      d.fingerprint = fingerprint('outcome', id, d.status, { before: definition(prev), after: definition(o) });
     } else {
       for (const h of headObs) {
         const b = baseObs.find((x) => x.condition === h.condition);
@@ -145,6 +190,8 @@ function diffOutcomes(base: RunResult, head: RunResult): OutcomeDiff[] {
         d.status = 'changed';
         d.details.unshift('observable output changed while expectations still pass; review');
         d.blocking = true;
+        const view = (obs: Observation[]) => obs.map((x) => ({ condition: x.condition, ...boundaryView(x) }));
+        d.fingerprint = fingerprint('outcome', id, d.status, { before: view(baseObs), after: view(headObs) });
       }
     }
     d.behavior = [...new Set(d.behavior)];
@@ -208,18 +255,50 @@ function diffConstraints(base: RunResult, head: RunResult): ConstraintDiff[] {
     if (!prev) out.push({ id, statement, status: 'new', blocking: false, details: [c!.status === 'proposed' ? 'new proposed constraint, reported only' : 'new constraint'] });
     else if (prev.status === 'proposed' && c && !c.status) out.push({ id, statement, status: 'new', blocking: false, details: ['proposal approved', ...jsonDiff({ ...prev, status: undefined }, c)] });
     else if (prev.status === 'proposed' && c?.status === 'proposed') continue;
-    else if (!c) out.push({ id, statement, status: 'removed', blocking: true, details: ['constraint removed from the catalog; needs approval'] });
+    else if (!c) out.push({ id, statement, status: 'removed', blocking: true, details: ['constraint removed from the catalog; needs approval'], fingerprint: fingerprint('constraint', id, 'removed', prev) });
     else if (stableStringify(prev) !== stableStringify(c)) {
-      out.push({ id, statement, status: 'redefined', blocking: true, details: ['constraint changed in the catalog; needs approval', ...jsonDiff(prev, c)] });
+      out.push({ id, statement, status: 'redefined', blocking: true, details: ['constraint changed in the catalog; needs approval', ...jsonDiff(prev, c)], fingerprint: fingerprint('constraint', id, 'redefined', { before: prev, after: c }) });
     }
   }
   return out.sort((a, b) => Number(b.blocking) - Number(a.blocking) || a.id.localeCompare(b.id));
 }
 
-export function diffRuns(base: RunResult, head: RunResult): DiffReport {
+/** Lets each approval unblock the change it names, if that change is still exactly what was approved. */
+function applyApprovals(outcomes: OutcomeDiff[], constraints: ConstraintDiff[], approvals: Approval[]): DiffReport['approvals'] {
+  const findings = [
+    ...outcomes.filter((d) => d.blocking && d.fingerprint && APPROVABLE.outcome.has(d.status)).map((d) => ({ d })),
+    ...constraints.filter((d) => d.blocking && d.fingerprint && APPROVABLE.constraint.has(d.status)).map((d) => ({ d })),
+  ];
+  const applied: Approval[] = [];
+  const stale: StaleApproval[] = [];
+  for (const a of approvals) {
+    const hit = findings.find(({ d }) => d.id === a.id && d.fingerprint === a.fingerprint);
+    if (hit) {
+      hit.d.blocking = false;
+      if (a.by) hit.d.approved_by = [...new Set([...(hit.d.approved_by ?? []), a.by])];
+      else hit.d.approved_by ??= [];
+      applied.push(a);
+      continue;
+    }
+    const sameId = findings.find(({ d }) => d.id === a.id);
+    const unapprovable = [...outcomes, ...constraints].find((d) => d.id === a.id && d.blocking);
+    stale.push({
+      ...a,
+      reason: sameId
+        ? `the change to ${a.id} is different now (${sameId.d.fingerprint}); approve it again`
+        : unapprovable
+          ? `${a.id} is ${unapprovable.status}, which can't be approved; fix it, or redefine the promise and approve that`
+          : `${a.id} has no change waiting for approval`,
+    });
+  }
+  return { applied, stale };
+}
+
+export function diffRuns(base: RunResult, head: RunResult, approvals: Approval[] = []): DiffReport {
   const outcomes = diffOutcomes(base, head);
   const behaviors = diffBehaviors(base, head);
   const constraints = diffConstraints(base, head);
+  const approved = applyApprovals(outcomes, constraints, approvals);
   // Only what a human declared can block: outcomes and constraints. Behavior drift never does.
   const blocking =
     outcomes.filter((d) => d.blocking).length +
@@ -227,5 +306,5 @@ export function diffRuns(base: RunResult, head: RunResult): DiffReport {
     constraints.filter((d) => d.blocking).length +
     head.gaps.filter((g) => g.violations.length).length +
     head.lint.errors.length;
-  return { outcomes, behaviors, constraints, gaps: head.gaps, lint: head.lint, blocking };
+  return { outcomes, behaviors, constraints, gaps: head.gaps, lint: head.lint, blocking, approvals: approved };
 }

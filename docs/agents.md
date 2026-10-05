@@ -91,7 +91,7 @@ What caught them  unique = bugs nothing else catches
 
 `--min-score 80` turns the score into a CI gate.
 
-**Prune unit tests with `oodle mutate --tests "npm test"`.** Each mutant also runs through your suite (TAP or `node --test` output). Tests that catch nothing the catalog doesn't are listed as candidates to delete. Tests that catch bugs the catalog misses are worth keeping, or turning into an outcome.
+**Prune unit tests with `oodle mutate --tests "npm test"`.** Each mutant also runs through your suite (TAP or `node --test` output). Tests whose every caught bug an outcome caught too are listed as **covered by the catalog**: candidates to delete, after a read, since a test can still guard inputs no outcome sends. Tests that caught no planted bug are listed apart, because that is no evidence either way. Tests that catch bugs the catalog misses are worth keeping, or turning into an outcome.
 
 ## Security
 

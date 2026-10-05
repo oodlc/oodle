@@ -9,12 +9,12 @@ oodle <command> [project] [flags]
 | Command | What it does |
 | --- | --- |
 | `oodle run [project]` | Run every outcome and behavior under every condition |
-| `oodle check [project]` | Outcome diff of the working tree against a git ref |
+| `oodle check [project]` | Outcome diff of the working tree against a git ref. `--approve id@fingerprint` approves an intended change to a promise |
 | `oodle diff <base> <head>` | Outcome diff between two project checkouts |
 | `oodle lint [project]` | Validate the catalog and its traceability |
-| `oodle init [dir]` | Start a project: an `oodlc/` folder, a starter catalog and app. `--migrate` moves a v0 project in |
-| `oodle doctor [project]` | Check your environment and project setup |
-| `oodle mutate [project]` | Plant small bugs in the app and see which ones the catalog catches. `--tests <cmd>` finds redundant unit tests |
+| `oodle init [dir]` | Start a project: an `oodlc/` folder and a starter catalog, plus `oodle.app.ts` around the service already there (or a starter app). `--ci` adds the GitHub workflow, `--migrate` moves a v0 project in |
+| `oodle doctor [project]` | Check your environment and project setup: the app is yours, nothing escapes the simulation, two runs agree |
+| `oodle mutate [project]` | Plant small bugs in the app and see which ones the catalog catches. `--tests <cmd>` finds unit tests the catalog covers |
 | `oodle propose <file> [project]` | Add drafted entries as proposals in `oodlc/proposed.yaml`, never changing an existing one |
 | `oodle draft <brief> [project]` | Print the prompt that drafts catalog entries from a brief, for any agent |
 | `oodle mcp [project]` | Serve Oodle to coding agents over MCP (stdio) |
@@ -45,7 +45,7 @@ Rules for `--json`:
 
 - stdout gets exactly one JSON document, even when the command fails.
 - Every document has an `ok` boolean.
-- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `sealed`, `exists`, `no-base-project`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `internal`.
+- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `sealed`, `exists`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `internal`.
 - stderr stays silent.
 
 `check --md diff.md` and `diff --md diff.md` also write the markdown to a file, whatever the output format.
@@ -113,26 +113,38 @@ oodle run --watch --only "checkout.*"
 
 ### The GitHub Action
 
+`oodle init --ci` writes this workflow for you:
+
 ```yaml
-name: Outcomes
-on: pull_request
+name: Oodle
+on:
+  pull_request:
+  pull_request_review:       # a review can approve a change, so it re-runs the check
+    types: [submitted]
 permissions:
   contents: read
-  pull-requests: write     # for the outcome diff comment
+  pull-requests: write       # for the outcome diff comment, and to read reviews
+concurrency:
+  group: oodle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
-  oodle:
+  outcomes:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: npm ci        # your app's dependencies
+      - run: npm ci          # your app's dependencies
       - uses: oodlc/oodle@v0
         with:
           project: services/checkout
 ```
 
+Keep it in its own workflow. A review re-runs every job of the workflow it triggers, and a job that skips on review events would report as passed for the commit, hiding its earlier result.
+
 The action:
 
 - compares against the pull request's base branch, or the previous commit on a push, and fetches that commit even when the checkout is shallow;
+- treats a base with no `oodlc/` yet as promising nothing, so the pull request that adds Oodle reports every outcome as `new`, and passes if they hold;
+- collects approvals from the pull request's reviews and comments (below);
 - runs `oodle check`;
 - posts the outcome diff as one pull request comment, updated in place on every push;
 - fails the job only when something blocks.
@@ -142,10 +154,28 @@ The action:
 | `project` | `.` | Directory that holds `oodlc/` |
 | `base-ref` | PR base, or the commit before a push | Ref to compare against |
 | `comment` | `true` | Post and update the PR comment |
+| `approvals` | `true` | Read `/oodle approve` lines from reviews and comments |
+| `allow-self-approval` | `false` | Let the PR's author approve their own changes. For a repository with one maintainer |
 | `fail-on-blocking` | `true` | Fail the job on blocking findings. If Oodle cannot run, the job always fails |
 | `node-version` | `22` | Node.js for Oodle |
 
-Outputs: `blocking` (count), `exit-code`, `markdown-file`. On pull requests from forks the token is read-only, so the action skips the comment with a warning. The diff is still in the job summary.
+Outputs: `blocking` (count), `approved` (count), `exit-code`, `markdown-file`. On pull requests from forks the token is read-only, so the action skips the comment with a warning. The diff is still in the job summary.
+
+### Approving a change to a promise
+
+A change to a promise (an outcome that `changed`, was `redefined` or `removed`; a constraint `redefined` or `removed`) blocks until a human approves it. Each one carries a fingerprint, and the outcome diff comment ends with the line to approve them all:
+
+```
+/oodle approve checkout.payment-confirmed@1a2b3c4d
+```
+
+A maintainer submits a pull request review (approve or comment) containing that line. The review re-runs the check, and the change shows as approved, with who approved it. The rules (see [0007](decisions/0007-approvals-in-ci.md)):
+
+- Only reviews and comments by people with write access count (`OWNER`, `MEMBER`, `COLLABORATOR`), never bots, and never the pull request's author unless `allow-self-approval` is on.
+- An approval is bound to the change as it is now: the definitions before and after, and what was observed before and after. If a later push changes it, the approval is reported stale and the change blocks again.
+- A `broken` outcome or a constraint violation is never approvable. Fix the code, or redefine the outcome in the catalog and approve the redefinition.
+
+Locally, or in another CI, pass the same tokens: `oodle check --approve checkout.payment-confirmed@1a2b3c4d`, or `--approvals approvals.json` with `[{ "id", "fingerprint", "by" }]`.
 
 ### Without the action
 
@@ -185,7 +215,7 @@ oodle completion fish > ~/.config/fish/completions/oodle.fish
 
 ## Mutation testing
 
-`oodle mutate` plants small bugs (flipped comparisons and logic, arithmetic, negation, changed literals and strings, removed effects and assignments) in every file the app imports (or `--files`). It runs `oodle run --json` against each in a mirror of the repository under `.git/oodle/mutants/`, removed afterwards, with a timeout of five times the baseline run. Each mutant is:
+`oodle mutate` plants small bugs (flipped comparisons and logic, arithmetic, negation, changed literals and strings, removed effects and assignments) in every file the app imports (or `--files`). It skips `oodle/adapter` modules, which only wire the app in, and entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines. It runs `oodle run --json` against each in a mirror of the repository under `.git/oodle/mutants/`, removed afterwards, with a timeout of five times the baseline run. Each mutant is:
 
 | Status | Meaning |
 | --- | --- |
@@ -196,7 +226,7 @@ oodle completion fish > ~/.config/fish/completions/oodle.fish
 | timeout | The mutant hung. Counted as caught |
 | invalid | The mutant did not load. Not counted |
 
-The score is caught ÷ (all − invalid − internal). `--max` samples evenly (default 200), `--jobs` sets parallelism, and `--only` limits the outcomes run. With `--tests "<cmd>"`, the command runs in each mirror too, and failing tests are read from TAP (`not ok N - name`) or spec (`✖ name (1ms)`) output.
+The score is caught ÷ (all − invalid − internal). `--max` samples evenly (default 200), `--jobs` sets parallelism, and `--only` limits the outcomes run. With `--tests "<cmd>"`, the command runs in each mirror too, and failing tests are read from TAP (`not ok N - name`) or spec (`✖ name (1ms)`) output. A test whose every caught bug an outcome caught too is **covered by the catalog**: a candidate to delete after a read, since a test can still guard inputs no outcome sends. A test that caught no planted bug is listed apart (`no_kills` in JSON): that's no evidence either way.
 
 ## For agents
 

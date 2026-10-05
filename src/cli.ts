@@ -906,7 +906,7 @@ async function fail(error: unknown): Promise<number> {
   return EXIT.usage;
 }
 
-main(process.argv.slice(2)).then(
-  (code) => process.exit(code),
-  async (error) => process.exit(await fail(error)),
-);
+/** Exit only once stdout has drained: on a pipe, process.exit() can cut a large --json document short. */
+const exit = (code: number) => process.stdout.write('', () => process.exit(code));
+
+main(process.argv.slice(2)).then(exit, async (error) => exit(await fail(error)));

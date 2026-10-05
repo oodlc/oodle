@@ -7,33 +7,33 @@ branding:
 
 inputs:
   project:
-    description: Directory that holds oodle.yaml, relative to the repository root.
+    description: 'Directory that holds oodle.yaml, relative to the repository root.'
     default: .
   base-ref:
-    description: Git ref to compare against. Default: the pull request's base branch, or the previous commit on a push.
+    description: 'Git ref to compare against. Default: the pull request''s base branch, or the previous commit on a push.'
     default: ''
   comment:
-    description: Post the outcome diff as a pull request comment, updated in place on every push. Needs `pull-requests: write`.
+    description: 'Post the outcome diff as a pull request comment, updated in place on every push. Needs `pull-requests: write`.'
     default: 'true'
   fail-on-blocking:
-    description: Fail the job when a human needs to approve something (a broken, changed, redefined or removed outcome, or a constraint change or violation).
+    description: 'Fail the job when a human needs to approve something (a broken, changed, redefined or removed outcome, or a constraint change or violation).'
     default: 'true'
   node-version:
-    description: Node.js version to run Oodle with.
+    description: 'Node.js version to run Oodle with.'
     default: '22'
   github-token:
-    description: Token for the pull request comment.
+    description: 'Token for the pull request comment.'
     default: ${{ github.token }}
 
 outputs:
   blocking:
-    description: Number of blocking findings.
+    description: 'Number of blocking findings.'
     value: ${{ steps.check.outputs.blocking }}
   exit-code:
     description: "Oodle's exit code: 0 ok, 1 blocking, 2 could not run."
     value: ${{ steps.check.outputs.exit-code }}
   markdown-file:
-    description: Path to the outcome diff as markdown.
+    description: 'Path to the outcome diff as markdown.'
     value: ${{ steps.check.outputs.markdown-file }}
 
 runs:

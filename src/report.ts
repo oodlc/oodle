@@ -2,13 +2,31 @@ import { stringify } from 'yaml';
 import type { DiffReport } from './diff.ts';
 import type { RunResult } from './types.ts';
 
+/**
+ * Findings arrive one per condition as "[condition] message". The same message
+ * under several conditions is one finding, labelled with every condition.
+ */
+export function groupByCondition(found: string[]): { message: string; conditions: string[] }[] {
+  const byMessage = new Map<string, string[]>();
+  for (const line of found) {
+    const m = /^\[([^\]]+)\] (.*)$/s.exec(line);
+    const [cond, message] = m ? [m[1], m[2]] : ['', line];
+    byMessage.set(message, [...(byMessage.get(message) ?? []), cond].filter(Boolean));
+  }
+  return [...byMessage].map(([message, conditions]) => ({ message, conditions }));
+}
+
+const mdFindings = (found: string[]) =>
+  groupByCondition(found).map(({ message, conditions }) => `${message}${conditions.length ? ` _(${conditions.join(', ')})_` : ''}`);
+
 const ICON: Record<string, string> = { held: '✅', changed: '🟡', broken: '❌', failing: '❌', new: '🆕', removed: '🗑️', redefined: '✏️' };
 
 export function diffMarkdown(r: DiffReport): string {
   const count = (s: string) => r.outcomes.filter((o) => o.status === s).length;
   const lines: string[] = [];
   const headline = r.blocking ? `**${r.blocking} blocking**` : '**nothing blocking**';
-  const drifted = r.behaviors.filter((b) => b.status !== 'held').length;
+  // Behavior changes include internal effects that changed under an outcome, not only catalog behaviors.
+  const drifted = r.behaviors.filter((b) => b.status !== 'held').length + r.outcomes.filter((o) => o.behavior.length).length;
   lines.push(`## Outcome diff: ${headline}`);
   lines.push('');
   lines.push(`${count('held')} held · ${count('changed')} changed · ${count('broken') + count('failing')} broken · ${count('new')} new · ${count('removed')} removed · ${count('redefined')} redefined · ${r.gaps.length} unknown · ${drifted} behavior changes`);
@@ -19,7 +37,7 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push('| | Outcome | Boundary | What happened |');
     lines.push('| --- | --- | --- | --- |');
     for (const o of notable) {
-      const what = o.details.map((d) => d.replace(/\|/g, '\\|')).join('<br>');
+      const what = mdFindings(o.details).map((d) => d.replace(/\|/g, '\\|')).join('<br>');
       lines.push(`| ${ICON[o.status]} ${o.status}${o.blocking ? ' **(blocking)**' : ''} | \`${o.id}\`<br>${o.statement} | ${o.boundary} | ${what} |`);
     }
     lines.push('');
@@ -41,7 +59,7 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push('');
     lines.push('Constraints hold on every run, including behaviors and routes nobody described.');
     lines.push('');
-    for (const v of violating) lines.push(`- ❌ ${v.where}: ${v.violations.join('; ')}`);
+    for (const v of violating) lines.push(`- ❌ ${v.where}: ${mdFindings(v.violations).join('; ')}`);
     lines.push('');
   }
 
@@ -52,8 +70,8 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push('');
     lines.push('Observed by the runner, not durable. Promote a behavior to an outcome to protect it.');
     lines.push('');
-    for (const o of inside) lines.push(`- under \`${o.id}\`: ${o.behavior.join('; ')}`);
-    for (const b of behaviors) lines.push(`- \`${b.id}\` ${b.status}: ${b.details.join('; ')}`);
+    for (const o of inside) lines.push(`- under \`${o.id}\`: ${mdFindings(o.behavior).join('; ')}`);
+    for (const b of behaviors) lines.push(`- \`${b.id}\` ${b.status}: ${mdFindings(b.details).join('; ')}`);
     lines.push('');
   }
 

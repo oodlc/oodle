@@ -5,26 +5,19 @@
  */
 import { stringify } from 'yaml';
 import type { DiffReport, OutcomeStatus } from './diff.ts';
+import { groupByCondition } from './report.ts';
 import type { Catalog, LintResult, Observation, RunResult } from './types.ts';
 import { columns, ms, out as s, pad, plural, sym, visible } from './term.ts';
 
 const indent = (n: number) => ' '.repeat(n);
 const detail = (text: string) => `      ${s.dim(sym.bar)} ${text}`;
 
-/**
- * Findings arrive one per condition. The same finding under several conditions
- * is shown once, labelled with every condition it happened under.
- */
+/** One line per distinct finding, labelled with the conditions it happened under. */
 function grouped(found: string[], paint = (x: string) => x): string[] {
-  const byMessage = new Map<string, string[]>();
-  for (const line of found) {
-    const m = /^\[([^\]]+)\] (.*)$/s.exec(line);
-    const [cond, msg] = m ? [m[1], m[2]] : ['', line];
-    byMessage.set(msg, [...(byMessage.get(msg) ?? []), cond].filter(Boolean));
-  }
+  const groups = groupByCondition(found);
   const label = (conds: string[]) => (conds.join(', ').length <= 40 ? conds.join(', ') : plural(conds.length, 'condition'));
-  const width = Math.max(0, ...[...byMessage.values()].map((c) => label(c).length));
-  return [...byMessage].map(([msg, conds]) => detail(conds.length ? `${s.dim(label(conds).padEnd(width))}  ${paint(msg)}` : paint(msg)));
+  const width = Math.max(0, ...groups.map((g) => label(g.conditions).length));
+  return groups.map(({ message, conditions }) => detail(conditions.length ? `${s.dim(label(conditions).padEnd(width))}  ${paint(message)}` : paint(message)));
 }
 
 function timings(obs: Observation[], room: number): string {

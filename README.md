@@ -17,7 +17,7 @@ Agents make code cheap and replaceable. What has to survive every rewrite is wha
 - `ops.health` changed: [default] body.version added
 ```
 
-Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder). The drafter, GitHub Action and MCP server come next.
+Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action. The drafter and MCP server come next.
 
 ## Quick start
 
@@ -48,7 +48,7 @@ oodle completion <shell>       Print a bash, zsh or fish completion script
 - **Made for scripts and agents.** `--json` (or `OODLE_FORMAT=json`) prints exactly one JSON document, errors included. `oodle help --json` describes the whole CLI.
 - **Helps you get unstuck.** Every error says what to do next, typos get a "did you mean", and each run ends with a suggested next step.
 - **Fits the inner loop.** `oodle run --watch --only "checkout.*"` re-runs one slice on every save.
-- **Native in CI.** In GitHub Actions, findings become annotations and the outcome diff goes to the job summary.
+- **Native in CI.** `uses: oodlc/oodle@v0` keeps one outcome-diff comment updated on every pull request. Findings become annotations and the diff goes to the job summary.
 - **Predictable exit codes.** `0` ok, `1` blocking, `2` could not run, `130` interrupted. Ctrl-C cleans up after itself.
 
 The full reference is in [`docs/cli.md`](docs/cli.md).
@@ -193,7 +193,7 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 
 ## Not yet
 
-Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes, the drafter (`oodle draft brief.md`), the GitHub Action and the MCP server.
+Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes, the drafter (`oodle draft brief.md`) and the MCP server.
 
 ## Contributing
 

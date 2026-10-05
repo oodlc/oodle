@@ -80,7 +80,23 @@ An error that is not Oodle's to explain is a bug. Oodle says so and links a pref
 
 ## Watch mode
 
-`oodle run --watch` and `oodle lint --watch` re-run whenever a file in the project changes, ignoring `node_modules`, `.git` and `.oodle-tmp`. Each run is a fresh process, so the app is always re-imported. `--watch` combines with `--only`:
+`oodle run --watch` and `oodle lint --watch` re-run whenever a file in the project changes, ignoring `node_modules`, `.git`, `.oodle-tmp` and editor temp files. Each run is a fresh process, so the app is always re-imported.
+
+Every run starts with a `WATCH` or `RERUN` line naming the files that changed. It ends with a status block:
+
+```
+────────────────────────────────────────────────────────────
+ FAIL  1 of 4 outcomes not holding  → now failing, was passing
+run #3 · 11:55:57 · 34ms   history ✔ ✔ ✘
+watching examples/checkout for changes · r re-run · q quit
+```
+
+- The badge says `PASS` or `FAIL`, with the same verdict as a normal run.
+- The transition reads "now failing", "fixed", "still passing" or "still failing". When some outcomes are already failing, it names the ones that are newly failing and the ones that were fixed.
+- The history shows the last twelve runs. The terminal bell rings when the status flips.
+- Press `r` (or Enter) to re-run and `q` to quit.
+
+`--watch` combines with `--only`:
 
 ```bash
 oodle run --watch --only "checkout.*"
@@ -88,7 +104,45 @@ oodle run --watch --only "checkout.*"
 
 ## CI
 
-With `GITHUB_ACTIONS=true` (set automatically in Actions), Oodle writes:
+### The GitHub Action
+
+```yaml
+name: Outcomes
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write     # for the outcome diff comment
+jobs:
+  oodle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci        # your app's dependencies
+      - uses: oodlc/oodle@v0
+        with:
+          project: services/checkout
+```
+
+The action:
+
+- compares against the pull request's base branch, or the previous commit on a push, and fetches that commit even when the checkout is shallow;
+- runs `oodle check`;
+- posts the outcome diff as one pull request comment, updated in place on every push;
+- fails the job only when something blocks.
+
+| Input | Default | |
+| --- | --- | --- |
+| `project` | `.` | Directory with `oodle.yaml` |
+| `base-ref` | PR base, or the commit before a push | Ref to compare against |
+| `comment` | `true` | Post and update the PR comment |
+| `fail-on-blocking` | `true` | Fail the job on blocking findings. If Oodle cannot run, the job always fails |
+| `node-version` | `22` | Node.js for Oodle |
+
+Outputs: `blocking` (count), `exit-code`, `markdown-file`. On pull requests from forks the token is read-only, so the action skips the comment with a warning. The diff is still in the job summary.
+
+### Without the action
+
+With `GITHUB_ACTIONS=true` (set automatically in Actions), any `oodle` command writes:
 
 - an error annotation for every broken outcome and constraint violation,
 - an annotation on the catalog file for every lint finding,

@@ -82,23 +82,82 @@ export function evaluate(expect: Expect, obs: Observed): string[] {
   return failures;
 }
 
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isEffectList = (v: unknown): v is { kind: string }[] => Array.isArray(v) && v.every((e) => isObj(e) && typeof e.kind === 'string');
+const short = (v: unknown) => {
+  const s = JSON.stringify(v);
+  return s.length > 60 ? `${s.slice(0, 57)}...` : s;
+};
+
+/**
+ * Effect lists are compared by kind, not by position, so a change reads the way
+ * a reviewer thinks about it: an effect added, removed, renamed, emitted more or
+ * fewer times, or its payload changed at one path.
+ */
+function effectDiff(a: { kind: string }[], b: { kind: string }[], prefix: string, out: string[], limit: number): void {
+  const byKind = (list: { kind: string }[]) => {
+    const m = new Map<string, { kind: string }[]>();
+    for (const e of list) m.set(e.kind, [...(m.get(e.kind) ?? []), e]);
+    return m;
+  };
+  const before = byKind(a);
+  const after = byKind(b);
+  const rest = (e: { kind: string }) => stableStringify({ ...e, kind: undefined });
+  const removed = [...before.keys()].filter((k) => !after.has(k));
+  const added = [...after.keys()].filter((k) => !before.has(k));
+
+  // A kind that disappeared while another appeared with the same payloads is a rename.
+  for (const r of [...removed]) {
+    const twin = added.find((k) => before.get(r)!.length === after.get(k)!.length && before.get(r)!.every((e, i) => rest(e) === rest(after.get(k)![i])));
+    if (!twin) continue;
+    out.push(`${prefix}: ${r} renamed to ${twin}`);
+    removed.splice(removed.indexOf(r), 1);
+    added.splice(added.indexOf(twin), 1);
+  }
+  for (const k of removed) out.push(`${prefix}: ${k} no longer emitted${before.get(k)!.length > 1 ? ` (was ×${before.get(k)!.length})` : ''}`);
+  for (const k of added) out.push(`${prefix}: ${k} now emitted${after.get(k)!.length > 1 ? ` ×${after.get(k)!.length}` : ''}`);
+  for (const [k, was] of before) {
+    const now = after.get(k);
+    if (!now) continue;
+    if (was.length !== now.length) out.push(`${prefix}: ${k} emitted ×${was.length} → ×${now.length}`);
+    for (let i = 0; i < Math.min(was.length, now.length) && out.length < limit; i++) {
+      const at = was.length > 1 || now.length > 1 ? `${prefix}[${k}#${i + 1}]` : `${prefix}[${k}]`;
+      jsonDiff({ ...was[i], kind: undefined }, { ...now[i], kind: undefined }, at, out, limit);
+    }
+  }
+}
+
 /** Up to `limit` paths where two JSON values differ, for human-readable diffs. */
 export function jsonDiff(a: unknown, b: unknown, prefix = '', out: string[] = [], limit = 6): string[] {
   if (out.length >= limit) return out;
-  const isObj = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
   if (isObj(a) && isObj(b)) {
-    const keys = new Set([...Object.keys(a as object), ...Object.keys(b as object)]);
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)].filter((k) => a[k] !== undefined || b[k] !== undefined));
     for (const k of [...keys].sort()) {
       const p = prefix ? `${prefix}.${k}` : k;
-      const inA = k in (a as object);
-      const inB = k in (b as object);
+      const inA = a[k] !== undefined;
+      const inB = b[k] !== undefined;
       if (inA && !inB) out.push(`${p} removed`);
       else if (!inA && inB) out.push(`${p} added`);
-      else jsonDiff((a as any)[k], (b as any)[k], p, out, limit);
+      else jsonDiff(a[k], b[k], p, out, limit);
       if (out.length >= limit) break;
     }
     return out;
   }
-  if (stableStringify(a) !== stableStringify(b)) out.push(`${prefix || 'value'}: ${JSON.stringify(a)} → ${JSON.stringify(b)}`);
+  if (stableStringify(a) === stableStringify(b)) return out;
+  if (isEffectList(a) && isEffectList(b) && (a.length || b.length)) {
+    effectDiff(a, b, prefix || 'effects', out, limit);
+    return out.slice(0, limit);
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const p = prefix || 'value';
+    for (let i = 0; i < Math.min(a.length, b.length) && out.length < limit; i++) jsonDiff(a[i], b[i], `${p}[${i}]`, out, limit);
+    if (a.length !== b.length && out.length < limit) {
+      out.push(a.length > b.length
+        ? `${p}: ${a.length - b.length} item(s) removed, ${a.slice(b.length).map(short).join(', ')}`
+        : `${p}: ${b.length - a.length} item(s) added, ${b.slice(a.length).map(short).join(', ')}`);
+    }
+    return out;
+  }
+  out.push(`${prefix || 'value'}: ${short(a)} → ${short(b)}`);
   return out;
 }

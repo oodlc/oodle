@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, watch, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, watch, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -15,7 +16,7 @@ import { doctor } from './doctor.ts';
 import { completion, SHELLS, type Shell } from './completion.ts';
 import { findProject, display } from './project.ts';
 import { EXIT, OodleError, suggest, usageError } from './errors.ts';
-import { clearSpinner, columns, err as e, hints, note, out as o, settings, spinner, sym, type ColorMode } from './term.ts';
+import { clearSpinner, columns, err as e, hints, ms, note, plural, out as o, settings, spinner, sym, type ColorMode } from './term.ts';
 import { hello, say } from './oodle.ts';
 import type { RunResult } from './types.ts';
 
@@ -423,6 +424,17 @@ async function cmdRun(ctx: Ctx): Promise<number> {
   }
 
   console.log(renderRun(run, { verbose: ctx.flags.verbose, elapsed, only: ctx.flags.only }));
+  const summary = runSummaryJson(run, elapsed);
+  const notHolding = [...new Set(run.observations.filter((x) => x.violations.length || (x.kind === 'outcome' && x.failures.length)).map((x) => x.id))];
+  reportToWatcher({
+    ok: !failing,
+    headline: failing
+      ? summary.broken ? `${summary.broken} of ${plural(summary.outcomes, 'outcome')} not holding` : 'blocking problems'
+      : `${summary.outcomes === 1 ? 'the outcome holds' : `all ${summary.outcomes} outcomes hold`}`,
+    facts: [summary.drifted && `${summary.drifted} drifted`, summary.unknown_routes && plural(summary.unknown_routes, 'unknown route'), summary.lint_errors && plural(summary.lint_errors, 'lint error')].filter(Boolean),
+    failing: notHolding,
+    elapsed_ms: summary.elapsed_ms,
+  });
   if (failing) await say('worried', 'Something declared is not holding.');
   else if (run.gaps.length) await say('curious', `Every outcome holds. ${run.gaps.length} route(s) nobody has described yet.`);
   else if (drifting) await say('curious', 'Every outcome holds. Some behavior drifted; have a look.');
@@ -434,7 +446,7 @@ async function cmdRun(ctx: Ctx): Promise<number> {
   if (run.lint.errors.length) next.push(`Catalog details: ${e.cyan('oodle lint')}`);
   if (run.gaps.length && !ctx.flags.verbose) next.push(`See proposed catalog entries for unknown routes: ${e.cyan('oodle run --verbose')}`);
   if (!failing && inGitRepo(dir)) next.push(`Compare with your default branch: ${e.cyan('oodle check')}`);
-  hints(next);
+  if (!process.env.OODLE_WATCH_REPORT) hints(next);
   return failing ? EXIT.blocking : EXIT.ok;
 }
 
@@ -450,9 +462,15 @@ async function cmdLint(ctx: Ctx): Promise<number> {
   }
   heading('lint', dir);
   console.log(renderLint(result, catalog));
+  reportToWatcher({
+    ok: !result.errors.length,
+    headline: result.errors.length ? plural(result.errors.length, 'lint error') : 'catalog is valid',
+    facts: [result.warnings.length && plural(result.warnings.length, 'warning')].filter(Boolean),
+    failing: [],
+  });
   if (result.errors.length) await say('worried', `${result.errors.length} catalog error(s) to fix first.`);
   else await say('happy', 'Catalog looks tidy!');
-  if (!result.errors.length) hints([`Run every outcome: ${e.cyan('oodle run')}`]);
+  if (!result.errors.length && !process.env.OODLE_WATCH_REPORT) hints([`Run every outcome: ${e.cyan('oodle run')}`]);
   return result.errors.length ? EXIT.blocking : EXIT.ok;
 }
 
@@ -628,30 +646,118 @@ async function cmdCompletion(ctx: Ctx): Promise<number> {
   return EXIT.ok;
 }
 
-/** Re-runs the command in a child process on every change, so the app is always freshly imported. */
+interface WatchReport {
+  ok: boolean;
+  headline: string;
+  facts: (string | number | false)[];
+  failing: string[];
+  elapsed_ms?: number;
+}
+
+/** In a watch child, tells the watcher how the run went, so it can describe changes in status. */
+function reportToWatcher(report: WatchReport): void {
+  if (process.env.OODLE_WATCH_REPORT) writeFileSync(process.env.OODLE_WATCH_REPORT, JSON.stringify(report));
+}
+
+/**
+ * Re-runs the command in a child process on every change, so the app is always
+ * freshly imported. Says what changed, whether the status moved, and keeps a short
+ * history, like a test runner's watch mode. r re-runs, q quits.
+ */
 async function watchLoop(ctx: Ctx): Promise<number> {
   const dir = findProject(ctx.args[0], process.argv[2]);
   const argv = process.argv.slice(2).filter((a) => a !== '--watch' && a !== '-w');
+  const reportFile = join(mkdtempSync(join(tmpdir(), 'oodle-watch-')), 'report.json');
+  const history: boolean[] = [];
+  let previous: WatchReport | undefined;
   let child: ChildProcess | undefined;
   let timer: NodeJS.Timeout | undefined;
-  const start = () => {
+  let changed = new Set<string>();
+  let run = 0;
+  const tty = !!process.stdout.isTTY;
+  const keys = !!process.stdin.isTTY;
+  const time = () => new Date().toLocaleTimeString();
+  const badge = (ok: boolean) => (ok ? e.inverse(e.green(e.bold(' PASS '))) : e.inverse(e.red(e.bold(' FAIL '))));
+
+  const start = (reason: string) => {
     child?.kill();
-    if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-    child = spawn(process.execPath, [...process.execArgv, process.argv[1], ...argv], { stdio: 'inherit', env: { ...process.env, OODLE_STILL: '1' } });
-    child.on('exit', (code, signal) => {
-      if (signal) return;
-      const status = code === 0 ? e.green(sym.ok) : e.red(sym.fail);
-      process.stderr.write(`\n${status} ${e.dim(`${new Date().toLocaleTimeString()} ${sym.dot} watching ${display(dir)} ${sym.dot} Ctrl-C to stop`)}\n`);
+    run++;
+    if (tty) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+    process.stderr.write(`${e.inverse(e.cyan(e.bold(run === 1 ? ' WATCH ' : ' RERUN ')))} ${reason} ${e.dim(`${sym.dot} run #${run} ${sym.dot} ${time()}`)}\n\n`);
+    rmSync(reportFile, { force: true });
+    const t0 = performance.now();
+    const me = spawn(process.execPath, [...process.execArgv, process.argv[1], ...argv], {
+      stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...process.env, OODLE_STILL: '1', OODLE_WATCH_REPORT: reportFile, ...(e.enabled ? { FORCE_COLOR: '1' } : {}) },
+    });
+    child = me;
+    me.on('exit', (code, signal) => {
+      if (signal || child !== me) return;
+      let report: WatchReport;
+      try {
+        report = JSON.parse(readFileSync(reportFile, 'utf8'));
+      } catch {
+        report = { ok: false, headline: code === 2 ? 'could not run' : 'failed', facts: [], failing: [] };
+      }
+      const ms_ = report.elapsed_ms ?? Math.round(performance.now() - t0);
+      let transition = '';
+      if (previous && previous.ok !== report.ok) {
+        transition = report.ok ? e.green(e.bold(`${sym.arrow} fixed, was failing`)) : e.red(e.bold(`${sym.arrow} now failing, was passing`));
+      } else if (previous && !report.ok) {
+        const fresh = report.failing.filter((id) => !previous!.failing.includes(id));
+        const fixed = previous.failing.filter((id) => !report.failing.includes(id));
+        transition = [fresh.length && e.red(`newly failing: ${fresh.join(', ')}`), fixed.length && e.green(`fixed: ${fixed.join(', ')}`)].filter(Boolean).join('  ') || e.dim('still failing');
+      } else if (previous) transition = e.dim('still passing');
+      history.push(report.ok);
+      previous = report;
+
+      const rule = e.dim('─'.repeat(Math.min(columns(process.stderr), 72)));
+      const facts = report.facts.filter(Boolean).join(` ${sym.dot} `);
+      const trail = history.slice(-12).map((ok) => (ok ? e.green(sym.ok) : e.red(sym.fail))).join(' ');
+      const lines = [
+        '',
+        rule,
+        `${badge(report.ok)} ${e.bold(report.headline)}${facts ? e.dim(` ${sym.dot} ${facts}`) : ''}  ${transition}`,
+        e.dim(`run #${run} ${sym.dot} ${time()} ${sym.dot} ${ms(ms_)}`) + (history.length > 1 ? `   ${e.dim('history')} ${trail}` : ''),
+        e.dim(`watching ${display(dir)} for changes ${sym.dot} ${keys ? 'r re-run · q quit' : 'Ctrl-C to stop'}`),
+      ];
+      process.stderr.write(`${lines.join('\n')}\n`);
+      // A bell when the status flips, so a watcher in another pane gets noticed.
+      if (history.length > 1 && history[history.length - 2] !== report.ok && tty) process.stderr.write('\x07');
     });
   };
+
   const ignored = /(^|\/)(node_modules|\.git|\.oodle-tmp)(\/|$)/;
   watch(dir, { recursive: true }, (_event, file) => {
     if (file && ignored.test(String(file))) return;
+    // Editors and sed write temp files (.swp, ~, .!123!name) next to the real one; name only real files.
+    if (file && !/(^|\/)\.|~$|\.sw[px]$|^\d+$/.test(String(file)) && existsSync(join(dir, String(file)))) changed.add(String(file));
     clearTimeout(timer);
-    timer = setTimeout(start, 120);
+    timer = setTimeout(() => {
+      const files = [...changed];
+      changed = new Set();
+      start(files.length ? `${e.bold(files.slice(0, 3).join(', '))}${files.length > 3 ? e.dim(` +${files.length - 3} more`) : ''} changed` : 'a file changed');
+    }, 120);
   });
+
+  if (keys) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', (buf) => {
+      const k = buf.toString();
+      if (k === '\x03') onSignal('SIGINT');
+      else if (k === 'q') {
+        for (const c of cleanups) { try { c(); } catch { /* leaving anyway */ } }
+        process.stderr.write('\n');
+        process.exit(EXIT.ok);
+      }
+      else if (k === 'r' || k === '\r') start('re-run requested');
+    });
+    cleanups.add(() => process.stdin.isTTY && process.stdin.setRawMode(false));
+  }
   cleanups.add(() => child?.kill());
-  start();
+  cleanups.add(() => rmSync(dirname(reportFile), { recursive: true, force: true }));
+  start(`${e.bold(`oodle ${argv.join(' ')}`)}`);
   return new Promise(() => {});
 }
 

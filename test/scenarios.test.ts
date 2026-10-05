@@ -56,6 +56,10 @@ test('refactor: internal changes only, nothing blocks', async () => {
   assert.equal(report.blocking, 0);
   assert.ok(report.outcomes.every((o) => o.status === 'held'), JSON.stringify(report.outcomes, null, 2));
   assert.ok(byId('checkout.payment-confirmed').behavior.some((c) => c.includes('internal.audit_log')));
+  assert.ok(byId('checkout.payment-confirmed').behavior.includes('[first_purchase] effects: internal.audit renamed to internal.audit_log'));
+  const md = diffMarkdown(report);
+  assert.match(md, /1 behavior changes/);
+  assert.equal(md.match(/renamed to internal\.audit_log/g)?.length, 1, md);
 });
 
 test('renamed response field: outcome broken and blocking', async () => {
@@ -226,4 +230,15 @@ test('cli: oodle check diffs the working tree against a git ref', () => {
   const res = spawnSync(process.execPath, [cli, 'check', join(repo, 'app'), '--base-ref', 'HEAD', '--md', join(repo, 'diff.md')], { encoding: 'utf8' });
   assert.equal(res.status, 1, res.stderr + res.stdout);
   assert.match(readFileSync(join(repo, 'diff.md'), 'utf8'), /1 blocking/);
+});
+
+test('effect diffs read as added, removed, renamed, recounted or changed at a path', async () => {
+  const { jsonDiff } = await import('../src/expect.ts');
+  const e = (kind: string, payload: object) => ({ kind, payload });
+  const base = [e('internal.audit', { order_id: 'ord_1' })];
+  assert.deepEqual(jsonDiff({ effects: base }, { effects: [e('internal.audit_log', { order_id: 'ord_1' })] }), ['effects: internal.audit renamed to internal.audit_log']);
+  assert.deepEqual(jsonDiff({ effects: base }, { effects: [e('internal.audit', { order_id: 'ord_2' })] }), ['effects[internal.audit].payload.order_id: "ord_1" → "ord_2"']);
+  assert.deepEqual(jsonDiff({ effects: base }, { effects: [...base, e('internal.metric', {})] }), ['effects: internal.metric now emitted']);
+  assert.deepEqual(jsonDiff({ effects: base }, { effects: [] }), ['effects: internal.audit no longer emitted']);
+  assert.deepEqual(jsonDiff({ effects: base }, { effects: [...base, ...base] }), ['effects: internal.audit emitted ×1 → ×2']);
 });

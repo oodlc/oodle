@@ -1,0 +1,124 @@
+version: 0
+# The CLI contract, as docs/cli.md states it.
+outcomes:
+  - id: cli.json-results
+    intent: scriptable
+    statement: With --json, a run prints one JSON document with a summary, and nothing else
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[run, $EXAMPLE, --json]] }
+    conditions: [local, github_actions]
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        stdout_is_json: true
+        summary.outcomes: 4
+        summary.broken: 0
+
+  - id: cli.json-errors
+    intent: scriptable
+    statement: With --json, even a failure is one JSON document with a stable error code
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[run, $MISSING, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 2
+        ok: false
+        stdout_is_json: true
+        error_code: no-project
+
+  - id: cli.describes-itself
+    intent: scriptable
+    statement: help --json lists every command and the documented exit codes
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[help, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        commands: { matches: "\\brun\\b.*\\bcheck\\b.*\\bdiff\\b.*\\blint\\b.*\\binit\\b.*\\bdoctor\\b" }
+        exit_codes: 0 1 2 130
+
+  - id: cli.typo-suggests-command
+    intent: self-serve
+    statement: A mistyped command is answered with the command that was meant
+    boundary: customer
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[rnu]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 2
+        suggests: oodle run
+
+  - id: cli.typo-suggests-flag
+    intent: self-serve
+    statement: A mistyped flag is answered with the flag that was meant
+    boundary: customer
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[run, $EXAMPLE, --onyl, x]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 2
+        suggests: --only
+
+  - id: cli.init-starts-green
+    intent: self-serve
+    statement: A project made by oodle init passes oodle run straight away
+    boundary: customer
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[init, $TMP/svc, --json], [run, $TMP/svc, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        summary.held: 1
+
+  - id: cli.doctor-checks-setup
+    intent: self-serve
+    statement: oodle doctor confirms a working project is ready
+    boundary: customer
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[doctor, $EXAMPLE, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        checks.project: ok
+        checks.app: ok
+
+  - id: cli.answers-fast
+    intent: self-serve
+    statement: oodle answers --version without a noticeable wait
+    boundary: customer
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[--version]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+      latency_ms_max: 3000

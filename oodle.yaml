@@ -1,7 +1,10 @@
-# Oodle project config. Docs: https://github.com/oodlc/oodle#writing-a-catalog
-app: src/app.ts            # default export createApp(ctx)
+# Oodle, dogfooded. The CLI is the system under test: dogfood/app.ts runs the
+# real bin/oodle.js and returns what a person, script or agent can rely on.
+# `oodle check` at the repo root blocks any change that breaks one of Oodle's
+# own promises, using Oodle.
+app: dogfood/app.ts
 catalog: catalog
 defaults:
   given:
     state: {}
-    stubs: {}               # every external call the app makes needs a stub, e.g. payment.capture
+    stubs: {}

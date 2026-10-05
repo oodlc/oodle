@@ -1,5 +1,11 @@
 version: 0
-# Intents say why the product exists. Every outcome traces to one.
+# Why Oodle exists. Every outcome below traces to one of these.
 intents:
-  - id: service-available
-    statement: Callers can rely on the service being there when they need it.
+  - id: merges-guard-outcomes
+    statement: A change that breaks what customers experience is stopped for a human; a change that only touches internals goes through.
+  - id: behavior-is-visible
+    statement: Teams see how their system's behavior moves, in words a reviewer understands, without it ever blocking them.
+  - id: scriptable
+    statement: Scripts, CI and agents can drive Oodle and trust what it returns.
+  - id: self-serve
+    statement: A developer who gets Oodle wrong is told how to get it right, and can start from nothing.

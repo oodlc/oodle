@@ -1,0 +1,11 @@
+version: 0
+# Hold on every run, whatever was asked.
+constraints:
+  - id: documented-exit-codes
+    statement: Oodle only ever exits with a documented code (0, 1, 2 or 130)
+    check: >-
+      !response.body || response.body.exit_code === undefined || [0, 1, 2, 130].includes(response.body.exit_code)
+  - id: json-mode-is-clean
+    statement: With --json, stdout is one JSON document and stderr carries nothing but CI workflow commands
+    check: >-
+      !response.body || !response.body.json_mode || (response.body.stdout_is_json && response.body.stderr_clean)

@@ -4,12 +4,15 @@
 # pass/fail is decided by action.yml from the exit code written here.
 set -uo pipefail
 
-out="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/oodle"
+project="${INPUT_PROJECT:-.}"
+# One output directory and one PR comment per project, so a workflow can check several.
+slug="$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '_')"
+out="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/oodle/$slug"
 mkdir -p "$out"
 md="$out/outcome-diff.md"
 json="$out/outcome-diff.json"
 rm -f "$md" "$json"
-marker='<!-- oodle:outcome-diff -->'
+marker="<!-- oodle:outcome-diff:$project -->"
 zero_sha=0000000000000000000000000000000000000000
 
 # Base ref: explicit input, else the pull request's base branch, else the commit before a push.
@@ -31,7 +34,7 @@ if [ -n "$base" ] && ! git rev-parse --verify --quiet "$base^{commit}" >/dev/nul
   echo "::endgroup::"
 fi
 
-args=(check "${INPUT_PROJECT:-.}" --json --md "$md")
+args=(check "$project" --json --md "$md")
 [ -n "$base" ] && args+=(--base-ref "$base")
 echo "oodle ${args[*]}"
 node "$OODLE_BIN" "${args[@]}" >"$json"

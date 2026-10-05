@@ -1,0 +1,106 @@
+version: 0
+# The core rule (docs/decisions/0001, 0002): only what a human declared can block.
+outcomes:
+  - id: oodle.broken-outcome-blocks
+    intent: merges-guard-outcomes
+    statement: When a change breaks a declared outcome, Oodle blocks the merge and names the outcome
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: break-response-field }
+    conditions: [local, github_actions]
+    expect:
+      status: 200
+      body:
+        exit_code: 1
+        ok: false
+        blocking: 1
+        outcomes.broken: [checkout.payment-confirmed]
+
+  - id: oodle.refactor-goes-through
+    intent: merges-guard-outcomes
+    statement: A refactor that only changes internals does not block, and the reviewer is told what moved
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: refactor-internal }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        blocking: 0
+        notes: { contains: internal.audit renamed to internal.audit_log }
+
+  - id: oodle.changed-output-needs-review
+    intent: merges-guard-outcomes
+    statement: A response that changes while every expectation still passes is held for review
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: extra-response-field }
+    expect:
+      status: 200
+      body:
+        exit_code: 1
+        outcomes.changed: [checkout.payment-confirmed]
+
+  - id: oodle.constraint-removal-needs-approval
+    intent: merges-guard-outcomes
+    statement: Removing a constraint blocks until a human approves it
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: remove-constraint }
+    expect:
+      status: 200
+      body:
+        exit_code: 1
+        constraints.removed: [receipt-only-for-real-orders]
+
+  - id: oodle.redefined-outcome-needs-approval
+    intent: merges-guard-outcomes
+    statement: Rewording a declared outcome blocks until a human approves the new definition
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: reword-outcome }
+    expect:
+      status: 200
+      body:
+        exit_code: 1
+        outcomes.redefined: [checkout.payment-confirmed]
+
+  - id: oodle.behavior-drift-reported
+    intent: behavior-is-visible
+    statement: Behavior drift is reported and never blocks
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: health-adds-version }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        behaviors.changed: [ops.health]
+        notes: { contains: body.version added }
+
+  - id: oodle.unknown-route-surfaced
+    intent: behavior-is-visible
+    statement: A route nothing describes is surfaced, without blocking
+    boundary: customer
+    trigger:
+      http: POST /diff
+      given:
+        body: { mutation: add-undescribed-route }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        unknown: [DELETE /orders/:id]

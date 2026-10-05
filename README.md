@@ -53,6 +53,8 @@ oodle completion <shell>       Print a bash, zsh or fish completion script
 
 The full reference is in [`docs/cli.md`](docs/cli.md).
 
+Oodle checks itself, too. The root [`oodle.yaml`](oodle.yaml) declares Oodle's own promises, and CI blocks any pull request that breaks one. See [CONTRIBUTING](CONTRIBUTING.md#oodle-checks-itself).
+
 ## Three layers
 
 | Layer | Who writes it | Durable? | Example |

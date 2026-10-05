@@ -1,0 +1,9 @@
+version: 0
+conditions:
+  - id: local
+    statement: Run from a developer's terminal
+    given: {}
+  - id: github_actions
+    statement: Run inside GitHub Actions, where Oodle adds annotations
+    given:
+      body: { env: { GITHUB_ACTIONS: 'true', CI: 'true' } }

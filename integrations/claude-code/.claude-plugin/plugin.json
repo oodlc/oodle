@@ -1,6 +1,6 @@
 {
   "name": "oodle",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Build against declared outcomes with Oodle (OODLC): the agent is told how the project is guarded, asks before touching an approved outcome or constraint, and can't stop while it has broken one.",
   "author": { "name": "OODLC" },
   "homepage": "https://github.com/oodlc/oodle#readme",

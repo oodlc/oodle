@@ -4,7 +4,8 @@ name: Oodle
 # own promises (the root catalog). On pull requests a blocking change fails the
 # job until it is fixed, or, for a change to a promise, approved with
 # `/oodle approve` in a review (docs/decisions/0007). On main it is reported
-# only, since there is no pull request left to approve it in.
+# only, since there is no pull request left to approve it in. The repository
+# has a single maintainer, so the author of a pull request may approve it.
 #
 # Its own workflow, so a submitted review re-runs only this check and never
 # skips another required one.
@@ -46,3 +47,4 @@ jobs:
         with:
           project: .
           fail-on-blocking: ${{ github.event_name != 'push' }}
+          allow-self-approval: 'true'

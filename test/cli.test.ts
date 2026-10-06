@@ -2,18 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const BIN = join(ROOT, 'bin', 'oodle.js');
 const EXAMPLE = join(ROOT, 'examples', 'checkout');
+// Hints say `oodle run` only when the shell can find an oodle; give the tests one, so output doesn't depend on the machine.
+const SHIM = mkdtempSync(join(tmpdir(), 'oodle-path-'));
+writeFileSync(join(SHIM, 'oodle'), '', { mode: 0o755 });
+const PATH_WITH_OODLE = [SHIM, ...(process.env.PATH ?? '').split(delimiter)].join(delimiter);
+const PATH_WITHOUT_OODLE = (process.env.PATH ?? '').split(delimiter).filter((d) => !existsSync(join(d, 'oodle'))).join(delimiter);
 
 /** Runs the real binary, piped (not a TTY), with colour unset so output is plain. */
 function oodle(args: string[], env: Record<string, string> = {}, cwd = ROOT) {
   const clean = { ...process.env };
-  for (const k of ['FORCE_COLOR', 'NO_COLOR', 'OODLE_FORMAT', 'GITHUB_ACTIONS', 'CI']) delete clean[k];
-  const res = spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', env: { ...clean, ...env } });
+  for (const k of ['FORCE_COLOR', 'NO_COLOR', 'OODLE_FORMAT', 'GITHUB_ACTIONS', 'CI', 'npm_config_user_agent']) delete clean[k];
+  const res = spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', env: { ...clean, PATH: PATH_WITH_OODLE, ...env } });
   return { code: res.status, stdout: res.stdout, stderr: res.stderr };
 }
 
@@ -169,6 +174,21 @@ test('init --ci installs with the package manager the repository locks with', ()
   assert.match(wf, /- uses: pnpm\/action-setup@v4\n\s+- uses: actions\/setup-node@v7/);
   assert.match(wf, /cache: pnpm\n\s+- run: pnpm install --frozen-lockfile\n/);
   assert.doesNotMatch(wf, /npm ci/);
+});
+
+test('hints name the command that works here when oodle is not on the PATH', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'oodle-local-'));
+  writeFileSync(join(repo, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+  // Installed as a dev dependency and started with pnpm exec: the shell has no oodle of its own.
+  const made = oodle(['init', repo], { PATH: PATH_WITHOUT_OODLE, npm_config_user_agent: 'pnpm/10.14.0 npm/? node/v24.15.0 darwin arm64' });
+  assert.match(made.stderr, /Run it: pnpm exec oodle run/);
+  assert.doesNotMatch(made.stderr, /completion/);
+  // No user agent (run by path): the lockfile decides. Package names and file names stay as they are.
+  const typo = oodle(['rnu'], { PATH: PATH_WITHOUT_OODLE }, repo);
+  assert.match(typo.stderr, /Did you mean `pnpm exec oodle run`\?/);
+  const help = oodle(['help', 'init'], { PATH: PATH_WITHOUT_OODLE }, repo);
+  assert.match(help.stdout, /\$ pnpm exec oodle init --ci/);
+  assert.match(help.stdout, /oodle\.app\.ts/);
 });
 
 test('doctor fails when Oodle runs the starter app instead of the service beside it', () => {

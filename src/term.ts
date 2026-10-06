@@ -5,6 +5,7 @@
  * flag > NO_COLOR > FORCE_COLOR > TTY detection.
  */
 import type { WriteStream } from 'node:tty';
+import { runnable } from './invocation.ts';
 
 export type ColorMode = 'auto' | 'always' | 'never';
 
@@ -91,7 +92,7 @@ export function note(line = ''): void {
 export function hints(lines: string[]): void {
   if (settings.quiet || !lines.length) return;
   note();
-  for (const l of lines) note(`  ${err.dim(sym.arrow)} ${l}`);
+  for (const l of lines) note(`  ${err.dim(sym.arrow)} ${runnable(l)}`);
 }
 
 export function ms(n: number): string {

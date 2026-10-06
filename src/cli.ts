@@ -11,7 +11,8 @@ import { diffRuns, parseApproval, type Approval } from './diff.ts';
 import { approvalTokens, diffMarkdown } from './report.ts';
 import { renderDiff, renderLint, renderMutate, renderRun, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
-import { init, installOodle, migrate, packageManager } from './init.ts';
+import { init, migrate } from './init.ts';
+import { installOodle, oodleCommand, packageManager, runnable } from './invocation.ts';
 import { doctor } from './doctor.ts';
 import { mutate, type MutateReport } from './mutate.ts';
 import { propose } from './propose.ts';
@@ -361,7 +362,7 @@ function flagRows(flags: Flag[]): string[] {
 }
 
 function exampleRows(examples: [string, string][]): string[] {
-  return examples.flatMap(([cmd, what]) => [`  ${o.dim(`# ${what}`)}`, `  ${o.dim('$')} ${cmd}`]);
+  return examples.flatMap(([cmd, what]) => [`  ${o.dim(`# ${what}`)}`, `  ${o.dim('$')} ${runnable(cmd)}`]);
 }
 
 function topHelp(): string {
@@ -370,7 +371,7 @@ function topHelp(): string {
     `${o.bold('oodle')} ${o.dim(VERSION)}  CI that protects outcomes and watches behavior. ${o.dim('Part of OODLC.')}`,
     '',
     H('Usage'),
-    `  oodle ${o.cyan('<command>')} [project] [flags]`,
+    runnable(`  oodle ${o.cyan('<command>')} [project] [flags]`),
     '',
     H('Commands'),
     ...COMMANDS.map((c) => `  ${o.cyan(c.name.padEnd(width))}${c.summary}`),
@@ -389,8 +390,8 @@ function topHelp(): string {
     ...EXIT_DOCS.map(([c, d]) => `  ${o.cyan(String(c).padEnd(5))}${d}`),
     '',
     H('Learn more'),
-    `  ${o.cyan('oodle help <command>')}   details and examples for one command`,
-    `  ${o.cyan('oodle help --json')}      the whole CLI as JSON, for scripts and agents`,
+    `  ${o.cyan(runnable('oodle help <command>'))}   details and examples for one command`,
+    `  ${o.cyan(runnable('oodle help --json'))}      the whole CLI as JSON, for scripts and agents`,
     `  ${o.link(DOCS, DOCS)}`,
   ].join('\n');
 }
@@ -405,7 +406,7 @@ function commandHelp(c: Command): string {
     `${o.bold(`oodle ${c.name}`)}  ${c.summary}`,
     '',
     H('Usage'),
-    `  oodle ${c.name}${usageArgs ? ` ${usageArgs}` : ''}${flags ? ' [flags]' : ''}`,
+    runnable(`  oodle ${c.name}${usageArgs ? ` ${usageArgs}` : ''}${flags ? ' [flags]' : ''}`),
     '',
     wrap(c.description, Math.min(columns(), 100) - 2).split('\n').map((l) => `  ${l}`).join('\n'),
     '',
@@ -454,7 +455,7 @@ function heading(title: string, dir: string): void {
   if (settings.quiet) return;
   note(`${e.bold(e.cyan(`oodle ${title}`))} ${e.dim(display(dir))}\n`);
   if (configFile(dir)?.legacy) {
-    note(`${e.yellow(sym.warn)} This project uses the old layout (oodle.yaml). Move it into ${FOLDER}/ with ${e.cyan(`oodle init --migrate${display(dir) === '.' ? '' : ` ${display(dir)}`}`)}\n`);
+    note(`${e.yellow(sym.warn)} This project uses the old layout (oodle.yaml). Move it into ${FOLDER}/ with ${e.cyan(runnable(`oodle init --migrate${display(dir) === '.' ? '' : ` ${display(dir)}`}`))}\n`);
   }
 }
 
@@ -870,7 +871,8 @@ async function cmdInit(ctx: Ctx): Promise<number> {
   hints([
     `Run it: ${e.cyan(`oodle run${where}`)}`,
     `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
-    `Shell completion: ${e.cyan('oodle completion --help')}`,
+    // Completion only helps a shell that can find `oodle` itself.
+    ...(oodleCommand() === 'oodle' ? [`Shell completion: ${e.cyan('oodle completion --help')}`] : []),
   ]);
   return EXIT.ok;
 }
@@ -885,7 +887,7 @@ async function cmdDoctor(ctx: Ctx): Promise<number> {
   for (const c of checks) {
     const mark = c.status === 'ok' ? o.green(sym.ok) : c.status === 'warn' ? o.yellow(sym.warn) : o.red(sym.fail);
     console.log(`  ${mark} ${c.name.padEnd(width)}${c.status === 'ok' ? o.dim(c.detail) : c.detail}`);
-    if (c.hint && c.status !== 'ok') console.log(`    ${' '.repeat(width)}${o.dim(`${sym.arrow} ${c.hint}`)}`);
+    if (c.hint && c.status !== 'ok') console.log(`    ${' '.repeat(width)}${o.dim(`${sym.arrow} ${runnable(c.hint)}`)}`);
   }
   const warns = checks.filter((c) => c.status === 'warn').length;
   console.log(`\n${failed ? o.red(o.bold(`${sym.fail} Not ready`)) : o.green(o.bold(`${sym.ok} Ready`))}${warns ? `  ${o.yellow(`${warns} to look at`)}` : ''}`);
@@ -1132,7 +1134,7 @@ async function fail(error: unknown): Promise<number> {
     printJson({
       ok: false,
       error: known
-        ? { code: known.code, message: known.message, hint: known.hint ?? null, problems: known.problems }
+        ? { code: known.code, message: known.message, hint: known.hint ? runnable(known.hint) : null, problems: known.problems }
         : { code: 'internal', message: (error as Error)?.message ?? String(error), hint: `Please report this: ${ISSUES}`, problems: [] },
     });
     return known?.exitCode ?? EXIT.usage;
@@ -1143,7 +1145,7 @@ async function fail(error: unknown): Promise<number> {
     process.stderr.write(`\n${e.red(e.bold(`${sym.fail} ${known.message}`))}\n`);
     // Multi-line problems (YAML and compiler errors carry a code frame) stay inside the gutter.
     for (const p of known.problems) for (const l of p.split('\n').filter((x) => x.trim())) process.stderr.write(`  ${e.dim(sym.bar)} ${l}\n`);
-    if (known.hint) process.stderr.write(`  ${e.dim(sym.arrow)} ${known.hint}\n`);
+    if (known.hint) process.stderr.write(`  ${e.dim(sym.arrow)} ${runnable(known.hint)}\n`);
     if (settings.debug) {
       const cause = (known as Error & { cause?: Error }).cause;
       process.stderr.write(`\n${e.dim(known.stack ?? '')}\n`);

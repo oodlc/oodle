@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'yaml';
 import { CONFIG_FILE, FOLDER, configFile } from './catalog.ts';
 import { OodleError } from './errors.ts';
+import { packageManager } from './invocation.ts';
 import { display } from './project.ts';
 
 const CONFIG = (app: string) => `# Oodle project config. Every other .yaml file in this folder is catalog.
@@ -157,22 +158,6 @@ export default httpApp(${target}, {
 });
 `;
 };
-
-export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
-
-/** The package manager a directory uses, from the nearest lockfile at or above it (npm when there is none). */
-export function packageManager(dir: string): PackageManager {
-  for (let d = resolve(dir); ; d = dirname(d)) {
-    if (existsSync(join(d, 'pnpm-lock.yaml'))) return 'pnpm';
-    if (existsSync(join(d, 'yarn.lock'))) return 'yarn';
-    if (existsSync(join(d, 'bun.lock')) || existsSync(join(d, 'bun.lockb'))) return 'bun';
-    if (existsSync(join(d, 'package-lock.json')) || dirname(d) === d) return 'npm';
-  }
-}
-
-/** The command that adds Oodle as a dev dependency. npm can't install into a pnpm node_modules. */
-export const installOodle = (pm: PackageManager): string =>
-  ({ npm: 'npm i -D', pnpm: 'pnpm add -D', yarn: 'yarn add -D', bun: 'bun add -d' })[pm] + ' @oodlc/oodle';
 
 /** Workflow steps that set up the package manager and install the repository's dependencies. */
 function installSteps(root: string): string {

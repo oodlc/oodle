@@ -7,10 +7,11 @@ import { jsonDiff } from './expect.ts';
 import { STARTER_MARK, detectService } from './init.ts';
 import { installOodle, packageManager } from './invocation.ts';
 import { SEALED_ID } from './seal.ts';
-import { declaredEffects } from './scan.ts';
+import { declaredEffects, scanDatabase } from './scan.ts';
+import { SimDatabase } from './database.ts';
 import type { Observation } from './types.ts';
 import { lint } from './lint.ts';
-import { runProject } from './runner.ts';
+import { FIXED_NOW, runProject } from './runner.ts';
 import { findProject, display } from './project.ts';
 import { OodleError } from './errors.ts';
 import { plural } from './term.ts';
@@ -134,6 +135,32 @@ export async function doctor(arg?: string): Promise<Check[]> {
         ? { name: 'stubs', status: 'warn', detail: `${partly.join(', ')} ${partly.length === 1 ? 'is' : 'are'} stubbed only in some outcomes or conditions`, hint: 'Any other run that makes the call fails. Add a default under defaults.given.stubs in oodlc/config.yaml.' }
         : { name: 'stubs', status: 'ok', detail: `${plural(named.length, 'effect')} in ${config.app}, each stubbed` });
   }
+  // The simulated database on its own, before any run needs it: PGlite loads and the schema applies.
+  if (config.database) {
+    try {
+      const db = await SimDatabase.open(dir, config.database, FIXED_NOW);
+      const tables = db.tableNames;
+      await db.close();
+      const from = [config.database.schema ?? []].flat().join(', ');
+      checks.push(tables.length
+        ? { name: 'database', status: 'ok', detail: `Postgres in process, ${plural(tables.length, 'table')} from ${from}: ${tables.slice(0, 5).join(', ')}${tables.length > 5 ? ', …' : ''}` }
+        : { name: 'database', status: 'warn', detail: from ? `the schema in ${from} creates no tables` : 'no schema, so the database has no tables', hint: 'Point database.schema in oodlc/config.yaml at the .sql file or migrations folder that creates your tables.' });
+    } catch (err) {
+      checks.push({ name: 'database', status: 'fail', ...problemText(err, dir) });
+      return checks;
+    }
+  } else {
+    const found = scanDatabase(dir);
+    if (found && !found.unsupported) {
+      checks.push({
+        name: 'database',
+        status: 'warn',
+        detail: `the app uses ${found.driver}, but Oodle gives it no database, so every query is refused`,
+        hint: `Add database: { schema: ${found.schema ?? 'db/schema.sql'} } to oodlc/config.yaml, and install PGlite: ${installOodle(packageManager(dir), '@electric-sql/pglite')}`,
+      });
+    }
+  }
+
   if (existsSync(appPath) && readFileSync(appPath, 'utf8').includes(STARTER_MARK)) {
     const service = detectService(dir);
     if (service) {
@@ -152,7 +179,10 @@ export async function doctor(arg?: string): Promise<Check[]> {
     if (unstubbed.length) {
       checks.push({ name: 'app', status: 'fail', detail: `external calls with no stub: ${unstubbed.join(', ')}`, hint: 'Add each one under defaults.given.stubs in oodlc/config.yaml, or in a condition.' });
     } else if (escaped.length) {
-      checks.push({ name: 'app', status: 'fail', detail: `reaches the real network: ${escaped.join(', ')}`, hint: `Name each host under effects in ${config.app} (@oodlc/oodle/adapter), or route the call through ctx.effects.call. Then stub the effect in oodlc/config.yaml.` });
+      const postgres = escaped.some((t) => t.endsWith(':5432'));
+      checks.push({ name: 'app', status: 'fail', detail: `reaches the real network: ${escaped.join(', ')}`, hint: postgres && !config.database
+        ? 'Port 5432 is Postgres: add database: { schema: <your .sql or migrations folder> } to oodlc/config.yaml, and Oodle runs one in process.'
+        : `Name each host under effects in ${config.app} (@oodlc/oodle/adapter), or route the call through ctx.effects.call. Then stub the effect in oodlc/config.yaml.` });
     } else if (threw.length) {
       checks.push({ name: 'app', status: 'fail', detail: `${plural(threw.length, 'run')} threw, e.g. ${threw[0].id}: ${threw[0].error}`, hint: 'Run `oodle run` to see each failure.' });
     } else {

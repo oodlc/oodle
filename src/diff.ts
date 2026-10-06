@@ -97,12 +97,13 @@ function boundaryView(o: Observation) {
   return {
     status: o.status,
     body: o.body,
-    effects: o.effects.filter((e) => e.boundary !== 'internal').map(({ kind, payload, result, error }) => ({ kind, payload, result, error })),
+    effects: o.effects.filter((e) => e.boundary === 'external').map(({ kind, payload, result, error }) => ({ kind, payload, result, error })),
   };
 }
 
+/** What the system did inside itself: internal effects, and the rows it wrote to its own database. Behavior, so report only. */
 function internalView(o: Observation) {
-  return o.effects.filter((e) => e.boundary === 'internal').map(({ kind, payload }) => ({ kind, payload }));
+  return o.effects.filter((e) => e.boundary !== 'external').map(({ kind, payload }) => ({ kind, payload }));
 }
 
 function definition(o: Outcome) {

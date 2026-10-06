@@ -11,7 +11,11 @@ import { allConditions } from './security.ts';
  * - `when` for a condition the outcome does not run under -> error (it would never apply)
  * - approved outcome tracing to a proposed intent -> error (approve the intent first)
  * - proposed entries                      -> warning (waiting for a human)
+ * - given.db with no `database` in config -> error (there is no database to seed)
  */
+/** A given.db that names at least one table. An empty one seeds nothing, so it needs no database. */
+const seeds = (db: object | undefined) => !!db && Object.keys(db).length > 0;
+
 export function lint(catalog: Catalog, config?: Config): LintResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -50,6 +54,15 @@ export function lint(catalog: Catalog, config?: Config): LintResult {
     if (!used.has(i.id)) warnings.push(`${catalog.sources[`intents:${i.id}`]}: ${i.id}: intent has no outcomes yet (backlog)`);
   }
 
+  if (config && !config.database) {
+    const seeding = [
+      ...(seeds(config.defaults?.given?.db) ? ['oodlc/config.yaml: defaults.given'] : []),
+      ...[...catalog.outcomes, ...catalog.behaviors].filter((x) => seeds(x.trigger.given?.db)).map((x) => `${catalog.sources[`${'expect' in x ? 'outcomes' : 'behaviors'}:${x.id}`]}: ${x.id}`),
+      ...catalog.conditions.filter((c) => seeds(c.given.db)).map((c) => `${catalog.sources[`conditions:${c.id}`]}: ${c.id}`),
+    ];
+    for (const where of seeding) errors.push(`${where}: given.db seeds a database, but oodlc/config.yaml has no "database". Add database: { schema: <a .sql file or migrations folder> }.`);
+  }
+
   for (const id of config?.probe?.conditions ?? []) {
     if (!conditions.has(id)) errors.push(`oodlc/config.yaml: probe.conditions: unknown condition "${id}"`);
   }
@@ -60,7 +73,7 @@ export function lint(catalog: Catalog, config?: Config): LintResult {
   for (const c of catalog.constraints) {
     if (c.status === 'proposed') warnings.push(`${catalog.sources[`constraints:${c.id}`]}: ${c.id}: proposed constraint, checked and reported but not blocking. Approve it by deleting "status: proposed".`);
     try {
-      new Function('effects', 'state', 'response', 'request', `return (${c.check});`);
+      new Function('effects', 'state', 'response', 'request', 'db', `return (${c.check});`);
     } catch (err) {
       errors.push(`${catalog.sources[`constraints:${c.id}`]}: ${c.id}: check does not parse: ${(err as Error).message}`);
     }

@@ -48,6 +48,11 @@
           "oneOf": [{ "type": "null" }, { "type": "object", "additionalProperties": { "type": ["string", "null"] } }]
         },
         "state": { "type": "object" },
+        "db": {
+          "description": "Rows each table of the simulated database starts with, by table name (schema.table outside public). Listing a table replaces the rows defaults or the schema gave it. Needs database in oodlc/config.yaml.",
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "object" } }
+        },
         "stubs": { "type": "object", "additionalProperties": { "$ref": "#/definitions/stub" } },
         "repeat": {
           "description": "Send the same request this many times against the same state (2 is a replay). The last response is observed; effects accumulate.",
@@ -151,7 +156,7 @@
       "properties": {
         "id": { "$ref": "#/definitions/id" },
         "statement": { "type": "string", "minLength": 1 },
-        "check": { "description": "JS expression over effects, state, response and request; must be true", "type": "string", "minLength": 1 },
+        "check": { "description": "JS expression over effects, state, response, request and db (each table's rows after the run, with the simulated database); must be true", "type": "string", "minLength": 1 },
         "status": { "$ref": "#/definitions/status" }
       }
     }

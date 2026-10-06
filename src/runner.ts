@@ -10,8 +10,10 @@ import { evaluate } from './expect.ts';
 import { OodleError } from './errors.ts';
 import { allConditions, fuzzBody, takePollution } from './security.ts';
 import { recordEscapes, seal, sealViolations } from './seal.ts';
+import { SimDatabase, sqlInjectionViolations } from './database.ts';
 
-const FIXED_NOW = '2026-01-01T00:00:00.000Z';
+/** The simulation's clock: ctx.now(), the adapter's frozen Date, and the simulated database all read it. */
+export const FIXED_NOW = '2026-01-01T00:00:00.000Z';
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -120,14 +122,14 @@ interface Checked {
  * Every constraint is checked on every run: outcomes, behaviors and probes of unknown routes.
  * An invariant that only holds on the paths someone described is not an invariant. See docs/decisions/0002.
  */
-function checkConstraints(catalog: Catalog, effects: EffectRecord[], state: unknown, response: unknown, request: Request): Checked {
+function checkConstraints(catalog: Catalog, effects: EffectRecord[], state: unknown, response: unknown, request: Request, db: Record<string, unknown[]> = {}): Checked {
   const out: Checked = { violations: [], notices: [] };
   for (const c of catalog.constraints) {
     const into = c.status === 'proposed' ? out.notices : out.violations;
     const tag = c.status === 'proposed' ? 'proposed constraint' : 'constraint';
     try {
-      const fn = new Function('effects', 'state', 'response', 'request', `return (${c.check});`);
-      if (!fn(effects, state, response, request)) into.push(`${tag} ${c.id} violated: ${c.statement}`);
+      const fn = new Function('effects', 'state', 'response', 'request', 'db', `return (${c.check});`);
+      if (!fn(effects, state, response, request, db)) into.push(`${tag} ${c.id} violated: ${c.statement}`);
     } catch (err) {
       // Fail closed: a check that cannot be evaluated is not evidence the invariant holds.
       into.push(`${tag} ${c.id} errored: ${(err as Error).message}`);
@@ -136,11 +138,22 @@ function checkConstraints(catalog: Catalog, effects: EffectRecord[], state: unkn
   return out;
 }
 
-/** Built-in invariants every run holds to, whatever the catalog says: the simulation is sealed, and the prototype stays clean. */
-function builtinViolations(escapes: string[]): string[] {
+/** Built-in invariants every run holds to, whatever the catalog says: the simulation is sealed, the prototype stays clean, and request input never becomes SQL. */
+function builtinViolations(escapes: string[], db: SimDatabase | null): string[] {
   const out = sealViolations(escapes);
   if (takePollution()) out.push('constraint oodle.prototype-pollution violated: a request body\'s __proto__ field reached Object.prototype');
+  if (db) out.push(...sqlInjectionViolations(db.takeInjections()));
   return out;
+}
+
+/** Constraints only read the tables when one of them mentions `db`. */
+const readsDb = (catalog: Catalog) => catalog.constraints.some((c) => /\bdb\b/.test(c.check));
+
+/** After a run: what the app wrote joins its effects, and constraints get the tables. */
+async function afterRun(db: SimDatabase | null, catalog: Catalog, effects: EffectRecord[]): Promise<Record<string, unknown[]>> {
+  if (!db) return {};
+  effects.push(...(await db.changes()));
+  return readsDb(catalog) ? db.contents() : {};
 }
 
 /** Sends the request `repeat` times against one app instance; the last response is the one observed. */
@@ -162,7 +175,7 @@ export type Subject = { kind: 'outcome'; item: Outcome } | { kind: 'behavior'; i
  * Runs one outcome or behavior under one condition. Outcomes are checked against
  * `expect`, behaviors against their `observed` snapshot, and both against every constraint.
  */
-export async function runSubject(createApp: CreateApp, catalog: Catalog, config: Config, subject: Subject, condition: Condition | null): Promise<Observation> {
+export async function runSubject(createApp: CreateApp, catalog: Catalog, config: Config, subject: Subject, condition: Condition | null, db: SimDatabase | null = null): Promise<Observation> {
   const { item } = subject;
   const given = mergeGiven(config.defaults?.given, item.trigger.given, condition?.given);
   const sim = simulate(given);
@@ -170,6 +183,18 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   const obs: Observation = { kind: subject.kind, id: item.id, condition: condition?.id ?? 'default', status: null, body: undefined, effects: sim.effects, latency_ms: 0, failures: [], violations: [], notices: [] };
   if (subject.kind === 'outcome' && subject.item.status === 'proposed') obs.proposed = true;
   const req = requestFor(method, path, given);
+  if (db) {
+    try {
+      await db.reset(given.db);
+    } catch (err) {
+      // The run can't start from the state it describes, so nothing it observed would mean anything.
+      obs.failures.push((err as Error).message);
+      return obs;
+    }
+  } else if (Object.keys(given.db ?? {}).length) {
+    obs.failures.push('given.db needs the simulated database: add database: { schema: <your .sql or migrations folder> } to oodlc/config.yaml');
+    return obs;
+  }
 
   const t0 = performance.now();
   const { escapes } = await recordEscapes(async () => {
@@ -182,14 +207,15 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
     }
   });
   obs.latency_ms = Math.round(performance.now() - t0 + sim.virtualMs());
+  const tables = await afterRun(db, catalog, sim.effects);
 
   if (obs.error) obs.failures.push(`app threw: ${obs.error}`);
   if (subject.kind === 'outcome') obs.failures.push(...evaluate(expectFor(subject.item, condition?.id), obs));
   else if (subject.item.observed) obs.failures.push(...evaluate(subject.item.observed, obs));
   // A missing stub usually surfaces as a 500 or a wrong body. Name it first, since it is the thing to fix.
   if (obs.failures.length) obs.failures.unshift(...missingStubs(sim.effects).filter((m) => obs.error !== m));
-  const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body }, req);
-  obs.violations = [...checked.violations, ...builtinViolations(escapes)];
+  const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body }, req, tables);
+  obs.violations = [...checked.violations, ...builtinViolations(escapes, db)];
   obs.notices = checked.notices;
   return obs;
 }
@@ -199,7 +225,7 @@ function routeRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>): Promise<Gap[]> {
+async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>, db: SimDatabase | null): Promise<Gap[]> {
   const gaps: Gap[] = [];
   const triggers = [...catalog.outcomes, ...catalog.behaviors].map((x) => x.trigger.http.split(' '));
   for (const route of app.routes) {
@@ -219,6 +245,11 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
       const sim = simulate(given);
       const req = requestFor(route.method, probePath, given);
       let result: Gap['probe'];
+      const seeded = await db?.reset(given.db).then(() => null, (err: Error) => err.message);
+      if (seeded) {
+        if (!c) probe = { status: null, body: undefined, error: seeded };
+        continue;
+      }
       const { escapes } = await recordEscapes(async () => {
         try {
           const res = await send(createApp(sim.ctx), req, given.repeat);
@@ -227,10 +258,11 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
           result = { status: null, body: undefined, error: (err as Error).message, effects: sim.effects };
         }
       });
+      const tables = await afterRun(db, catalog, sim.effects);
       if (!c) probe = result!;
-      const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: result!.status, body: result!.body }, req);
+      const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: result!.status, body: result!.body }, req, tables);
       const label = (v: string) => (c ? `[${c.id}] ${v}` : v);
-      violations.push(...[...checked.violations, ...builtinViolations(escapes)].map(label));
+      violations.push(...[...checked.violations, ...builtinViolations(escapes, db)].map(label));
       notices.push(...checked.notices.map(label));
     }
     const slug = `${route.method.toLowerCase()}${route.path.replace(/[/:]+/g, '-').replace(/-+$/, '')}`;
@@ -268,15 +300,18 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
   const config = loadConfig(projectDir);
   const catalog = loadCatalog(projectDir, config);
   const lintResult = lint(catalog, config);
+  // The database comes up before the app loads, so DATABASE_URL is set for modules that read it on import.
+  const db = config.database ? await SimDatabase.open(projectDir, config.database, FIXED_NOW) : null;
   const unseal = config.sealed === false ? () => {} : seal(typeof config.sealed === 'object' ? config.sealed.allow : []);
   try {
-    return await runSealed(projectDir, config, catalog, lintResult, opts);
+    return await runSealed(projectDir, config, catalog, lintResult, opts, db);
   } finally {
     unseal();
+    await db?.close();
   }
 }
 
-async function runSealed(projectDir: string, config: Config, catalog: Catalog, lintResult: RunResult['lint'], opts: RunOptions): Promise<RunResult> {
+async function runSealed(projectDir: string, config: Config, catalog: Catalog, lintResult: RunResult['lint'], opts: RunOptions, db: SimDatabase | null): Promise<RunResult> {
   const { value: createApp, escapes } = await recordEscapes(() => loadApp(projectDir, config));
   if (escapes.length) {
     throw new OodleError('sealed', `${config.app} reached the real network while loading`, {
@@ -304,7 +339,7 @@ async function runSealed(projectDir: string, config: Config, catalog: Catalog, l
   });
   for (const [i, { subject, c }] of plan.entries()) {
     opts.onProgress?.(`${subject.item.id}${c ? ` · ${c.id}` : ''}`, i, plan.length);
-    observations.push(await runSubject(createApp, catalog, config, subject, c));
+    observations.push(await runSubject(createApp, catalog, config, subject, c, db));
   }
 
   let probeApp: OodleApp;
@@ -317,6 +352,6 @@ async function runSealed(projectDir: string, config: Config, catalog: Catalog, l
     });
   }
   const routes = probeApp.routes.map((r) => `${r.method} ${r.path}`);
-  const gaps = await findGaps(createApp, catalog, config, probeApp, conditions);
+  const gaps = await findGaps(createApp, catalog, config, probeApp, conditions, db);
   return { projectDir, config, catalog, lint: lintResult, routes, observations, gaps };
 }

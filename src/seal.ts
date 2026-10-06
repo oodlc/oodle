@@ -9,6 +9,10 @@
  * Unix domain sockets stay open (they are local IPC, not network), and so do
  * child processes: a child is outside the seal. Hosts listed in
  * `sealed.allow` in oodlc/config.yaml pass through.
+ *
+ * A connection can also be routed: the simulated database (src/database.ts)
+ * takes TCP connects to its address and hands them a Unix socket in this
+ * process instead, so the app's driver reaches it without a port opening.
  */
 import net from 'node:net';
 
@@ -25,13 +29,20 @@ let active: Active | null = null;
 const originalConnect = net.Socket.prototype.connect;
 const originalFetch = globalThis.fetch;
 
+/** Where a TCP connect goes instead, by host and port: a Unix socket path, or undefined to leave it alone. */
+export type Route = (host: string, port: string | number | undefined, socket: net.Socket) => string | undefined;
+let route: Route | null = null;
+
 function allowed(host: string, port: string | number | undefined): boolean {
   return !!active && active.allow.some((a) => a === host || a === `${host}:${port}`);
 }
 
 function refuse(target: string): Error {
   active!.sink.push(target);
-  return new Error(`Oodle sealed simulation: real network access to ${target} is blocked. Route external calls through ctx.effects.call, or list the host under sealed.allow in oodlc/config.yaml.`);
+  const fix = target.endsWith(':5432')
+    ? 'For Postgres, add database to oodlc/config.yaml and Oodle runs one in process.'
+    : 'Route external calls through ctx.effects.call, or list the host under sealed.allow in oodlc/config.yaml.';
+  return new Error(`Oodle sealed simulation: real network access to ${target} is blocked. ${fix}`);
 }
 
 /** Socket#connect accepts (options), (port, host), (path) or the internal normalized [options, cb] array. */
@@ -48,8 +59,29 @@ function targetOf(args: unknown[]): { path?: string; host: string; port?: string
 
 function sealedConnect(this: net.Socket, ...args: unknown[]) {
   const t = targetOf(args);
+  const path = !t.path && route ? route(t.host, t.port, this) : undefined;
+  if (path) {
+    const cb = (Array.isArray(args[0]) ? args[0] : args).find((a) => typeof a === 'function');
+    return (originalConnect as (...a: unknown[]) => net.Socket).apply(this, cb ? [{ path }, cb] : [{ path }]);
+  }
   if (active && !t.path && !allowed(t.host, t.port)) throw refuse(`${t.host}:${t.port ?? '?'}`);
   return (originalConnect as (...a: unknown[]) => net.Socket).apply(this, args);
+}
+
+/** Socket#connect is patched while the seal is on or a route is set, and only then. */
+function patchConnect() {
+  net.Socket.prototype.connect = active || route ? (sealedConnect as typeof net.Socket.prototype.connect) : originalConnect;
+}
+
+/** Routes TCP connects through `fn` until the returned function is called. Works with the seal on or off. */
+export function routeConnections(fn: Route): () => void {
+  route = fn;
+  patchConnect();
+  return () => {
+    if (route !== fn) return;
+    route = null;
+    patchConnect();
+  };
 }
 
 async function sealedFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -67,13 +99,13 @@ export function seal(allow: string[] = []): () => void {
     active.depth++;
   } else {
     active = { allow, sink: [], depth: 1 };
-    net.Socket.prototype.connect = sealedConnect as typeof net.Socket.prototype.connect;
+    patchConnect();
     globalThis.fetch = sealedFetch as typeof fetch;
   }
   return () => {
     if (!active || --active.depth > 0) return;
     active = null;
-    net.Socket.prototype.connect = originalConnect;
+    patchConnect();
     globalThis.fetch = originalFetch;
   };
 }
@@ -92,4 +124,4 @@ export async function recordEscapes<T>(fn: () => Promise<T>): Promise<{ value: T
 }
 
 export const sealViolations = (escapes: string[]) =>
-  [...new Set(escapes)].map((t) => `constraint ${SEALED_ID} violated: the app reached the real network (${t}) instead of going through ctx.effects`);
+  [...new Set(escapes)].map((t) => `constraint ${SEALED_ID} violated: the app reached the real network (${t}) instead of going through ctx.effects${t.endsWith(':5432') ? '; for Postgres, add database to oodlc/config.yaml and Oodle runs one in process' : ''}`);

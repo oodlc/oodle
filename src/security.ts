@@ -23,6 +23,12 @@ export function allConditions(catalog: Catalog): Map<string, Condition> {
 
 export const INJECTION = `' OR '1'='1'; DROP TABLE users; -- <script>alert(1)</script> {{7*7}} \${7*7} ../../../etc/passwd`;
 
+/**
+ * The part of INJECTION that can only appear in SQL text unescaped. Sent as a parameter, it never
+ * reaches the text; quoted properly, its quotes are doubled. See src/database.ts.
+ */
+export const INJECTION_SQL = `' OR '1'='1'`;
+
 /** Set on Object.prototype only if the app merged a hostile `__proto__` into a plain object. */
 export const POLLUTION_MARK = 'oodle_polluted';
 

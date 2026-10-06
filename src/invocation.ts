@@ -19,8 +19,8 @@ export function packageManager(dir: string): PackageManager {
 }
 
 /** The command that adds Oodle as a dev dependency. npm can't install into a pnpm node_modules. */
-export const installOodle = (pm: PackageManager): string =>
-  ({ npm: 'npm i -D', pnpm: 'pnpm add -D', yarn: 'yarn add -D', bun: 'bun add -d' })[pm] + ' @oodlc/oodle';
+export const installOodle = (pm: PackageManager, pkg = '@oodlc/oodle'): string =>
+  ({ npm: 'npm i -D', pnpm: 'pnpm add -D', yarn: 'yarn add -D', bun: 'bun add -d' })[pm] + ` ${pkg}`;
 
 const RUNNERS: Record<PackageManager, string> = { npm: 'npx oodle', pnpm: 'pnpm exec oodle', yarn: 'yarn oodle', bun: 'bunx oodle' };
 

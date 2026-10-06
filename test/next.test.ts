@@ -60,3 +60,37 @@ for (const [pkg, label] of [['next', 'Next 16'], ['next15', 'Next 15']] as const
     assert.ok(!routes.some((r: string) => /\(|_lib/.test(r)), routes.join(', '));
   });
 }
+
+test('Next 16: a route handler on pg gets the simulated Postgres, even when .env.test names a real one', { skip: !existsSync(join(ROOT, 'node_modules', 'next')) && "next isn't installed" }, () => {
+  const dir = fixtureOn('next');
+  mkdirSync(join(dir, 'app', 'api', 'notes'), { recursive: true });
+  writeFileSync(join(dir, 'app', 'api', 'notes', 'route.ts'), `import pg from 'pg';
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+export async function POST(req: Request) {
+  const { text } = await req.json();
+  const { rows: [note] } = await pool.query('INSERT INTO notes (body) VALUES ($1) RETURNING id, body', [text]);
+  return Response.json(note, { status: 201 });
+}
+`);
+  writeFileSync(join(dir, 'schema.sql'), 'CREATE TABLE notes (id serial PRIMARY KEY, body text NOT NULL);\n');
+  writeFileSync(join(dir, '.env.test'), `${readFileSync(join(dir, '.env.test'), 'utf8')}\nDATABASE_URL=postgres://app:secret@db.production.example:5432/app\n`);
+  writeFileSync(join(dir, 'oodlc', 'config.yaml'), `${readFileSync(join(dir, 'oodlc', 'config.yaml'), 'utf8')}database:\n  schema: schema.sql\n`);
+  writeFileSync(join(dir, 'oodlc', 'notes.yaml'), `version: 0
+outcomes:
+  - id: notes.saved
+    intent: ${/id: (\S+)/.exec(readFileSync(join(dir, 'oodlc', 'intents.yaml'), 'utf8'))![1]}
+    statement: A note is saved with the next id
+    boundary: customer
+    trigger:
+      http: POST /api/notes
+      given: { body: { text: hi }, db: { notes: [{ id: 4, body: older }] } }
+    expect:
+      status: 201
+      body: { id: 5, body: hi }
+      effects:
+        - { kind: db.notes.inserted, match: { id: 5, body: hi }, count: 1 }
+`);
+  const { out, stderr } = node([BIN, 'run', dir, '--json', '--only', 'notes.*'], dir);
+  assert.ok(out, stderr);
+  assert.deepEqual(out.observations.flatMap((o: any) => [...o.failures, ...o.violations]), []);
+});

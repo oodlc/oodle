@@ -25,6 +25,8 @@ export interface Given {
   /** Request headers. A null value drops that header; `headers: null` sends none at all. */
   headers?: Record<string, string | null> | null;
   state?: Record<string, unknown>;
+  /** Rows each table of the simulated database starts with, by table name (`schema.table` outside public). Needs `database` in oodlc/config.yaml. */
+  db?: Record<string, Record<string, unknown>[]>;
   stubs?: Record<string, Stub>;
   /** Send the same request this many times against the same state, e.g. 2 for a replay. Default 1. */
   repeat?: number;
@@ -93,7 +95,7 @@ export interface Condition {
 export interface Constraint {
   id: string;
   statement: string;
-  /** JS expression over `effects`, `state`, `response` and `request`; must be true. */
+  /** JS expression over `effects`, `state`, `response`, `request` and `db` (each table's rows after the run); must be true. */
   check: string;
   status?: ProposalStatus;
 }
@@ -119,11 +121,25 @@ export interface Config {
    * built-in `oodle.sealed` constraint. `false` opens it; `allow` lists host or host:port pairs. See docs/decisions/0005.
    */
   sealed?: boolean | { allow?: string[] };
+  /** A real Postgres for the app, simulated in process. See src/database.ts and docs/decisions/0009. */
+  database?: DatabaseConfig;
+}
+
+export interface DatabaseConfig {
+  /** SQL applied once before the runs: a .sql file, or a folder of migrations applied in name order. Relative to the project root. */
+  schema?: string | string[];
+  /** Environment variables set to the simulated database's URL. Default DATABASE_URL. */
+  env?: string | string[];
 }
 
 export interface EffectRecord {
   kind: string;
-  boundary: 'internal' | 'external';
+  /**
+   * external: crosses the system boundary (a stubbed call, an emitted effect). internal: `internal.*`, behavior only.
+   * data: a row the app wrote to its own database (src/database.ts). Reported like an internal effect, never
+   * changing an outcome by itself, but not internal: a constraint can tell a write happened.
+   */
+  boundary: 'internal' | 'external' | 'data';
   payload?: unknown;
   result?: unknown;
   error?: string;

@@ -45,7 +45,7 @@ Rules for `--json`:
 
 - stdout gets exactly one JSON document, even when the command fails.
 - Every document has an `ok` boolean.
-- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `sealed`, `exists`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `internal`.
+- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `sealed`, `database-driver`, `database-schema`, `exists`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `internal`.
 - stderr stays silent.
 
 `check --md diff.md` and `diff --md diff.md` also write the markdown to a file, whatever the output format.

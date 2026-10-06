@@ -1,0 +1,15 @@
+# An Express service on Postgres, run through the @oodlc/oodle/adapter. See ../oodle.app.ts.
+app: oodle.app.ts
+database:
+  schema: db/migrations          # applied once, in name order; every run starts from it
+defaults:
+  given:
+    db:
+      users:
+        - { id: u1, email: ada@example.com, plan: pro }
+    stubs:
+      payment.charge: { result: { id: ch_1, status: succeeded }, latency_ms: 250 }
+      payment.refund: { result: { id: re_1, status: succeeded } }
+      email.sent: { result: {} }
+probe:
+  conditions: [security.injection]

@@ -6,7 +6,7 @@ import { CONFIG_FILE, FOLDER, configFile } from './catalog.ts';
 import { OodleError } from './errors.ts';
 import { packageManager } from './invocation.ts';
 import { display } from './project.ts';
-import { type OutboundCall, declaredEffects, scanOutbound } from './scan.ts';
+import { type DatabaseFound, type OutboundCall, declaredEffects, scanDatabase, scanOutbound } from './scan.ts';
 
 /** The effects block of a generated adapter: the calls init found, or examples to fill in. */
 function effectLines(calls: OutboundCall[], examples: string[]): string {
@@ -15,13 +15,20 @@ function effectLines(calls: OutboundCall[], examples: string[]): string {
   return calls.map((c) => `    ${`'${c.host}': '${c.kind}',`.padEnd(width)} // ${c.found.slice(0, 3).join(', ')}${c.found.length > 3 ? ', …' : ''}\n`).join('');
 }
 
-const CONFIG = (app: string, kinds: string[] = []) => `# Oodle project config. Every other .yaml file in this folder is catalog.
+/** The database block of a generated config: the schema init found, or a TODO pointing at one. */
+const DATABASE = (db: DatabaseFound) => `# A real Postgres for your app, simulated in process (PGlite): no Docker, no port, nothing to clean up.
+# Oodle applies the schema once; every run starts from it plus given.db. Your app connects through
+# ${db.env.join(', ')} with its own driver (${db.driver}), and every row it writes is recorded as an effect.
+database:
+${db.schema ? `  schema: ${db.schema}` : '  # schema: db/schema.sql       # TODO: the .sql file or migrations folder that creates your tables'}
+${db.env.length === 1 && db.env[0] === 'DATABASE_URL' ? '' : `  env: [${db.env.join(', ')}]\n`}`;
+
+const CONFIG = (app: string, kinds: string[] = [], db?: DatabaseFound) => `# Oodle project config. Every other .yaml file in this folder is catalog.
 # Docs: https://github.com/oodlc/oodle#writing-a-catalog
 app: ${app}            # default export createApp(ctx), relative to the project root
-defaults:
+${db ? DATABASE(db) : ''}defaults:
   given:
-    state: {}
-${kinds.length
+${db ? '    db: {}                     # rows each table starts with, e.g. users: [{ id: u1, email: ada@example.com }]\n' : '    state: {}\n'}${kinds.length
     ? `    # Every external call the app makes needs a stub. These are placeholders for the calls
     # in ${app}: put in what each API answers, e.g. { result: { id: ch_1, status: succeeded } }.
     stubs:
@@ -200,7 +207,12 @@ export function detectService(dir: string): Service | null {
   return null;
 }
 
-const NEXT_ADAPTER = (svc: Service, calls: OutboundCall[]) => `/**
+/** What the generated adapter says about the database, instead of the setup(ctx) example. */
+const DB_NOTE = (db: DatabaseFound) => `  // ${db.driver} needs nothing here: \`database\` in oodlc/config.yaml gives the app a real Postgres on
+  // ${db.env.join(', ')}, seeded from given.db before each run. setup(ctx) is for other module-level state.
+`;
+
+const NEXT_ADAPTER = (svc: Service, calls: OutboundCall[], db?: DatabaseFound) => `/**
  * How Oodle runs your Next.js app: every route handler in ${svc.entry}/, behind middleware.ts, in process,
  * in a sealed simulation. No build, no server, no port. Next's own route module runs each handler, so
  * cookies(), headers(), redirect() and notFound() behave as they do in Next. Pages aren't run: outcomes
@@ -222,12 +234,12 @@ export default nextApp({
   // Outbound calls, by "METHOD host/path-prefix" or "host". The most specific match wins.${calls.length ? '\n  // Found by `oodle init`. Split one by path or method when it does several things, e.g. \'POST api.stripe.com/v1/charges\': \'payment.charge\'.' : ''}
   effects: {
 ${effectLines(calls, ["'GET your-project.supabase.co/rest/v1/orders': 'db.orders.read',", "'POST api.stripe.com/v1/charges': 'payment.charge',"])}  },
-  // Runs before each simulated run. Point module-level stores at ctx.state here,
+${db ? DB_NOTE(db) : `  // Runs before each simulated run. Point module-level stores at ctx.state here,
   // so every outcome starts from the state it declares.
-});
+`}});
 `;
 
-const ADAPTER = (svc: Service, calls: OutboundCall[]) => {
+const ADAPTER = (svc: Service, calls: OutboundCall[], db?: DatabaseFound) => {
   const spec = `./${svc.entry}`;
   const name = svc.exportName && svc.exportName !== 'default' ? svc.exportName : 'app';
   const importLine = !svc.exportName
@@ -253,10 +265,10 @@ export default httpApp(${target}, {
   // Outbound calls, by "METHOD host/path-prefix" or "host". The most specific match wins.${calls.length ? '\n  // Found by `oodle init`. Split one by path or method when it does several things, e.g. \'POST api.stripe.com/v1/charges\': \'payment.charge\'.' : ''}
   effects: {
 ${effectLines(calls, ["'POST api.stripe.com/v1/charges': 'payment.charge',", "'api.sendgrid.com': 'email.sent',"])}  },
-  // Runs before each simulated run. Point module-level stores at ctx.state here,
+${db ? DB_NOTE(db) : `  // Runs before each simulated run. Point module-level stores at ctx.state here,
   // so every outcome starts from the state it declares, e.g.:
   //   setup(ctx) { db.users = new Map(Object.entries(ctx.state.users ?? {})); },
-});
+`}});
 `;
 };
 
@@ -320,6 +332,8 @@ export interface InitResult {
   workflowOnly?: boolean;
   /** Outbound calls init found in the service and named under effects. */
   effects?: OutboundCall[];
+  /** The Postgres the service uses, simulated in process when it is one Oodle can serve. */
+  database?: DatabaseFound;
 }
 
 /** The GitHub workflow, at the repository root, pointing at the project. */
@@ -369,18 +383,20 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
   const app = opts.app ?? (service ? 'oodle.app.ts' : 'src/app.ts');
   const hasHealth = !service || (service.framework !== 'next' && /['"`]\/health['"`]/.test(readFileSync(join(dir, service.entry), 'utf8')));
   const calls = service ? scanOutbound(dir) : [];
+  const found = service ? scanDatabase(dir) : null;
+  const db = found && !found.unsupported ? found : undefined;
   // The starter app or adapter only fills a gap; an existing file is always left alone, and its effects get the stubs.
   const appExists = existsSync(join(dir, app));
   const kinds = appExists ? declaredEffects(join(dir, app)) : [...new Set(calls.map((c) => c.kind))];
   const files: [string, string, boolean][] = [
-    [`${FOLDER}/${CONFIG_FILE}`, CONFIG(app, kinds), true],
+    [`${FOLDER}/${CONFIG_FILE}`, CONFIG(app, kinds, db), true],
     [`${FOLDER}/intents.yaml`, INTENTS, true],
     [`${FOLDER}/outcomes.yaml`, hasHealth ? OUTCOMES : OUTCOMES_TODO, true],
-    [app, service ? (service.framework === 'next' ? NEXT_ADAPTER(service, calls) : ADAPTER(service, calls)) : APP, false],
+    [app, service ? (service.framework === 'next' ? NEXT_ADAPTER(service, calls, db) : ADAPTER(service, calls, db)) : APP, false],
   ];
   if (opts.ci) files.push(workflowFile(dir));
   const { created, kept } = writeFiles(dir, files, !!opts.force, opts.app ? app : undefined);
-  return { dir, created, kept, ...(service ? { service } : {}), ...(service && !appExists ? { effects: calls } : {}) };
+  return { dir, created, kept, ...(service ? { service } : {}), ...(service && !appExists ? { effects: calls } : {}), ...(found ? { database: found } : {}) };
 }
 
 /** Moves a file with `git mv` when git tracks it, so history follows; otherwise renames it. */

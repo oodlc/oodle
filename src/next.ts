@@ -114,12 +114,16 @@ function nextRuntime(dir: string): NextRuntime {
     loadEnv(projectDir) {
       // Next's test mode: .env.test.local, .env.test and .env, never .env.local, so a laptop and CI see the same values.
       const before = process.env.NODE_ENV;
+      // Next resets process.env to what it saw first. The simulated database's URL (src/database.ts) outranks that and .env files.
+      const sim = process.env.OODLE_DATABASE_URL;
+      const pointed = sim ? Object.keys(process.env).filter((k) => process.env[k] === sim) : [];
       (process.env as Record<string, string>).NODE_ENV = 'test';
       try {
         loadEnvConfig(projectDir, false, { info: () => {}, error: () => {} }, true);
       } finally {
         if (before === undefined) delete process.env.NODE_ENV;
         else (process.env as Record<string, string>).NODE_ENV = before;
+        for (const k of pointed) process.env[k] = sim;
       }
     },
   };

@@ -17,7 +17,7 @@ Agents make code cheap and replaceable. What has to survive every rewrite is wha
 - `ops.health` changed: [default] body.version added
 ```
 
-Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action with approvals from reviews, the adapter for existing Express, Fastify, Koa, Hono and `node:http` services, and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin.
+Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action with approvals from reviews, the adapter for existing Express, Fastify, Koa, Hono and `node:http` services, [a real Postgres in the simulation](#a-real-database), and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin.
 
 ## Quick start
 
@@ -53,6 +53,7 @@ npm test                                 # the seeded scenarios
 
 - **It follows `listen()`.** When the entry only starts the app (`import { app } from './app'; app.listen(3000)`), `oodle.app.ts` imports the module that builds it.
 - **It names outbound calls.** Hosts in URL literals in your code, and SDKs with a fixed host in `package.json` (`stripe`, `twilio`, `openai`, `@sendgrid/mail` and others), go under `effects`, each with a placeholder stub in `oodlc/config.yaml`. A host built from an environment variable can't be seen; `oodle doctor` lists any call that still escapes.
+- **It finds your database.** With `pg`, `postgres` or Prisma's pg adapter in `package.json`, it adds `database:` to `oodlc/config.yaml`, pointed at your migrations (`prisma/migrations`, `drizzle`, `supabase/migrations`, `db/migrations`, …). See [A real database](#a-real-database).
 - **It writes a first catalog.** Each route no outcome describes is probed in the simulation and saved to `oodlc/proposed.yaml` as a proposed outcome: what it answered, and what it called. Approve one by sharpening its statement and deleting its `status: proposed` line. `oodle propose --routes` does this again later, for routes added since.
 
 ```ts
@@ -75,7 +76,7 @@ export default httpApp(app, {
 ```
 
 - **Requests** go through the app's own middleware, in process. No port opens.
-- **Outbound HTTP calls** that match an `effects` rule become `ctx.effects.call(kind, payload)`: stubbed from `oodlc/config.yaml` and recorded. That's `fetch` and every client built on `node:http` or `node:https`: axios, got, node-fetch, and SDKs on their default clients (Stripe, Twilio, AWS). The payload is the parsed JSON, form or query. A stub result with `$status: 402` answers with that HTTP status, so the SDK raises its usual error. Anything else that reaches for the network (an unnamed host, a database driver, a raw socket) is refused and blocks as an `oodle.sealed` violation, so nothing slips through untested.
+- **Outbound HTTP calls** that match an `effects` rule become `ctx.effects.call(kind, payload)`: stubbed from `oodlc/config.yaml` and recorded. That's `fetch` and every client built on `node:http` or `node:https`: axios, got, node-fetch, and SDKs on their default clients (Stripe, Twilio, AWS). The payload is the parsed JSON, form or query. A stub result with `$status: 402` answers with that HTTP status, so the SDK raises its usual error. Anything else that reaches for the network (an unnamed host, a raw socket, a database driver with no [`database`](#a-real-database) configured) is refused and blocks as an `oodle.sealed` violation, so nothing slips through untested.
 - **Time, `crypto.randomUUID`, random bytes and `Math.random`** are deterministic while a request runs, so identical code gives identical output and the outcome diff shows only real changes. `deterministic: false` turns this off.
 - **Routes** are found on their own for Express and Hono, or listed with `routes: ['GET /health', ...]`, so Oodle can probe the ones no outcome describes.
 
@@ -107,6 +108,59 @@ export default nextApp({
 - **Pages, server components and server actions aren't run.** Outcomes describe what a caller gets from your routes.
 - **Name every host your routes call, Supabase included,** under `effects`. Until you do, each call is refused, and clients that retry on network errors (supabase-js does) make the run slow before it reports the escape. `oodle doctor` lists the hosts.
 - `oodle mutate` starts from every route file and the middleware, and follows relative imports, not path aliases like `@/`.
+
+### A real database
+
+If your service keeps its data in Postgres, Oodle runs a real Postgres for it, in process: [PGlite](https://pglite.dev), Postgres compiled to WebAssembly. Your code and your SQL don't change, there's no Docker and no port, and it starts in about half a second.
+
+```bash
+npm i -D @electric-sql/pglite
+```
+
+```yaml
+# oodlc/config.yaml
+app: oodle.app.ts
+database:
+  schema: db/migrations          # a .sql file, or a migrations folder applied in name order
+defaults:
+  given:
+    db:                          # the rows each table starts with, in every run
+      users:
+        - { id: u1, email: ada@example.com, plan: pro }
+```
+
+```yaml
+# oodlc/orders.yaml
+outcomes:
+  - id: orders.refund-returns-money
+    intent: get-money-back
+    statement: Refunding a paid order returns the money exactly once and marks the order refunded
+    boundary: customer
+    trigger:
+      http: POST /orders/ord_9/refund
+      given:
+        db:
+          orders: [{ id: ord_9, user_id: u1, amount_cents: 1800, charge_id: ch_9, status: paid }]
+    expect:
+      status: 200
+      effects:
+        - { kind: payment.refund, match: { charge: ch_9 }, count: 1 }
+        - { kind: db.orders.updated, match: { status: refunded, result.status: paid }, count: 1 }
+constraints:
+  - id: no-paid-order-without-charge
+    statement: An order is never marked paid without the charge that paid for it
+    check: (db.orders || []).every(o => o.status !== 'paid' || !!o.charge_id)
+```
+
+- **Your driver connects as usual.** Oodle sets `DATABASE_URL` (or the variables listed under `database.env`) before your app loads, and routes the connection to the simulated database. `pg`, `postgres.js` and what's built on them (Drizzle, Kysely, Knex, Prisma 7 with `@prisma/adapter-pg`) work unchanged, transactions included. A `DATABASE_URL` in `.env.test` can't point a run at a real database.
+- **Every run starts from the same data:** the schema, the rows your migrations insert (plans, roles, lookups), and `given.db`. `given.db` layers like the rest of `given`, so a condition can add a returning customer's orders. Naming a table replaces its rows. Foreign keys are off while seeding, and serial ids continue after the seeded ones. A misspelt table or column fails the run and names the right one.
+- **Every row your app writes is an effect,** in order: `db.<table>.inserted`, `db.<table>.updated` (the row now, and in `result` the values it replaced), `db.<table>.deleted`. A rolled-back transaction wrote nothing. These are behavior: a new column or a reshaped row is reported under the outcome, never blocking. Expect one in an outcome to make it a promise, as above.
+- **Constraints see `db`,** every table's rows after the run, on every outcome, behavior and probe of an unknown route.
+- **Runs stay deterministic.** `now()`, `gen_random_uuid()`, `uuid_generate_v4()`, `random()` and serial ids give the same values every run, so the outcome diff shows only real changes.
+- **SQL injection is caught.** Under `security.injection`, a statement whose text carries the attack string means request input was pasted into SQL instead of sent as a parameter. Oodle refuses the statement, so the payload never runs, and the run blocks as `oodle.sql-injection`.
+- **Schemas from your migrations tool work as they are:** Prisma, Drizzle, Supabase (roles it grants to are created for you), golang-migrate (`.down.sql` skipped), dbmate (the `-- migrate:down` half skipped), or a `pg_dump --schema-only` file. Extensions PGlite ships, such as `uuid-ossp`, `pgcrypto`, `citext`, `pg_trgm` and `hstore`, load on their own. A schema error names the file and line.
+
+Clients that talk HTTP to a hosted Postgres (supabase-js, `@neondatabase/serverless`, `@vercel/postgres`) aren't served by the simulated database: name their hosts under `effects` and stub them, as with any API. Every connection shares one Postgres session, so two transactions can't be open at once: a connection that waits more than 5 seconds for another's transaction gets an error that says so. See [0009](docs/decisions/0009-a-real-database-in-the-simulation.md). [`examples/postgres-orders`](examples/postgres-orders) is a complete Express service on `pg`.
 
 ## Writing a catalog
 
@@ -206,7 +260,7 @@ constraints:
 ```
 
 - **Conditions** are named variants (`given` state, stubs or body) layered over the outcome or behavior: `defaults` → item → condition.
-- **Constraints** are invariants written as a JS expression over `effects`, `state` and `response`. Every constraint is checked on every run, and a check that throws counts as a violation. The `constraints:` list on an outcome is traceability only. See [0002](docs/decisions/0002-constraints-hold-on-every-run.md).
+- **Constraints** are invariants written as a JS expression over `effects`, `state`, `response`, `request` and, with a [database](#a-real-database), `db`. Every constraint is checked on every run, and a check that throws counts as a violation. The `constraints:` list on an outcome is traceability only. See [0002](docs/decisions/0002-constraints-hold-on-every-run.md).
 - **Latency** is real in-process time plus the simulated latency of stubbed calls, so `payment_provider_slow` costs 1.5s of simulated time and zero real time.
 - **`when`** gives a condition its own expectations. Each field it names replaces that field of `expect`, e.g. `when: { security.no-credentials: { status: 401 } }`. `status` also takes a matcher such as `{ gte: 400, lte: 499 }`. See [0004](docs/decisions/0004-conditions-carry-expectations.md).
 - **The security pack** is a set of built-in conditions that need no app knowledge: `security.no-credentials`, `security.injection`, `security.oversize`, `security.extra-fields` (mass assignment and `__proto__` pollution) and `security.replayed`. `given` also takes `headers`, `repeat` and `fuzz`, and constraints see the `request`. `probe: { conditions: [...] }` in `oodlc/config.yaml` probes every unknown route with them.
@@ -347,6 +401,17 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 | Approve it, then push a different `currency` value | approval stale, blocking again |
 | Approve a broken outcome | never approvable, still blocking |
 | The pull request that adds Oodle | every outcome `new`, nothing blocks if they hold |
+
+`test/database.test.ts` does the same for [`examples/postgres-orders`](examples/postgres-orders), an Express service on Postgres:
+
+| Change | Result |
+| --- | --- |
+| A migration adds a column | outcomes held, the new column reported as behavior, nothing blocks |
+| The refund route answers "refunded" but stops writing it | outcome `broken`: `db.orders.updated` expected 1, got 0 |
+| The health check marks unpaid orders paid | `no-paid-order-without-charge` violated over `db`, blocking |
+| Checkout pastes the user id into its SQL | `oodle.sql-injection` violated, the `DROP TABLE` never runs, blocking |
+| A new route writes a row with no credentials | the security pack's probe catches the write, blocking |
+| `given.db` names `ordrs` | the run fails: no such table, did you mean `orders`? |
 
 ## Not yet
 

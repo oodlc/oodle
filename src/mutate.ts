@@ -389,6 +389,7 @@ export function failingTests(output: string): string[] {
   return [...names];
 }
 
+// Rows written count: a mutant that changes what is stored is a real change, even though the diff only reports it.
 const boundary = (effects: EffectRecord[]) => effects.filter((e) => e.boundary !== 'internal').map(({ kind, payload, result, error }) => ({ kind, payload, result, error }));
 const keyOf = (o: Observation) => `${o.kind}:${o.id}:${o.condition}`;
 const blocking = (o: Observation) => o.violations.length > 0 || (o.kind === 'outcome' && !o.proposed && o.failures.length > 0);

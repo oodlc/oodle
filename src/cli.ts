@@ -14,6 +14,7 @@ import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
 import { init, migrate } from './init.ts';
 import { installOodle, oodleCommand, packageManager, runnable } from './invocation.ts';
 import { doctor } from './doctor.ts';
+import { hasPGlite } from './database.ts';
 import { mutate, type MutateReport } from './mutate.ts';
 import { propose, proposeRoutes } from './propose.ts';
 import { draftPrompt } from './draft.ts';
@@ -908,6 +909,14 @@ async function cmdInit(ctx: Ctx): Promise<number> {
       console.log(`\n  Outbound calls, named under effects in ${app} and stubbed in oodlc/config.yaml:`);
       for (const c of calls) console.log(`  ${o.cyan(sym.arrow)} ${c.host} ${o.dim(`as ${c.kind} · ${c.found.slice(0, 2).join(', ')}${c.found.length > 2 ? ', …' : ''}`)}`);
     }
+    const db = result.database;
+    if (db?.unsupported) {
+      console.log(`\n  ${o.yellow(sym.warn)} ${db.driver} talks to a hosted Postgres over HTTP, which Oodle can't run in process. Name its host under effects, or use pg in tests.`);
+    } else if (db) {
+      console.log(`\n  A real Postgres, simulated in process, under database in oodlc/config.yaml:`);
+      console.log(`  ${o.cyan(sym.arrow)} ${db.driver} ${o.dim(`through ${db.env.join(', ')} · schema ${db.schema ?? 'not found yet'}`)}`);
+    }
+    const needsPGlite = db && !db.unsupported && !hasPGlite(result.dir);
     if (proposals?.added.length || proposals?.skipped.length) {
       console.log(`\n  A first catalog, from probing each route:`);
       printProposals(proposals.added, proposals.file, proposals.skipped);
@@ -917,6 +926,9 @@ async function cmdInit(ctx: Ctx): Promise<number> {
       ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
       ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import it: ${e.cyan(installOodle(packageManager(result.dir)))}`]),
+      ...(needsPGlite ? [`Install PGlite, the Postgres Oodle runs in process: ${e.cyan(installOodle(packageManager(result.dir), '@electric-sql/pglite'))}`] : []),
+      ...(db && !db.unsupported && !db.schema ? [`Point database.schema in ${e.cyan('oodlc/config.yaml')} at the .sql file or migrations folder that creates your tables`] : []),
+      ...(db && !db.unsupported ? [`Seed the rows each outcome starts from under ${e.cyan('given.db')}, e.g. users: [{ id: u1, email: ada@example.com }]`] : []),
       ...(svc.framework === 'next' && !['.env.test', '.env'].some((f) => existsSync(join(result.dir, f))) ? [`Commit a ${e.cyan('.env.test')} with placeholder values your modules need to load. Oodle never reads .env.local`] : []),
       calls.length
         ? `Put what each API answers into the placeholder stubs in ${e.cyan('oodlc/config.yaml')}`

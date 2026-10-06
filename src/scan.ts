@@ -146,3 +146,71 @@ export function declaredEffects(appFile: string): string[] {
   for (const m of src.matchAll(/\beffects\.call\(\s*(['"`])([\w.-]+)\1/g)) kinds.add(m[2]);
   return [...kinds];
 }
+
+// ── Databases ───────────────────────────────────────────────────────────────
+
+/** Postgres clients that speak the wire protocol over TCP, which the simulated database serves. */
+const PG_DRIVERS = ['pg', 'postgres', 'pg-promise', 'slonik', '@prisma/adapter-pg'];
+/** Postgres clients that talk HTTP or WebSockets to a hosted proxy instead, which it can't. */
+const HTTP_DRIVERS = ['@neondatabase/serverless', '@vercel/postgres'];
+
+/** Where migrations tools keep their SQL, most specific first. */
+const SCHEMA_PLACES = [
+  'prisma/migrations', 'drizzle', 'supabase/migrations', 'migrations', 'db/migrations', 'database/migrations',
+  'sql/migrations', 'src/db/migrations', 'src/migrations', 'db/schema.sql', 'schema.sql', 'sql/schema.sql', 'database/schema.sql', 'db/structure.sql',
+];
+
+export interface DatabaseFound {
+  /** The Postgres client in package.json, e.g. pg. */
+  driver: string;
+  /** The migrations folder or .sql file that creates the tables, relative to the project, if one was found. */
+  schema?: string;
+  /** Environment variables the code reads a connection string from. */
+  env: string[];
+  /** A client Oodle can't serve in process, because it talks HTTP to a hosted proxy. */
+  unsupported?: boolean;
+}
+
+function hasSql(path: string, depth = 0): boolean {
+  try {
+    const st = statSync(path);
+    if (!st.isDirectory()) return path.endsWith('.sql');
+    if (depth > 2) return false;
+    return readdirSync(path).some((n) => !n.startsWith('.') && hasSql(join(path, n), depth + 1));
+  } catch {
+    return false;
+  }
+}
+
+/** The Postgres the service in `dir` uses: its client, its schema, and how it finds the database. Read, never run. */
+export function scanDatabase(dir: string): DatabaseFound | null {
+  let deps: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch { /* no package.json */ }
+  const driver = PG_DRIVERS.find((d) => d in deps);
+  const http = HTTP_DRIVERS.find((d) => d in deps);
+  if (!driver && !http) return null;
+
+  // drizzle-kit writes its SQL where drizzle.config says.
+  const drizzleOut = ['drizzle.config.ts', 'drizzle.config.js', 'drizzle.config.mjs']
+    .map((f) => { try { return /\bout\s*:\s*['"`]\.?\/?([^'"`]+?)\/?['"`]/.exec(readFileSync(join(dir, f), 'utf8'))?.[1]; } catch { return undefined; } })
+    .find(Boolean);
+  const schema = [...(drizzleOut ? [drizzleOut] : []), ...SCHEMA_PLACES].find((p) => hasSql(join(dir, p)));
+
+  const env = new Set<string>();
+  const URL_VAR = /\b((?:[A-Z0-9]+_)*(?:DATABASE|POSTGRES|PG|DB)(?:_[A-Z0-9]+)*_URL(?:_[A-Z0-9]+)*|DATABASE_URL)\b/;
+  const files = [...sourceFiles(dir), join(dir, 'prisma', 'schema.prisma')];
+  for (const file of files) {
+    let src: string;
+    try { src = code(readFileSync(file, 'utf8')); } catch { continue; }
+    for (const m of src.matchAll(/(?:process\.env\.|process\.env\[['"`]|env\(\s*['"`])([A-Z][A-Z0-9_]*)/g)) if (URL_VAR.test(m[1])) env.add(m[1]);
+  }
+  return {
+    driver: driver ?? http!,
+    ...(schema ? { schema } : {}),
+    env: env.size ? [...env].sort() : ['DATABASE_URL'],
+    ...(driver ? {} : { unsupported: true }),
+  };
+}

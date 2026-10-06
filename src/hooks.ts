@@ -139,6 +139,7 @@ function configConcerns(before: string, after: string): string[] {
   if (stableStringify(a?.sealed ?? null) !== stableStringify(b?.sealed ?? null)) out.push('changes `sealed`, which decides whether the app may reach the real network');
   if (stableStringify(a?.probe ?? null) !== stableStringify(b?.probe ?? null)) out.push('changes `probe`, which decides which hostile conditions unknown routes are probed with');
   if (stableStringify(a?.app ?? null) !== stableStringify(b?.app ?? null)) out.push('changes `app`, which decides what Oodle runs');
+  if (stableStringify(a?.database ?? null) !== stableStringify(b?.database ?? null)) out.push('changes `database`, which decides the schema and connection the app\'s data lives in');
   return out;
 }
 
@@ -215,7 +216,7 @@ function blockCount(session: string | undefined, update?: number): number {
 }
 
 /** Errors the agent can fix by editing code or the catalog it just touched. */
-const FIXABLE_ERRORS = new Set(['app-load', 'app-contract', 'app-crash', 'catalog', 'sealed']);
+const FIXABLE_ERRORS = new Set(['app-load', 'app-contract', 'app-crash', 'catalog', 'sealed', 'database-driver', 'database-schema']);
 
 async function stop(input: HookInput, cwd: string) {
   const dir = projectAbove(cwd);

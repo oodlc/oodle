@@ -1,0 +1,87 @@
+version: 0
+conditions:
+  - id: card_declined
+    statement: The card issuer declines the charge
+    given:
+      stubs:
+        payment.charge: { result: { $status: 402, status: failed } }
+
+outcomes:
+  - id: orders.paid-with-receipt
+    intent: pay-the-right-price
+    statement: A pro customer is charged the discounted price once, gets one receipt, and has one paid order on record
+    boundary: customer
+    trigger:
+      http: POST /orders
+      given:
+        body: { userId: u1, items: [{ priceCents: 1000, qty: 2 }] }
+    expect:
+      status: 201
+      body: { id: { exists: true }, amountCents: 1800, status: paid }
+      effects:
+        - { kind: payment.charge, match: { amount: "1800" }, count: 1 }
+        - { kind: email.sent, match: { template: receipt }, count: 1 }
+        - { kind: db.orders.updated, match: { user_id: u1, amount_cents: 1800, status: paid, charge_id: ch_1 }, count: 1 }
+
+  - id: orders.hostile-input-charges-nobody
+    intent: pay-the-right-price
+    statement: An order whose fields are attack payloads finds no customer, charges nobody and writes nothing
+    boundary: customer
+    trigger:
+      http: POST /orders
+      given:
+        body: { userId: u1, items: [{ priceCents: 1000, qty: 1 }] }
+    conditions: [security.injection]
+    expect:
+      status: 404
+      effects:
+        - { kind: payment.charge, count: 0 }
+        - { kind: db.orders.inserted, count: 0 }
+
+  - id: orders.declined-leaves-no-order
+    intent: pay-the-right-price
+    statement: A declined card gets a clear error, no receipt, and leaves no order behind
+    boundary: customer
+    trigger:
+      http: POST /orders
+      given:
+        body: { userId: u1, items: [{ priceCents: 1000, qty: 1 }] }
+    conditions: [card_declined]
+    expect:
+      status: 402
+      body: { error: payment_failed }
+      effects:
+        - { kind: email.sent, count: 0 }
+        - { kind: db.orders.inserted, count: 0 }
+
+  - id: orders.refund-returns-money
+    intent: get-money-back
+    statement: Refunding a paid order returns the money to the card exactly once and marks the order refunded
+    boundary: customer
+    trigger:
+      http: POST /orders/00000000-0000-4000-8000-0000000000a1/refund
+      given:
+        db:
+          orders:
+            - { id: 00000000-0000-4000-8000-0000000000a1, user_id: u1, amount_cents: 1800, charge_id: ch_9, status: paid }
+    expect:
+      status: 200
+      body: { status: refunded }
+      effects:
+        - { kind: payment.refund, match: { charge: ch_9 }, count: 1 }
+        - { kind: db.orders.updated, match: { status: refunded, result.status: paid }, count: 1 }
+
+behaviors:
+  - id: ops.health
+    statement: The health check answers ok
+    boundary: internal
+    trigger:
+      http: GET /health
+    observed:
+      status: 200
+      body: { ok: true }
+
+constraints:
+  - id: no-paid-order-without-charge
+    statement: An order is never marked paid without the charge that paid for it
+    check: (db.orders || []).every(o => o.status !== 'paid' || !!o.charge_id)

@@ -23,6 +23,21 @@
         "conditions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Extra conditions to probe every unknown route under, e.g. [security.no-credentials, security.injection]. Every constraint is checked on each probe" }
       }
     },
+    "database": {
+      "description": "A real Postgres for the app, simulated in process with PGlite (npm i -D @electric-sql/pglite). The app connects through DATABASE_URL with its own driver; every run starts from the schema plus given.db, and each row the app writes is recorded as an internal effect (db.<table>.inserted, .updated, .deleted). See docs/decisions/0009",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "description": "SQL applied once before the runs: a .sql file, or a folder whose .sql files are applied in name order (prisma/migrations, drizzle, supabase/migrations, db/migrations). Down migrations are skipped. Relative to the project root",
+          "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }]
+        },
+        "env": {
+          "description": "Environment variables set to the simulated database's URL before the app loads. Default DATABASE_URL",
+          "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }]
+        }
+      }
+    },
     "sealed": {
       "description": "The simulation is sealed by default: real network access from the app violates the built-in oodle.sealed constraint and blocks. false opens it; { allow: [host, host:port] } lets named hosts through. See docs/decisions/0005",
       "oneOf": [

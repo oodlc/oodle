@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
+import axios from 'axios';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import express from 'express';
@@ -100,6 +103,75 @@ test('adapter: a fetch no rule names falls through to the seal, which refuses it
   } finally {
     unseal();
   }
+});
+
+test('adapter: axios calls over node:https become effects, and a $status stub surfaces as an axios error', async () => {
+  const app = express().use(express.json()).post('/pay', async (req, res) => {
+    try {
+      const { data } = await axios.post('https://api.stripe.com/v1/charges', new URLSearchParams({ amount: String(req.body.amount), currency: 'usd' }));
+      await axios.get('https://api.sendgrid.com/v3/templates?limit=1');
+      res.json({ charge: data.id });
+    } catch (err: any) {
+      res.status(402).json({ declined: err.response?.status, error: err.response?.data });
+    }
+  });
+  const create = httpApp(app, { effects: { 'POST api.stripe.com/v1/charges': 'payment.charge', 'api.sendgrid.com': 'email.templates' } });
+
+  const ok = context({ 'payment.charge': { id: 'ch_1' }, 'email.templates': { result: [] } });
+  assert.deepEqual((await create(ok.ctx).handle({ method: 'POST', path: '/pay', body: { amount: 500 } })).body, { charge: 'ch_1' });
+  assert.deepEqual(ok.calls, [
+    { kind: 'payment.charge', payload: { amount: '500', currency: 'usd' } },
+    { kind: 'email.templates', payload: { limit: '1' } },
+  ]);
+
+  const declined = context({ 'payment.charge': { $status: 402, error: { code: 'card_declined' } } });
+  const res = await create(declined.ctx).handle({ method: 'POST', path: '/pay', body: { amount: 500 } });
+  assert.deepEqual(res.body, { declined: 402, error: { error: { code: 'card_declined' } } });
+});
+
+test('adapter: raw http.request, captured references, piped bodies and keep-alive agents are intercepted', async () => {
+  const { request } = https; // captured before the adapter patches anything, as an SDK would at import
+  const agent = new https.Agent({ keepAlive: true });
+  const send = (opts: https.RequestOptions, body?: Readable | string) => new Promise<{ status?: number; json: unknown }>((ok, fail) => {
+    const req = request(opts, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c) => chunks.push(c)).on('end', () => ok({ status: res.statusCode, json: JSON.parse(Buffer.concat(chunks).toString()) }));
+    });
+    req.on('error', fail);
+    // The Stripe SDK's order: wait for the socket, then write.
+    req.once('socket', (socket: any) => {
+      if (socket.connecting) throw new Error('a stubbed socket is already connected');
+      if (body instanceof Readable) body.pipe(req);
+      else req.end(body);
+    });
+  });
+  const app = express().get('/', async (_req, res) => {
+    const a = await send({ method: 'POST', host: 'api.example.com', path: '/v1/things', agent, headers: { 'content-type': 'application/json' } }, Readable.from(['{"name":', '"widget"}']));
+    const b = await new Promise<number | undefined>((ok) => http.get('http://internal.example:8080/ping', (r) => ok(r.resume().statusCode)));
+    res.json({ a, b });
+  });
+  const { ctx, calls } = context({ 'thing.created': { id: 't1' }, 'internal.ping': { $status: 204 } });
+  const out = await httpApp(app, { effects: { 'POST api.example.com/v1': 'thing.created', 'internal.example:8080': 'internal.ping' } })(ctx).handle({ method: 'GET', path: '/' });
+  assert.deepEqual(out.body, { a: { status: 200, json: { id: 't1' } }, b: 204 });
+  assert.deepEqual(calls, [{ kind: 'thing.created', payload: { name: 'widget' } }, { kind: 'internal.ping', payload: {} }]);
+  agent.destroy();
+});
+
+test('adapter: a node:http call no rule names is still refused by the seal, and a missing stub fails the request', async () => {
+  const app = express().get('/', async (_req, res) => {
+    const outcome = (url: string) => axios.get(url).then(() => 'reached', (err) => err.message as string);
+    res.json({ unknown: await outcome('https://api.unknown.example/v1'), unstubbed: await outcome('https://api.stripe.com/v1/balance') });
+  });
+  const unseal = seal();
+  try {
+    const { value, escapes } = await recordEscapes(() => httpApp(app, { effects: { 'api.stripe.com': 'stripe.balance' } })(context().ctx).handle({ method: 'GET', path: '/' }));
+    assert.match((value.body as any).unknown, /sealed simulation/);
+    assert.match((value.body as any).unstubbed, /no stub for stripe.balance/);
+    assert.deepEqual(escapes, ['api.unknown.example:443']);
+  } finally {
+    unseal();
+  }
+  assert.equal(typeof (http.Agent.prototype as any).addRequest, 'function');
 });
 
 test('adapter: Koa, Hono, http.Server and a plain (req, res) handler all run', async () => {

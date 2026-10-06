@@ -14,9 +14,11 @@
  * process: no port is opened and nothing leaves the simulation.
  *
  * While a request runs:
- * - `fetch` calls that match an `effects` rule become `ctx.effects.call(kind, payload)`,
- *   so they are stubbed and recorded like any other external call. Anything else
- *   falls through to the sealed simulation, which refuses and reports it.
+ * - Outbound HTTP calls that match an `effects` rule become `ctx.effects.call(kind, payload)`,
+ *   so they are stubbed and recorded like any other external call. That covers `fetch`
+ *   and everything built on `node:http`/`node:https` (axios, got, node-fetch, the Stripe,
+ *   Twilio and AWS SDKs). Anything else falls through to the sealed simulation, which
+ *   refuses and reports it.
  * - Time, `crypto.randomUUID`, random bytes and `Math.random` are deterministic,
  *   so two runs of the same code give the same output and the outcome diff only
  *   shows real changes. Turn this off with `deterministic: false`.
@@ -26,6 +28,7 @@
  */
 import http from 'node:http';
 import net from 'node:net';
+import { Duplex } from 'node:stream';
 import nodeCrypto from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
 // .js, not .ts: this is the path the published adapter.d.ts keeps, next to contract.d.ts.
@@ -46,7 +49,7 @@ export interface EffectRule {
 export interface HttpAppOptions {
   /** The app's routes, as `{ method, path }` or "METHOD /path", so Oodle can probe the ones nothing describes. Found automatically for Express and Hono. */
   routes?: (Route | string)[];
-  /** Outbound `fetch` calls to route through `ctx.effects`, as `{ "POST api.stripe.com/v1/charges": "payment.charge" }` or a list of rules. The most specific match wins. */
+  /** Outbound HTTP calls (`fetch`, `node:http`, `node:https`) to route through `ctx.effects`, as `{ "POST api.stripe.com/v1/charges": "payment.charge" }` or a list of rules. The most specific match wins. */
   effects?: Record<string, string> | EffectRule[];
   /** Runs once per simulated run, before the first request. Seed or reset module-level state from `ctx.state` here. */
   setup?: (ctx: AppContext) => void | Promise<void>;
@@ -189,14 +192,10 @@ function rulesOf(effects: HttpAppOptions['effects']): Rule[] {
   });
 }
 
-async function payloadOf(url: URL, input: unknown, init: RequestInit | undefined): Promise<Record<string, unknown>> {
+/** The effect payload: the query string, merged with the body parsed as JSON or a form. */
+function payloadOf(url: URL, text: string | undefined): Record<string, unknown> {
   const payload: Record<string, unknown> = Object.fromEntries(url.searchParams);
-  let body: unknown = init?.body;
-  if (body === undefined && input instanceof globalThis.Request) body = await input.clone().text();
-  if (body === undefined || body === null || body === '') return payload;
-  if (body instanceof URLSearchParams) return { ...payload, ...Object.fromEntries(body) };
-  if (typeof FormData !== 'undefined' && body instanceof FormData) return { ...payload, ...Object.fromEntries([...body].map(([k, v]) => [k, String(v)])) };
-  const text = typeof body === 'string' ? body : Buffer.isBuffer(body) || body instanceof Uint8Array ? Buffer.from(body as Uint8Array).toString('utf8') : String(body);
+  if (!text) return payload;
   try {
     const parsed = JSON.parse(text);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? { ...payload, ...parsed } : { ...payload, body: parsed };
@@ -206,8 +205,16 @@ async function payloadOf(url: URL, input: unknown, init: RequestInit | undefined
   }
 }
 
+async function fetchPayloadOf(url: URL, input: unknown, init: RequestInit | undefined): Promise<Record<string, unknown>> {
+  let body: unknown = init?.body;
+  if (body === undefined && input instanceof globalThis.Request) body = await input.clone().text();
+  if (body === undefined || body === null || body === '') return payloadOf(url, undefined);
+  if (typeof FormData !== 'undefined' && body instanceof FormData) return { ...payloadOf(url, undefined), ...Object.fromEntries([...body].map(([k, v]) => [k, String(v)])) };
+  return payloadOf(url, typeof body === 'string' ? body : Buffer.isBuffer(body) || body instanceof Uint8Array ? Buffer.from(body as Uint8Array).toString('utf8') : String(body));
+}
+
 /** A stub's `result` becomes a JSON response. A `$status` key in it sets the HTTP status, e.g. `{ $status: 402, error: { code: card_declined } }`. */
-function responseOf(result: unknown): globalThis.Response {
+function stubOf(result: unknown): { status: number; json: string | undefined } {
   let status = 200;
   let body = result;
   if (result && typeof result === 'object' && !Array.isArray(result) && typeof (result as any).$status === 'number') {
@@ -215,7 +222,101 @@ function responseOf(result: unknown): globalThis.Response {
     status = $status as number;
     body = rest;
   }
-  return new globalThis.Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  return { status, json: body === undefined ? undefined : JSON.stringify(body) };
+}
+
+function responseOf(result: unknown): globalThis.Response {
+  const { status, json } = stubOf(result);
+  return new globalThis.Response(json ?? null, { status, headers: { 'content-type': 'application/json' } });
+}
+
+// ── node:http and node:https ────────────────────────────────────────────────
+//
+// Every client request made with an agent (http.request, https.request, axios,
+// got, and SDKs with their own keep-alive agents) is handed to its socket by
+// Agent.prototype.addRequest, after the request line and headers are set. When a
+// rule matches, the request gets one end of an in-memory socket pair instead, and
+// a server that never listens answers on the other end with the stubbed effect.
+// The client and the server are Node's own, so headers, chunked bodies, piped
+// streams and the response all behave as they do on the wire. A request no rule
+// names goes to the real agent, where the seal refuses the connection.
+
+/** One end of an in-memory connection. What one end writes, the other reads. */
+class MemorySocket extends Duplex {
+  peer!: MemorySocket;
+  connecting = false;
+  remoteAddress = '127.0.0.1';
+  remotePort = 0;
+  _read() {}
+  _write(chunk: Buffer, _encoding: BufferEncoding, cb: (err?: Error | null) => void) {
+    this.peer.push(chunk);
+    cb();
+  }
+  _final(cb: (err?: Error | null) => void) {
+    this.peer.push(null);
+    cb();
+  }
+  _destroy(err: Error | null, cb: (err?: Error | null) => void) {
+    if (!this.peer.destroyed) this.peer.push(null);
+    cb(err);
+  }
+  setTimeout() { return this; }
+  setNoDelay() { return this; }
+  setKeepAlive() { return this; }
+  ref() { return this; }
+  unref() { return this; }
+  address() { return { address: this.remoteAddress, family: 'IPv4', port: this.remotePort }; }
+}
+
+type Answer = (kind: string, url: URL, text: string) => Promise<{ status: number; json: string | undefined }>;
+
+/** The server end of each intercepted request, and how to answer it. */
+const pending = new WeakMap<MemorySocket, { kind: string; url: URL; answer: Answer; client: http.ClientRequest }>();
+
+const stubServer = http.createServer((req, res) => {
+  const call = pending.get(req.socket as unknown as MemorySocket);
+  if (!call) return void res.destroy();
+  const chunks: Buffer[] = [];
+  req.on('data', (c: Buffer) => chunks.push(c));
+  req.on('end', () => {
+    call.answer(call.kind, call.url, Buffer.concat(chunks).toString('utf8')).then(
+      ({ status, json }) => {
+        res.writeHead(status, { 'content-type': 'application/json', connection: 'close', ...(json === undefined ? {} : { 'content-length': Buffer.byteLength(json) }) });
+        res.end(json);
+      },
+      (err: Error) => {
+        call.client.destroy(err);
+        res.destroy();
+      },
+    );
+  });
+});
+
+function urlOf(req: http.ClientRequest, options: { port?: number | string | null; defaultPort?: number }, agent: http.Agent): URL {
+  const host = req.host.includes(':') && !req.host.startsWith('[') ? `[${req.host}]` : req.host;
+  const port = options.port ?? (agent as http.Agent & { defaultPort?: number }).defaultPort ?? options.defaultPort;
+  return new URL(`${req.protocol}//${host}${port ? `:${port}` : ''}${req.path}`);
+}
+
+/** Routes matching node:http and node:https requests to `answer` until the returned function is called. */
+function interceptHttp(kindOf: (url: URL, method: string) => string | undefined, answer: Answer): () => void {
+  const proto = http.Agent.prototype as http.Agent & { addRequest(req: http.ClientRequest, options: Record<string, any>): void };
+  const original = proto.addRequest;
+  proto.addRequest = function (this: http.Agent, req: http.ClientRequest, options: Record<string, any>) {
+    const url = urlOf(req, options, this);
+    const kind = kindOf(url, req.method.toUpperCase());
+    if (!kind) return original.call(this, req, options);
+    const client = new MemorySocket();
+    const server = new MemorySocket();
+    client.peer = server;
+    server.peer = client;
+    pending.set(server, { kind, url, answer, client: req });
+    stubServer.emit('connection', server);
+    req.onSocket(client as unknown as net.Socket);
+  };
+  return () => {
+    proto.addRequest = original;
+  };
 }
 
 // ── Determinism ─────────────────────────────────────────────────────────────
@@ -315,19 +416,25 @@ export function httpApp(target: HttpTarget | Promise<HttpTarget>, options: HttpA
       async handle(req: Request): Promise<Response> {
         await (ready ??= Promise.resolve(options.setup?.(ctx)).then(() => undefined));
         const { dispatch } = await app();
+        const ruleFor = (url: URL, method: string) => rules.filter((r) => r.test(url, method)).sort((a, b) => b.weight - a.weight)[0];
         const outer = globalThis.fetch;
         globalThis.fetch = (async (input: string | URL | globalThis.Request, init?: RequestInit) => {
           const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
           const method = (init?.method ?? (input instanceof globalThis.Request ? input.method : 'GET')).toUpperCase();
-          const rule = rules.filter((r) => r.test(url, method)).sort((a, b) => b.weight - a.weight)[0];
+          const rule = ruleFor(url, method);
           if (!rule) return outer(input, init);
-          return responseOf(await ctx.effects.call(rule.kind, await payloadOf(url, input, init)));
+          return responseOf(await ctx.effects.call(rule.kind, await fetchPayloadOf(url, input, init)));
         }) as typeof fetch;
+        const release = interceptHttp(
+          (url, method) => ruleFor(url, method)?.kind,
+          async (kind, url, text) => stubOf(await ctx.effects.call(kind, payloadOf(url, text))),
+        );
         const thaw = deterministic ? freeze(ctx, clock) : () => {};
         try {
           return await dispatch(req);
         } finally {
           thaw();
+          release();
           globalThis.fetch = outer;
         }
       },

@@ -27,6 +27,8 @@ function formatAjv(file: string, errors: any[] | null | undefined): string[] {
 /** Everything Oodle needs lives in one visible folder at the project root. See docs/decisions/0003. */
 export const FOLDER = 'oodlc';
 export const CONFIG_FILE = 'config.yaml';
+/** First line of every YAML file Oodle writes, so editors with the YAML language server validate and complete it. */
+export const schemaLine = (name: 'catalog' | 'config') => `# yaml-language-server: $schema=https://oodlc.com/schema/v0/${name}.json\n`;
 
 /**
  * Where a project's config lives: oodlc/config.yaml, or the v0 layout

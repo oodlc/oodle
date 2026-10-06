@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://oodlc.dev/schema/v0/catalog.json",
+  "$id": "https://oodlc.com/schema/v0/catalog.json",
   "title": "OODLC catalog file (v0)",
   "description": "One YAML file in a catalog directory. Any file may hold any of the five sections.",
   "type": "object",

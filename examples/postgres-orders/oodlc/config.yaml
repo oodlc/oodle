@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/config.json
 # An Express service on Postgres, run through the @oodlc/oodle/adapter. See ../oodle.app.ts.
 app: oodle.app.ts
 database:

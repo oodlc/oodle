@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://oodlc.dev/schema/v0/config.json",
+  "$id": "https://oodlc.com/schema/v0/config.json",
   "title": "oodlc/config.yaml project config (OODLC v0)",
   "type": "object",
   "additionalProperties": false,

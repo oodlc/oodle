@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
 version: 0
 # The core rule (docs/decisions/0001, 0002): only what a human declared can block.
 outcomes:

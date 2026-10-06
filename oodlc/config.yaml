@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/config.json
 # Oodle, dogfooded. The CLI is the system under test: test/dogfood.ts runs the
 # real bin/oodle.js and returns what a person, script or agent can rely on.
 # Every other .yaml file in this folder is the catalog of Oodle's promises.

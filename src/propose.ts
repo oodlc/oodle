@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parse, stringify } from 'yaml';
-import { CatalogError, loadCatalog, loadConfig, validateCatalogDoc } from './catalog.ts';
+import { CatalogError, loadCatalog, loadConfig, schemaLine, validateCatalogDoc } from './catalog.ts';
 import { lint } from './lint.ts';
 import { OodleError } from './errors.ts';
 import { runProject } from './runner.ts';
@@ -21,7 +21,7 @@ type Section = (typeof SECTIONS)[number];
 /** Sections a human approves. Behaviors are observed and conditions only add runs, so they need no approval. */
 const APPROVED: Section[] = ['intents', 'outcomes', 'constraints'];
 
-const HEADER = `# Proposed by \`oodle init\`, an agent or \`oodle draft\`, waiting for a human.
+const HEADER = `${schemaLine('catalog')}# Proposed by \`oodle init\`, an agent or \`oodle draft\`, waiting for a human.
 # Proposed entries run and are reported, but never block. To approve one, delete
 # its "status: proposed" line (and move it next to its neighbours if you like).
 # To reject one, delete it. See docs/decisions/0006.

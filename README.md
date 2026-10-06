@@ -228,7 +228,11 @@ behaviors:
 - **The simulation is sealed.** Reaching the real network instead of going through `ctx.effects` is an `oodle.sealed` violation and blocks. `sealed: { allow: [host] }` lets named hosts through. See [0005](docs/decisions/0005-sealed-simulation.md).
 - **`status: proposed`** on an intent, outcome or constraint means it runs and is reported, but never blocks until a human deletes that line. `oodle propose` writes proposals, and only proposals. See [0006](docs/decisions/0006-proposals-and-propose-only-agents.md).
 
-Full schema: [`spec/catalog.schema.json`](spec/catalog.schema.json).
+Full schema: [`spec/catalog.schema.json`](spec/catalog.schema.json), published at `https://oodlc.com/schema/v0/catalog.json` (and `config.json` for `oodlc/config.yaml`). Every file `oodle init` and `oodle propose` write starts with the line that points editors at it, so VS Code with the YAML extension, or any editor running the YAML language server, completes and checks the catalog as you type:
+
+```yaml
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
+```
 
 ## In CI
 
@@ -415,7 +419,15 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 
 ## Not yet
 
-Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes (including Next.js pages and server actions), and an OS-level sandbox for child processes.
+Oodle runs Node.js services (Node 20.11 or later) and simulates Postgres. Not yet:
+
+- Services in other languages: Python, Go, Ruby, Java and the rest.
+- Databases other than Postgres: MySQL, SQLite, MongoDB, Redis.
+- Triggers other than HTTP: events, queues, schedules, GraphQL subscriptions and gRPC.
+- UI outcomes, including Next.js pages and server actions.
+- Systems of several services checked together, probes against real environments, learned simulation models, and an OS-level sandbox for child processes.
+
+Oodle is v0: the catalog format and the CLI can still change between minor versions, and [`CHANGELOG.md`](CHANGELOG.md) says when they do.
 
 ## Contributing
 

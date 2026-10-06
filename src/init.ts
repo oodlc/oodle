@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'yaml';
-import { CONFIG_FILE, FOLDER, configFile } from './catalog.ts';
+import { CONFIG_FILE, FOLDER, configFile, schemaLine } from './catalog.ts';
 import { OodleError } from './errors.ts';
 import { packageManager } from './invocation.ts';
 import { display } from './project.ts';
@@ -23,8 +23,8 @@ database:
 ${db.schema ? `  schema: ${db.schema}` : '  # schema: db/schema.sql       # TODO: the .sql file or migrations folder that creates your tables'}
 ${db.env.length === 1 && db.env[0] === 'DATABASE_URL' ? '' : `  env: [${db.env.join(', ')}]\n`}`;
 
-const CONFIG = (app: string, kinds: string[] = [], db?: DatabaseFound) => `# Oodle project config. Every other .yaml file in this folder is catalog.
-# Docs: https://github.com/oodlc/oodle#writing-a-catalog
+const CONFIG = (app: string, kinds: string[] = [], db?: DatabaseFound) => `${schemaLine('config')}# Oodle project config. Every other .yaml file in this folder is catalog.
+# Docs: https://oodlc.com/docs/guide#writing-a-catalog
 app: ${app}            # default export createApp(ctx), relative to the project root
 ${db ? DATABASE(db) : ''}defaults:
   given:
@@ -35,14 +35,14 @@ ${db ? '    db: {}                     # rows each table starts with, e.g. users
 ${kinds.map((k) => `      ${k}: { result: {} }\n`).join('')}`
     : '    stubs: {}               # every external call the app makes needs a stub, e.g. payment.capture\n'}`;
 
-const INTENTS = `version: 0
+const INTENTS = `${schemaLine('catalog')}version: 0
 # Intents say why the product exists. Every outcome traces to one.
 intents:
   - id: service-available
     statement: Callers can rely on the service being there when they need it.
 `;
 
-const OUTCOMES = `version: 0
+const OUTCOMES = `${schemaLine('catalog')}version: 0
 # Outcomes are what someone outside the system must experience. They block a merge when they break.
 outcomes:
   - id: service.reachable
@@ -79,7 +79,7 @@ export default function createApp(ctx: any) {
 }
 `;
 
-const OUTCOMES_TODO = `version: 0
+const OUTCOMES_TODO = `${schemaLine('catalog')}version: 0
 # Outcomes are what someone outside the system must experience. They block a merge when they break.
 # Oodle protects nothing until there is one. Start with the promise that would hurt most to break, e.g.:
 #

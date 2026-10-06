@@ -52,7 +52,7 @@ import { app } from './src/server.ts';
 import { store } from './src/repo.ts';
 
 export default httpApp(app, {
-  effects: {                                   // outbound fetch calls, by "METHOD host/path-prefix" or "host"
+  effects: {                                   // outbound HTTP calls, by "METHOD host/path-prefix" or "host"
     'POST api.stripe.com/v1/charges': 'payment.charge',
     'POST api.stripe.com/v1/refunds': 'payment.refund',
     'api.sendgrid.com': 'email.sent',
@@ -65,7 +65,7 @@ export default httpApp(app, {
 ```
 
 - **Requests** go through the app's own middleware, in process. No port opens.
-- **Outbound `fetch` calls** that match an `effects` rule become `ctx.effects.call(kind, payload)`: stubbed from `oodlc/config.yaml` and recorded. The payload is the parsed JSON, form or query. A stub result with `$status: 402` answers with that HTTP status. Anything else that reaches for the network is refused and blocks as an `oodle.sealed` violation, so nothing slips through untested. Clients built on `node:http` instead of `fetch` (axios, some SDKs) are refused too: give them a fetch-based client (Stripe: `Stripe.createFetchHttpClient()`), or call them through `ctx.effects`.
+- **Outbound HTTP calls** that match an `effects` rule become `ctx.effects.call(kind, payload)`: stubbed from `oodlc/config.yaml` and recorded. That's `fetch` and every client built on `node:http` or `node:https`: axios, got, node-fetch, and SDKs on their default clients (Stripe, Twilio, AWS). The payload is the parsed JSON, form or query. A stub result with `$status: 402` answers with that HTTP status, so the SDK raises its usual error. Anything else that reaches for the network (an unnamed host, a database driver, a raw socket) is refused and blocks as an `oodle.sealed` violation, so nothing slips through untested.
 - **Time, `crypto.randomUUID`, random bytes and `Math.random`** are deterministic while a request runs, so identical code gives identical output and the outcome diff shows only real changes. `deterministic: false` turns this off.
 - **Routes** are found on their own for Express and Hono, or listed with `routes: ['GET /health', ...]`, so Oodle can probe the ones no outcome describes.
 

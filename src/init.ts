@@ -136,8 +136,8 @@ const ADAPTER = (svc: Service) => {
   if (svc.framework === 'fastify') todo.push(' * - Fastify routes aren\'t found on their own: list them under `routes`.');
   return `/**
  * How Oodle runs your service: the real ${svc.framework === 'node' ? 'HTTP' : svc.framework} app from ${svc.entry}, in process, in a
- * sealed simulation. No port opens and nothing leaves: every outbound fetch must
- * be named under \`effects\`, and each effect kind gets a stub in oodlc/config.yaml.
+ * sealed simulation. No port opens and nothing leaves: every outbound HTTP call
+ * (fetch, axios, an SDK) must be named under \`effects\`, and each effect kind gets a stub in oodlc/config.yaml.
  * Anything not named is refused and reported as a blocking \`oodle.sealed\` violation.
  *${todo.length ? `\n * Before the first run:\n${todo.join('\n')}\n *` : ''}
  * Then: \`oodle doctor\`. Docs: https://github.com/oodlc/oodle#adopting-an-existing-service

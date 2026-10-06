@@ -1,6 +1,6 @@
 {
   "name": "@oodlc/oodle",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that protects declared outcomes and watches observed behavior.",
   "homepage": "https://github.com/oodlc/oodle#readme",
   "repository": {

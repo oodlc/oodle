@@ -158,6 +158,19 @@ test('init --ci writes the GitHub workflow at the repository root, pointing at t
   assert.match(wf, /\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
 });
 
+test('init --ci installs with the package manager the repository locks with', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'oodle-ci-pnpm-'));
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ packageManager: 'pnpm@10.14.0' }));
+  writeFileSync(join(repo, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+  oodle(['init', repo, '--ci']);
+  const wf = readFileSync(join(repo, '.github', 'workflows', 'oodle.yml'), 'utf8');
+  // The version comes from packageManager: pnpm/action-setup fails when it is given twice.
+  assert.match(wf, /- uses: pnpm\/action-setup@v4\n\s+- uses: actions\/setup-node@v7/);
+  assert.match(wf, /cache: pnpm\n\s+- run: pnpm install --frozen-lockfile\n/);
+  assert.doesNotMatch(wf, /npm ci/);
+});
+
 test('doctor fails when Oodle runs the starter app instead of the service beside it', () => {
   const dir = existingService();
   const starter = mkdtempSync(join(tmpdir(), 'oodle-starter-'));

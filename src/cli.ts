@@ -11,7 +11,7 @@ import { diffRuns, parseApproval, type Approval } from './diff.ts';
 import { approvalTokens, diffMarkdown } from './report.ts';
 import { renderDiff, renderLint, renderMutate, renderRun, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
-import { init, migrate } from './init.ts';
+import { init, installOodle, migrate, packageManager } from './init.ts';
 import { doctor } from './doctor.ts';
 import { mutate, type MutateReport } from './mutate.ts';
 import { propose } from './propose.ts';
@@ -858,7 +858,7 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     hints([
       ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
-      ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import @oodlc/oodle/adapter: ${e.cyan('npm i -D @oodlc/oodle')}`]),
+      ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import @oodlc/oodle/adapter: ${e.cyan(installOodle(packageManager(result.dir)))}`]),
       `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
       `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
       `Then check the wiring: ${e.cyan(`oodle doctor${where}`)}`,

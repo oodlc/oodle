@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configFile, loadCatalog, loadConfig, CatalogError } from './catalog.ts';
 import { jsonDiff } from './expect.ts';
-import { STARTER_MARK, detectService } from './init.ts';
+import { STARTER_MARK, detectService, installOodle, packageManager } from './init.ts';
 import { SEALED_ID } from './seal.ts';
 import type { Observation } from './types.ts';
 import { lint } from './lint.ts';
@@ -23,10 +23,10 @@ export interface Check {
 const MIN_NODE = 20;
 const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'oodle.js');
 
-function problemText(err: unknown): { detail: string; hint?: string } {
+function problemText(err: unknown, dir = '.'): { detail: string; hint?: string } {
   if (err instanceof CatalogError) return { detail: err.problems.join('; '), hint: 'Fix the catalog files listed, then run `oodle lint`.' };
   if (err instanceof OodleError && err.problems.some((p) => /Cannot find (package|module) '@oodlc\/oodle'/.test(p))) {
-    return { detail: `${err.message}: the @oodlc/oodle package isn't installed here`, hint: 'Install it so the app can import @oodlc/oodle/adapter: `npm i -D @oodlc/oodle`.' };
+    return { detail: `${err.message}: the @oodlc/oodle package isn't installed here`, hint: `Install it so the app can import @oodlc/oodle/adapter: \`${installOodle(packageManager(dir))}\`.` };
   }
   if (err instanceof OodleError) return { detail: [err.message, ...err.problems].join(': '), hint: err.hint };
   return { detail: (err as Error).message };
@@ -151,7 +151,7 @@ export async function doctor(arg?: string): Promise<Check[]> {
         : { name: 'stable', status: 'ok', detail: 'two runs give the same output' });
     }
   } catch (err) {
-    checks.push({ name: 'app', status: 'fail', ...problemText(err) });
+    checks.push({ name: 'app', status: 'fail', ...problemText(err, dir) });
   }
   return checks;
 }

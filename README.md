@@ -31,6 +31,8 @@ npx oodle run                            # run every outcome and behavior under 
 npx oodle check                          # outcome diff against your default branch
 ```
 
+On pnpm, yarn or bun, install with that tool instead (`pnpm add -D @oodlc/oodle`, then `pnpm exec oodle …`): npm can't install into their `node_modules`. `init --ci` reads your lockfile and writes the matching install step.
+
 In this repository:
 
 ```bash

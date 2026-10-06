@@ -158,7 +158,44 @@ export default httpApp(${target}, {
 `;
 };
 
-const WORKFLOW = (project: string) => `# Oodle: outcome diff on every pull request, and approvals from reviews.
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
+
+/** The package manager a directory uses, from the nearest lockfile at or above it (npm when there is none). */
+export function packageManager(dir: string): PackageManager {
+  for (let d = resolve(dir); ; d = dirname(d)) {
+    if (existsSync(join(d, 'pnpm-lock.yaml'))) return 'pnpm';
+    if (existsSync(join(d, 'yarn.lock'))) return 'yarn';
+    if (existsSync(join(d, 'bun.lock')) || existsSync(join(d, 'bun.lockb'))) return 'bun';
+    if (existsSync(join(d, 'package-lock.json')) || dirname(d) === d) return 'npm';
+  }
+}
+
+/** The command that adds Oodle as a dev dependency. npm can't install into a pnpm node_modules. */
+export const installOodle = (pm: PackageManager): string =>
+  ({ npm: 'npm i -D', pnpm: 'pnpm add -D', yarn: 'yarn add -D', bun: 'bun add -d' })[pm] + ' @oodlc/oodle';
+
+/** Workflow steps that set up the package manager and install the repository's dependencies. */
+function installSteps(root: string): string {
+  const pm = packageManager(root);
+  const node = (cache = '') => `      - uses: actions/setup-node@v7
+        with:
+          node-version: 22${cache}
+`;
+  if (pm === 'pnpm') {
+    // pnpm/action-setup reads the version from packageManager in package.json, and fails when given both.
+    let pinned = false;
+    try { pinned = /^pnpm@/.test(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).packageManager ?? ''); } catch { /* no package.json */ }
+    return `      - uses: pnpm/action-setup@v4${pinned ? '' : '\n        with:\n          version: 10'}\n${node('\n          cache: pnpm')}      - run: pnpm install --frozen-lockfile\n`;
+  }
+  if (pm === 'yarn') {
+    const berry = existsSync(join(root, '.yarnrc.yml'));
+    return `${node()}      - run: corepack enable\n      - run: yarn install ${berry ? '--immutable' : '--frozen-lockfile'}\n`;
+  }
+  if (pm === 'bun') return `${node()}      - uses: oven-sh/setup-bun@v2\n      - run: bun install --frozen-lockfile\n`;
+  return `${node()}      - run: npm ci\n`;
+}
+
+const WORKFLOW = (project: string, root: string) => `# Oodle: outcome diff on every pull request, and approvals from reviews.
 # Its own workflow, so a review re-runs only this check. Docs: https://github.com/oodlc/oodle#in-ci
 name: Oodle
 
@@ -180,11 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - run: npm ci
-      - uses: oodlc/oodle@v0
+${installSteps(root)}      - uses: oodlc/oodle@v0
         with:
           project: ${project}
 `;
@@ -229,7 +262,7 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
     try { root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* not in git: put it in the project */ }
     // git answers with the real path (macOS: /private/var for /var), so compare real paths.
     const [realRoot, realDir] = [realpathSync(root), realpathSync(dir)];
-    files.push([relative(realDir, join(realRoot, '.github', 'workflows', 'oodle.yml')), WORKFLOW(relative(realRoot, realDir) || '.'), false]);
+    files.push([relative(realDir, join(realRoot, '.github', 'workflows', 'oodle.yml')), WORKFLOW(relative(realRoot, realDir) || '.', realRoot), false]);
   }
   const created: string[] = [];
   const kept: string[] = [];

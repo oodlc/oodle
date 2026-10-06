@@ -171,7 +171,7 @@ A change to a promise (an outcome that `changed`, was `redefined` or `removed`; 
 
 A maintainer submits a pull request review (approve or comment) containing that line. The review re-runs the check, and the change shows as approved, with who approved it. The rules (see [0007](decisions/0007-approvals-in-ci.md)):
 
-- Only reviews and comments by people with write access count (`OWNER`, `MEMBER`, `COLLABORATOR`), never bots, and never the pull request's author unless `allow-self-approval` is on.
+- Only reviews and comments by people with write access count (`OWNER`, `MEMBER`, `COLLABORATOR`, or, for someone GitHub labels otherwise, such as an org member whose membership is private, a `write`, `maintain` or `admin` permission on the repository), never bots, and never the pull request's author unless `allow-self-approval` is on.
 - An approval is bound to the change as it is now: the definitions before and after, and what was observed before and after. If a later push changes it, the approval is reported stale and the change blocks again.
 - A `broken` outcome or a constraint violation is never approvable. Fix the code, or redefine the outcome in the catalog and approve the redefinition.
 

@@ -8,6 +8,7 @@ The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/
 
 - The catalog and config schemas are published at `https://oodlc.com/schema/v0/catalog.json` and `https://oodlc.com/schema/v0/config.json`, and their `$id`s say so.
 - Every YAML file `oodle init` and `oodle propose` write starts with a `# yaml-language-server: $schema=…` line, so editors with the YAML language server complete and check the catalog as you type.
+- Fix: an approval from an org member whose membership is private counts. GitHub labels them `CONTRIBUTOR` to the workflow's token, so the Action now looks up the approver's permission on the repository (`write`, `maintain` or `admin`).
 - The docs are readable on [oodlc.com/docs](https://oodlc.com/docs), and as markdown for agents at [oodlc.com/llms.txt](https://oodlc.com/llms.txt).
 
 ## 0.7.0 (2026-10-06): a real database in the simulation

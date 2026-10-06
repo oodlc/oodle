@@ -42,7 +42,18 @@ if [ "${INPUT_APPROVALS:-true}" = "true" ] && [ -n "${PR_NUMBER:-}" ]; then
   repo="$GITHUB_REPOSITORY"
   gh api "repos/$repo/pulls/$PR_NUMBER/reviews" --paginate >"$out/reviews.json" 2>/dev/null || echo '[]' >"$out/reviews.json"
   gh api "repos/$repo/issues/$PR_NUMBER/comments" --paginate >"$out/comments.json" 2>/dev/null || echo '[]' >"$out/comments.json"
-  node "$(dirname "$OODLE_BIN")/../scripts/approvals.mjs" "$out/reviews.json" "$out/comments.json" "${PR_AUTHOR:-}" "${INPUT_ALLOW_SELF_APPROVAL:-false}" >"$out/approvals.json"
+  approvals_js="$(dirname "$OODLE_BIN")/../scripts/approvals.mjs"
+  # A private org member shows as CONTRIBUTOR to this token, so ask for their permission instead.
+  printf '{' >"$out/permissions.json"
+  sep=''
+  while IFS= read -r login; do
+    [ -n "$login" ] || continue
+    perm="$(gh api "repos/$repo/collaborators/$login/permission" --jq .permission 2>/dev/null || true)"
+    printf '%s"%s":"%s"' "$sep" "$(printf '%s' "$login" | tr 'A-Z' 'a-z')" "$perm" >>"$out/permissions.json"
+    sep=','
+  done < <(node "$approvals_js" --lookup "$out/reviews.json" "$out/comments.json")
+  printf '}' >>"$out/permissions.json"
+  node "$approvals_js" "$out/reviews.json" "$out/comments.json" "${PR_AUTHOR:-}" "${INPUT_ALLOW_SELF_APPROVAL:-false}" "$out/permissions.json" >"$out/approvals.json"
   echo "Approvals found: $(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).length))' "$out/approvals.json")"
   args+=(--approvals "$out/approvals.json")
 fi

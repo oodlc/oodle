@@ -186,6 +186,17 @@ test('approval: the Action keeps approvals by maintainers other than the author'
   assert.ok(collect(items, { author: 'author', allowSelf: true }).some((a: { by: string }) => a.by === 'author'));
 });
 
+test('approval: a private org member, labelled CONTRIBUTOR, counts when their permission is write', async () => {
+  // @ts-ignore: plain ESM script without types
+  const { collect, toLookUp } = await import('../scripts/approvals.mjs');
+  const item = (login: string, association: string) => ({ user: { login, type: 'User' }, author_association: association, body: '/oodle approve checkout.payment-confirmed@1a2b3c4d' });
+  const items = [item('Private-Member', 'CONTRIBUTOR'), item('reader', 'CONTRIBUTOR'), item('member', 'MEMBER'), { user: { login: 'chatter', type: 'User' }, author_association: 'NONE', body: 'Nice.' }];
+  assert.deepEqual(toLookUp(items), ['Private-Member', 'reader']);
+  const by = (permissions: Record<string, string>) => collect(items, { author: 'someone', allowSelf: false, permissions }).map((a: { by: string }) => a.by);
+  assert.deepEqual(by({ 'private-member': 'admin', reader: 'read' }), ['Private-Member', 'member']);
+  assert.deepEqual(by({}), ['member']);
+});
+
 test('lint: outcome without an intent is an error', () => {
   const dir = copyExample();
   edit(dir, 'oodlc/checkout.yaml', 'intent: buy-without-surprises\n    statement: After', 'statement: After');

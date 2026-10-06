@@ -291,3 +291,19 @@ test('a project is found from inside its oodlc/ folder, and oodlc/ itself is acc
   assert.equal(json(oodle(['lint', '--json'], {}, join(EXAMPLE, 'oodlc')).stdout).ok, true);
   assert.equal(json(oodle(['lint', join(EXAMPLE, 'oodlc'), '--json']).stdout).ok, true);
 });
+
+test('init wraps a Next.js app with nextApp instead of writing a starter app', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oodle-next-init-'));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { next: '^16.0.0', react: '^19.0.0' } }));
+  cpSync(join(ROOT, 'test', 'fixtures', 'next-app', 'app'), join(dir, 'app'), { recursive: true });
+  const made = oodle(['init', dir]);
+  assert.match(made.stdout, /Wrapped your service\s+Next\.js route handlers in app\//);
+  assert.match(made.stderr, /Commit a \.env\.test/);
+  const adapter = readFileSync(join(dir, 'oodle.app.ts'), 'utf8');
+  assert.match(adapter, /import \{ nextApp \} from '@oodlc\/oodle\/next';/);
+  // CommonJS project (no "type": "module"): __dirname, not import.meta.
+  assert.match(adapter, /dir: __dirname,/);
+  assert.equal(existsSync(join(dir, 'src', 'app.ts')), false);
+  // No /health route to assume: the outcomes file starts empty, with an example.
+  assert.match(readFileSync(join(dir, 'oodlc', 'outcomes.yaml'), 'utf8'), /^outcomes: \[\]$/m);
+});

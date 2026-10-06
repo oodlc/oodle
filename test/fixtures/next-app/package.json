@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "A Next.js App Router app for test/next.test.ts. Its node_modules is linked in at test time, to run it on each Next version.",
+  "dependencies": {
+    "next": "*",
+    "react": "*"
+  }
+}

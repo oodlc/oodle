@@ -17,6 +17,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './catalog.ts';
+import { nextSourceFiles } from './next-routes.ts';
 import { stableStringify } from './expect.ts';
 import { OodleError } from './errors.ts';
 import type { EffectRecord, Gap, Observation } from './types.ts';
@@ -278,7 +279,7 @@ function importGraph(projectDir: string, entry: string): string[] {
 }
 
 /** An @oodlc/oodle/adapter module only wires the app into the simulation. Mutating it tests Oodle, not the app. */
-const isAdapter = (projectDir: string, file: string) => /\bfrom\s*['"]@oodlc\/oodle\/adapter['"]/.test(readFileSync(join(projectDir, file), 'utf8'));
+const isAdapter = (projectDir: string, file: string) => /\bfrom\s*['"]@oodlc\/oodle\/(adapter|next)['"]/.test(readFileSync(join(projectDir, file), 'utf8'));
 
 /** Files to mutate: the given globs, or every project file the app imports, minus tests and adapters. */
 export function sourceFiles(projectDir: string, globs?: string[]): string[] {
@@ -286,7 +287,12 @@ export function sourceFiles(projectDir: string, globs?: string[]): string[] {
     const res = globs.map(globRe);
     return walk(projectDir, projectDir).filter((f) => SOURCE.test(f) && res.some((r) => r.test(f)));
   }
-  return importGraph(projectDir, loadConfig(projectDir).app).filter((f) => !isAdapter(projectDir, f));
+  const app = loadConfig(projectDir).app;
+  // A Next.js app loads its route handlers at run time, so nothing imports them: start from each one too.
+  const entries = /\bfrom\s*['"]@oodlc\/oodle\/next['"]/.test(readFileSync(join(projectDir, app), 'utf8'))
+    ? [app, ...nextSourceFiles(dirname(resolve(projectDir, app))).map((f) => relative(projectDir, f))]
+    : [app];
+  return [...new Set(entries.flatMap((e) => importGraph(projectDir, e)))].sort().filter((f) => !isAdapter(projectDir, f));
 }
 
 // ── Workspaces ──────────────────────────────────────────────────────────────

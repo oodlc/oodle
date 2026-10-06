@@ -16,6 +16,9 @@
       ],
       "@oodlc/oodle/contract": [
         "./src/contract.ts"
+      ],
+      "@oodlc/oodle/next": [
+        "./src/next.ts"
       ]
     }
   },
@@ -23,5 +26,9 @@
     "src",
     "test",
     "examples"
+  ],
+  // The Next.js fixture is a project of its own, with its own tsconfig.
+  "exclude": [
+    "test/fixtures"
   ]
 }

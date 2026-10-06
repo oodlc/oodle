@@ -1,0 +1,8 @@
+app: oodle.app.ts
+defaults:
+  given:
+    state:
+      orders:
+        ord_1: { id: ord_1, sku: tee, paid: true }
+    stubs:
+      payment.charge: { result: { id: ch_ok } }

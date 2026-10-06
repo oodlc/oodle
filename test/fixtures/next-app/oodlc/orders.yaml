@@ -1,0 +1,120 @@
+version: 0
+outcomes:
+  - id: orders.list
+    intent: shop
+    statement: Anyone can list paid orders, filtered by the query string
+    boundary: external
+    trigger: { http: GET /api/orders?paid=true }
+    expect:
+      status: 200
+      body: { orders: [{ id: ord_1, sku: tee, paid: true }] }
+
+  - id: orders.create-charges
+    intent: shop
+    statement: Ordering charges the card once and returns the paid order
+    boundary: customer
+    trigger:
+      http: POST /api/orders
+      given: { body: { sku: mug } }
+    expect:
+      status: 201
+      body: { sku: mug, paid: true }
+      effects:
+        - { kind: payment.charge, match: { amount: 2500 }, count: 1 }
+
+  - id: orders.show-needs-session
+    intent: shop
+    statement: Without a session cookie, an order isn't shown
+    boundary: external
+    trigger: { http: GET /api/orders/ord_1 }
+    expect: { status: 401, body: { error: sign_in } }
+
+  - id: orders.show
+    intent: shop
+    statement: With a session, the order from the path is shown
+    boundary: customer
+    trigger:
+      http: GET /api/orders/ord_1
+      given: { headers: { cookie: session=s1 } }
+    expect: { status: 200, body: { id: ord_1 } }
+
+  - id: orders.show-missing
+    intent: shop
+    statement: An order that doesn't exist is a 404
+    boundary: customer
+    trigger:
+      http: GET /api/orders/ord_404
+      given: { headers: { cookie: session=s1 } }
+    expect: { status: 404 }
+
+  - id: orders.delete
+    intent: shop
+    statement: Deleting an order answers 204
+    boundary: customer
+    trigger: { http: DELETE /api/orders/ord_1 }
+    expect: { status: 204 }
+
+  - id: orders.wrong-method
+    intent: shop
+    statement: A method the route doesn't export is a 405
+    boundary: external
+    trigger: { http: PUT /api/orders }
+    expect: { status: 405 }
+
+  - id: hello.env-and-middleware
+    intent: shop
+    statement: The route in a route group sees .env.test, and the header the middleware added
+    boundary: external
+    trigger: { http: GET /api/hello }
+    expect: { status: 200, body: { greeting: from .env.test, via: "yes" } }
+
+  - id: hello.rewrite
+    intent: shop
+    statement: The old path is rewritten by the middleware to the new route
+    boundary: external
+    trigger: { http: GET /api/old-hello }
+    expect: { status: 200, body: { greeting: from .env.test } }
+
+  - id: middleware.blocks
+    intent: shop
+    statement: The middleware answers for itself when it blocks a request
+    boundary: external
+    trigger:
+      http: GET /api/orders
+      given: { headers: { x-block: "1" } }
+    expect: { status: 403, body: { error: blocked } }
+
+  - id: files.catch-all
+    intent: shop
+    statement: A catch-all route gets every segment
+    boundary: external
+    trigger: { http: GET /api/files/a/b/c.txt }
+    expect: { status: 200, body: { path: [a, b, c.txt] } }
+
+  - id: redirect
+    intent: shop
+    statement: redirect() in a route handler is a 307 to the target
+    boundary: external
+    trigger: { http: GET /api/redirect }
+    expect: { status: 307 }
+
+  - id: boom
+    intent: shop
+    statement: An uncaught error is a 500 to the caller
+    boundary: external
+    trigger: { http: GET /api/boom }
+    expect: { status: 500 }
+
+  - id: badge.jsx
+    intent: shop
+    statement: A route written in JSX runs
+    boundary: external
+    trigger: { http: GET /api/badge }
+    expect: { status: 200, body: { tag: b, text: new } }
+
+  - id: no-route
+    intent: shop
+    statement: A path with no route is a 404
+    boundary: external
+    trigger: { http: GET /api/nothing-here }
+    expect: { status: 404 }

@@ -45,7 +45,7 @@ npm test                                 # the seeded scenarios
 
 ## Adopting an existing service
 
-`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono or `node:http`) and writes `oodle.app.ts`, which runs it through `@oodlc/oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
+`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono, `node:http`, or [Next.js](#nextjs)) and writes `oodle.app.ts`, which runs it through `@oodlc/oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
 
 ```ts
 // oodle.app.ts
@@ -72,6 +72,33 @@ export default httpApp(app, {
 - **Routes** are found on their own for Express and Hono, or listed with `routes: ['GET /health', ...]`, so Oodle can probe the ones no outcome describes.
 
 `oodle doctor` then tells you whether Oodle is running your code or still a starter app, whether anything escapes the simulation, and whether two identical runs agree.
+
+### Next.js
+
+For a Next.js app (15 or 16, App Router), `oodle init` writes `oodle.app.ts` around `@oodlc/oodle/next`. Oodle runs every `app/**/route.ts` handler, behind `middleware.ts` (or `proxy.ts`), in process: no build, no server.
+
+```ts
+// oodle.app.ts
+import { nextApp } from '@oodlc/oodle/next';
+import { db } from './lib/db';
+
+export default nextApp({
+  dir: __dirname,                              // import.meta.dirname with "type": "module"
+  effects: {
+    'GET your-project.supabase.co/rest/v1/orders': 'db.orders.read',
+    'POST api.stripe.com/v1/charges': 'payment.charge',
+  },
+  setup(ctx) { db.orders = new Map(Object.entries(ctx.state.orders ?? {})); },
+});
+```
+
+- **Handlers run inside Next's own route module**, from your project's `next` package, so `cookies()`, `headers()`, `redirect()`, `notFound()` and `export const dynamic` behave as in Next. Dynamic segments (`[id]`, `[...slug]`, `[[...slug]]`), route groups and private folders work as in Next.
+- **The middleware runs first** when its `matcher` applies: a response it returns is what the caller gets, and `NextResponse.next()`, `rewrite()` and changed request headers carry on to the route.
+- **An uncaught error is a 500**, as in Next. Its message is kept as the internal effect `internal.next.error`, which never affects an outcome.
+- **Environment** comes from `.env.test` and `.env`, the files Next loads in test mode, never `.env.local`, so a laptop and CI see the same values. Commit a `.env.test` with placeholder values your modules need to load.
+- **Pages, server components and server actions aren't run.** Outcomes describe what a caller gets from your routes.
+- **Name every host your routes call, Supabase included,** under `effects`. Until you do, each call is refused, and clients that retry on network errors (supabase-js does) make the run slow before it reports the escape. `oodle doctor` lists the hosts.
+- `oodle mutate` starts from every route file and the middleware, and follows relative imports, not path aliases like `@/`.
 
 ## In CI
 
@@ -289,7 +316,7 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 
 ## Not yet
 
-Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes, and an OS-level sandbox for child processes.
+Learned simulation models, probes against real environments, event and schedule triggers, multi-service systems, UI outcomes (including Next.js pages and server actions), and an OS-level sandbox for child processes.
 
 ## Contributing
 

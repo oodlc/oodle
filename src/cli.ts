@@ -161,7 +161,7 @@ const COMMANDS: Command[] = [
   {
     name: 'init',
     summary: 'Start a project: an oodlc/ folder with config, a starter catalog and app',
-    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through @oodlc/oodle/adapter, instead of a starter app. Otherwise it writes a starter app that passes `oodle run` straight away. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
+    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Next.js, Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through @oodlc/oodle/adapter (or /next), instead of a starter app. Otherwise it writes a starter app that passes `oodle run` straight away. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
     args: [{ name: 'dir', description: 'Where to create the project. Default: the current directory' }],
     flags: [
       { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
@@ -854,12 +854,14 @@ async function cmdInit(ctx: Ctx): Promise<number> {
   const svc = result.service;
   if (svc) {
     const app = loadConfig(result.dir).app;
-    console.log(`\n${o.green(o.bold(`${sym.ok} Wrapped your service`))}  ${o.dim(`${svc.framework} app in ${svc.entry}, run through ${app}`)}`);
+    const what = svc.framework === 'next' ? `Next.js route handlers in ${svc.entry}/` : `${svc.framework} app in ${svc.entry}`;
+    console.log(`\n${o.green(o.bold(`${sym.ok} Wrapped your service`))}  ${o.dim(`${what}, run through ${app}`)}`);
     await say('curious', 'Found your service. Show me what it promises.');
     hints([
       ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
-      ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import @oodlc/oodle/adapter: ${e.cyan(installOodle(packageManager(result.dir)))}`]),
+      ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import it: ${e.cyan(installOodle(packageManager(result.dir)))}`]),
+      ...(svc.framework === 'next' && !['.env.test', '.env'].some((f) => existsSync(join(result.dir, f))) ? [`Commit a ${e.cyan('.env.test')} with placeholder values your modules need to load. Oodle never reads .env.local`] : []),
       `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
       `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
       `Then check the wiring: ${e.cyan(`oodle doctor${where}`)}`,

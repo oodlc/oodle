@@ -350,6 +350,9 @@ function freeze(ctx: AppContext, clock: Clock): () => void {
     static now() {
       return fixed;
     }
+    // Own statics, not inherited ones: code that copies Date's own properties (Next.js does) keeps them.
+    static parse = RealDate.parse;
+    static UTC = RealDate.UTC;
   }
   const bytes = (n: number) => Buffer.from(Array.from({ length: n }, () => Math.floor(clock.random() * 256)));
   const uuid = () => `00000000-0000-4000-8000-${(++clock.uuids).toString(16).padStart(12, '0')}`;

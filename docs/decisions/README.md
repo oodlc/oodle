@@ -11,6 +11,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0005](0005-sealed-simulation.md) | The simulation is sealed: reaching the real network is a violation | Proposed |
 | [0006](0006-proposals-and-propose-only-agents.md) | Agents propose, humans approve: `status: proposed` and propose-only writes | Proposed |
 | [0007](0007-approvals-in-ci.md) | A change to a promise is approved in the pull request, bound to exactly what changed | Proposed |
+| [0008](0008-nextjs-through-its-own-route-module.md) | Next.js route handlers run through Next's own route module | Proposed |
 
 ## When to write one
 

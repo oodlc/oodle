@@ -89,11 +89,13 @@ const SERVER_CODE = /\bexpress\(|new Koa\b|new Hono\b|\bfastify\(|Fastify\(|crea
 export interface Service {
   /** The module that builds the app, relative to the project. */
   entry: string;
-  framework: (typeof FRAMEWORKS)[number] | 'node';
+  framework: (typeof FRAMEWORKS)[number] | 'node' | 'next';
   /** How the entry exports the app: a named export, 'default', or null if it doesn't seem to. */
   exportName: string | null;
   /** The entry calls listen() itself, so importing it would open a port. */
   listensOnImport: boolean;
+  /** package.json says "type": "module", so the adapter can use import.meta. */
+  esm?: boolean;
 }
 
 function readJson(path: string): any {
@@ -104,6 +106,11 @@ function readJson(path: string): any {
 export function detectService(dir: string): Service | null {
   const pkg = readJson(join(dir, 'package.json'));
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
+  // A Next.js app: Oodle runs its App Router route handlers (see src/next.ts).
+  if ('next' in deps) {
+    const appDir = ['app', 'src/app'].find((d) => existsSync(join(dir, d)));
+    if (appDir) return { entry: appDir, framework: 'next', exportName: 'default', listensOnImport: false, esm: pkg?.type === 'module' };
+  }
   const framework = FRAMEWORKS.find((f) => f in deps);
   const fromPkg = [pkg?.main, /(?:node|tsx|ts-node|bun)\s+(?:--\S+\s+)*([\w./-]+\.[cm]?[jt]s)\b/.exec(pkg?.scripts?.start ?? pkg?.scripts?.dev ?? '')?.[1]]
     .filter((x): x is string => typeof x === 'string')
@@ -123,6 +130,35 @@ export function detectService(dir: string): Service | null {
   }
   return null;
 }
+
+const NEXT_ADAPTER = (svc: Service) => `/**
+ * How Oodle runs your Next.js app: every route handler in ${svc.entry}/, behind middleware.ts, in process,
+ * in a sealed simulation. No build, no server, no port. Next's own route module runs each handler, so
+ * cookies(), headers(), redirect() and notFound() behave as they do in Next. Pages aren't run: outcomes
+ * describe what a caller gets from your routes.
+ *
+ * Every outbound HTTP call (fetch, an SDK, Supabase, Stripe) must be named under \`effects\`, and each
+ * effect kind gets a stub in oodlc/config.yaml. Anything not named is refused and reported as a blocking
+ * \`oodle.sealed\` violation.
+ *
+ * Environment: Oodle loads .env.test and .env the way Next's test mode does, never .env.local, so your
+ * laptop and CI see the same values. Commit a .env.test with placeholder values your modules need to load.
+ *
+ * Then: \`oodle doctor\`. Docs: https://github.com/oodlc/oodle#nextjs
+ */
+import { nextApp } from '@oodlc/oodle/next';
+
+export default nextApp({
+  dir: ${svc.esm ? 'import.meta.dirname' : '__dirname'},
+  // Outbound calls, by "METHOD host/path-prefix" or "host". The most specific match wins.
+  effects: {
+    // 'GET your-project.supabase.co/rest/v1/orders': 'db.orders.read',
+    // 'POST api.stripe.com/v1/charges': 'payment.charge',
+  },
+  // Runs before each simulated run. Point module-level stores at ctx.state here,
+  // so every outcome starts from the state it declares.
+});
+`;
 
 const ADAPTER = (svc: Service) => {
   const spec = `./${svc.entry}`;
@@ -233,13 +269,13 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
   // An existing service gets an adapter around it, never a starter app beside it.
   const service = opts.app ? null : detectService(dir);
   const app = opts.app ?? (service ? 'oodle.app.ts' : 'src/app.ts');
-  const hasHealth = !service || /['"`]\/health['"`]/.test(readFileSync(join(dir, service.entry), 'utf8'));
+  const hasHealth = !service || (service.framework !== 'next' && /['"`]\/health['"`]/.test(readFileSync(join(dir, service.entry), 'utf8')));
   const files: [string, string, boolean][] = [
     [`${FOLDER}/${CONFIG_FILE}`, CONFIG(app), true],
     [`${FOLDER}/intents.yaml`, INTENTS, true],
     [`${FOLDER}/outcomes.yaml`, hasHealth ? OUTCOMES : OUTCOMES_TODO, true],
     // The starter app or adapter only fills a gap; an existing file is always left alone.
-    [app, service ? ADAPTER(service) : APP, false],
+    [app, service ? (service.framework === 'next' ? NEXT_ADAPTER(service) : ADAPTER(service)) : APP, false],
   ];
   if (opts.ci) {
     mkdirSync(dir, { recursive: true });

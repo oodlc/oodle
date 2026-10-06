@@ -47,7 +47,8 @@ function byStatus(items: { id?: string; route?: string; status: string }[] = [])
 function contract(r: { code: number; stdout: string; stderr: string }, jsonMode: boolean) {
   const doc = parse(r.stdout);
   const said = `${r.stderr}\n${doc?.error?.hint ?? ''}`;
-  const suggests = /Did you mean `?([^`?]+?)`?\?/.exec(said)?.[1];
+  // How a hint runs Oodle (npx, pnpm exec, a bare oodle on the PATH) depends on the machine, not on what was meant.
+  const suggests = /Did you mean `?([^`?]+?)`?\?/.exec(said)?.[1]?.replace(/^(?:npx|pnpm exec|yarn|bunx) (?=oodle\b)/, '');
   // In GitHub Actions, workflow commands (::error, ::warning) are the one thing allowed on stderr in json mode.
   const stderrLines = r.stderr.split('\n').filter((l) => l.trim());
   const body: Record<string, unknown> = {

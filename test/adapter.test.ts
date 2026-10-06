@@ -217,3 +217,27 @@ test('adapter: an error thrown by the app surfaces as a failed run, not a hang',
   });
   assert.equal((await httpApp(express500)(context().ctx).handle({ method: 'GET', path: '/' })).status, 500);
 });
+
+test('adapter: a corporate proxy cannot carry a call past the effect rules, from the environment or set on the client', async () => {
+  const saved = { HTTPS_PROXY: process.env.HTTPS_PROXY, HTTP_PROXY: process.env.HTTP_PROXY };
+  // Nothing listens on port 9: a request that reached the "proxy" would fail.
+  process.env.HTTPS_PROXY = process.env.HTTP_PROXY = 'http://127.0.0.1:9';
+  try {
+    const app = express().get('/', async (_req, res) => {
+      const fromEnv = (await axios.get('https://api.stripe.com/v1/balance')).data;
+      const onClient = (await axios.get('http://internal.example/ping', { proxy: { protocol: 'http', host: '127.0.0.1', port: 9 } })).data;
+      res.json({ fromEnv, onClient, proxyVisible: process.env.HTTPS_PROXY ?? null });
+    });
+    const { ctx, calls } = context({ 'stripe.balance': { available: 1 }, 'internal.ping': { pong: true } });
+    const out = await httpApp(app, { effects: { 'api.stripe.com': 'stripe.balance', 'internal.example': 'internal.ping' } })(ctx).handle({ method: 'GET', path: '/' });
+    assert.deepEqual(out.body, { fromEnv: { available: 1 }, onClient: { pong: true }, proxyVisible: null });
+    assert.deepEqual(calls.map((c) => c.kind), ['stripe.balance', 'internal.ping']);
+    // The variables come back once the request is done.
+    assert.equal(process.env.HTTPS_PROXY, 'http://127.0.0.1:9');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});

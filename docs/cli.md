@@ -12,10 +12,10 @@ oodle <command> [project] [flags]
 | `oodle check [project]` | Outcome diff of the working tree against a git ref. `--approve id@fingerprint` approves an intended change to a promise |
 | `oodle diff <base> <head>` | Outcome diff between two project checkouts |
 | `oodle lint [project]` | Validate the catalog and its traceability |
-| `oodle init [dir]` | Start a project: an `oodlc/` folder and a starter catalog, plus `oodle.app.ts` around the service already there (or a starter app). `--ci` adds the GitHub workflow, `--migrate` moves a v0 project in |
-| `oodle doctor [project]` | Check your environment and project setup: the app is yours, nothing escapes the simulation, two runs agree |
+| `oodle init [dir]` | Start a project: an `oodlc/` folder and a starter catalog, plus `oodle.app.ts` around the service already there (or a starter app). For a service, it names the outbound calls it finds under `effects`, stubs each with a placeholder, and proposes an outcome for each route in `oodlc/proposed.yaml`. `--ci` adds the GitHub workflow, `--migrate` moves a v0 project in |
+| `oodle doctor [project]` | Check your environment and project setup: the app is yours, every effect it names has a stub, nothing escapes the simulation, two runs agree |
 | `oodle mutate [project]` | Plant small bugs in the app and see which ones the catalog catches. `--tests <cmd>` finds unit tests the catalog covers |
-| `oodle propose <file> [project]` | Add drafted entries as proposals in `oodlc/proposed.yaml`, never changing an existing one |
+| `oodle propose <file> [project]` | Add drafted entries as proposals in `oodlc/proposed.yaml`, never changing an existing one. `--routes` proposes an outcome for each route nothing describes, from probing it |
 | `oodle draft <brief> [project]` | Print the prompt that drafts catalog entries from a brief, for any agent |
 | `oodle mcp [project]` | Serve Oodle to coding agents over MCP (stdio) |
 | `oodle hook <event>` | Answer a coding agent's hook: `session-start`, `pre-tool-use`, `stop`. See [agents.md](agents.md) |

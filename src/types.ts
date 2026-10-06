@@ -150,7 +150,7 @@ export interface Observation {
 
 export interface Gap {
   route: string;
-  probe: { status: number | null; body: unknown; error?: string };
+  probe: { status: number | null; body: unknown; error?: string; effects?: EffectRecord[] };
   /** Conditions the route was probed under besides the default (config `probe.conditions`). */
   probed_under?: string[];
   /** Constraints breached while probing, prefixed "[condition] " for non-default probes. Blocking, even though nothing describes the route. */

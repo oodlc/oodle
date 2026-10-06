@@ -61,6 +61,13 @@ interface Sim {
   virtualMs: () => number;
 }
 
+const NO_STUB = 'no stub for external call';
+
+/** One line per external call that had no stub, which is usually why a run failed. */
+function missingStubs(effects: EffectRecord[]): string[] {
+  return [...new Set(effects.filter((e) => e.error?.startsWith(NO_STUB)).map((e) => e.error!))];
+}
+
 function simulate(given: Given): Sim {
   const effects: EffectRecord[] = [];
   const counters: Record<string, number> = {};
@@ -77,7 +84,7 @@ function simulate(given: Given): Sim {
       async call(kind, payload) {
         const stub: Stub | undefined = given.stubs?.[kind];
         if (!stub) {
-          const error = `no stub for external call "${kind}"; add one under defaults.given.stubs or a condition`;
+          const error = `${NO_STUB} "${kind}"; add one under defaults.given.stubs in oodlc/config.yaml, or in a condition`;
           effects.push({ kind, boundary: boundaryOf(kind), payload: structuredClone(payload ?? {}), error });
           throw new Error(error);
         }
@@ -179,6 +186,8 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   if (obs.error) obs.failures.push(`app threw: ${obs.error}`);
   if (subject.kind === 'outcome') obs.failures.push(...evaluate(expectFor(subject.item, condition?.id), obs));
   else if (subject.item.observed) obs.failures.push(...evaluate(subject.item.observed, obs));
+  // A missing stub usually surfaces as a 500 or a wrong body. Name it first, since it is the thing to fix.
+  if (obs.failures.length) obs.failures.unshift(...missingStubs(sim.effects).filter((m) => obs.error !== m));
   const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body }, req);
   obs.violations = [...checked.violations, ...builtinViolations(escapes)];
   obs.notices = checked.notices;
@@ -213,9 +222,9 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
       const { escapes } = await recordEscapes(async () => {
         try {
           const res = await send(createApp(sim.ctx), req, given.repeat);
-          result = { status: res.status, body: res.body };
+          result = { status: res.status, body: res.body, effects: sim.effects };
         } catch (err) {
-          result = { status: null, body: undefined, error: (err as Error).message };
+          result = { status: null, body: undefined, error: (err as Error).message, effects: sim.effects };
         }
       });
       if (!c) probe = result!;

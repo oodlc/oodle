@@ -15,7 +15,7 @@ import { init, migrate } from './init.ts';
 import { installOodle, oodleCommand, packageManager, runnable } from './invocation.ts';
 import { doctor } from './doctor.ts';
 import { mutate, type MutateReport } from './mutate.ts';
-import { propose } from './propose.ts';
+import { propose, proposeRoutes } from './propose.ts';
 import { draftPrompt } from './draft.ts';
 import { serveMcp } from './mcp.ts';
 import { runHook, HOOKS } from './hooks.ts';
@@ -166,7 +166,7 @@ const COMMANDS: Command[] = [
     flags: [
       { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
       { name: 'force', short: 'f', type: 'boolean', description: 'Overwrite an existing oodlc/config.yaml and starter catalog' },
-      { name: 'ci', type: 'boolean', description: 'Also write .github/workflows/oodle.yml: the outcome diff on every pull request, approvals from reviews' },
+      { name: 'ci', type: 'boolean', description: 'Also write .github/workflows/oodle.yml: the outcome diff on every pull request, approvals from reviews. In an existing project, writes only the workflow' },
       { name: 'migrate', type: 'boolean', description: 'Move an old-layout project (oodle.yaml + catalog/) into oodlc/' },
     ],
     formats: ['text', 'json'],
@@ -216,17 +216,20 @@ const COMMANDS: Command[] = [
     name: 'propose',
     summary: 'Add drafted catalog entries as proposals, never changing an existing one',
     description:
-      'Reads a YAML catalog fragment (from a file, or - for stdin) and adds it to oodlc/proposed.yaml. Every intent, outcome and constraint is marked status: proposed, so it runs and is reported but never blocks until a human approves it by deleting that line. An id that already exists is refused: a proposal can add, never change or remove. This is how agents and the drafter write to the catalog.',
+      'Reads a YAML catalog fragment (from a file, or - for stdin) and adds it to oodlc/proposed.yaml. Every intent, outcome and constraint is marked status: proposed, so it runs and is reported but never blocks until a human approves it by deleting that line. An id that already exists is refused: a proposal can add, never change or remove. This is how agents and the drafter write to the catalog. With --routes, there is no file: Oodle probes every route nothing describes, in the sealed simulation, and proposes an outcome for each from what it saw.',
     args: [
-      { name: 'file', required: true, description: 'YAML with any of intents, outcomes, behaviors, conditions, constraints; - reads stdin' },
+      { name: 'file', description: 'YAML with any of intents, outcomes, behaviors, conditions, constraints; - reads stdin. With --routes, the project directory' },
       PROJECT_ARG,
     ],
-    flags: [],
+    flags: [
+      { name: 'routes', type: 'boolean', description: 'Propose an outcome for every route nothing describes, from probing it' },
+    ],
     formats: ['text', 'json'],
     positional: 'files',
     examples: [
       ['oodle propose draft.yaml', 'Add a drafted outcome as a proposal'],
       ['oodle draft brief.md | claude -p | oodle propose -', 'Draft from a brief with an agent, straight into proposals'],
+      ['oodle propose --routes', 'A proposed outcome for each route nothing describes'],
     ],
     run: cmdPropose,
   },
@@ -560,7 +563,7 @@ async function cmdRun(ctx: Ctx): Promise<number> {
   const first = run.observations.find((x) => x.kind === 'outcome' && blocks(x));
   if (first && !ctx.flags.only) next.push(`Focus on one: ${e.cyan(`oodle run --only ${first.id}`)}`);
   if (run.lint.errors.length) next.push(`Catalog details: ${e.cyan('oodle lint')}`);
-  if (run.gaps.length && !ctx.flags.verbose) next.push(`See proposed catalog entries for unknown routes: ${e.cyan('oodle run --verbose')}`);
+  if (run.gaps.length) next.push(`Propose an outcome for each unknown route: ${e.cyan(`oodle propose --routes${ctx.args[0] ? ` ${ctx.args[0]}` : ''}`)}`);
   if (!failing && inGitRepo(dir)) next.push(`Compare with your default branch: ${e.cyan('oodle check')}`);
   if (!process.env.OODLE_WATCH_REPORT) hints(next);
   return failing ? EXIT.blocking : EXIT.ok;
@@ -621,6 +624,19 @@ function readInput(path: string, what: string): string {
 }
 
 async function cmdPropose(ctx: Ctx): Promise<number> {
+  if (ctx.flags.routes) {
+    if (ctx.args.length > 1) throw usageError('`oodle propose --routes` takes no file', 'Usage: oodle propose --routes [dir]. It probes the app itself.');
+    const dir = findProject(ctx.args[0], 'propose');
+    const spin = ctx.format === 'text' ? spinner('Probing routes') : null;
+    const result = await proposeRoutes(dir).finally(() => spin?.stop());
+    if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+    heading('propose --routes', dir);
+    printProposals(result.added, result.file, result.skipped);
+    if (result.added.length) await say('curious', 'Here is what your routes do today. Which of it is a promise?');
+    hints(result.added.length ? approvalHints(result.file) : [`Every route is described. Draft from a brief instead: ${e.cyan('oodle draft --help')}`]);
+    return EXIT.ok;
+  }
+  if (!ctx.args[0]) throw usageError('`oodle propose` needs <file>', 'Usage: oodle propose <file> [dir], or oodle propose --routes. See `oodle propose --help`.');
   const dir = findProject(ctx.args[1], 'propose');
   const result = propose(dir, readInput(ctx.args[0], 'Proposal'));
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
@@ -628,8 +644,19 @@ async function cmdPropose(ctx: Ctx): Promise<number> {
   for (const a of result.added) console.log(`  ${o.green('+')} ${a.section.slice(0, -1).padEnd(10)} ${a.id}`);
   console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(result.added.length, 'entry', 'entries')} in ${result.file} · reported, not blocking`)}`);
   await say('curious', 'Proposals noted. A human gets the final say.');
-  hints([`See how they do: ${e.cyan('oodle run')}`, `Approve one by deleting its ${e.cyan('status: proposed')} line in ${result.file}`]);
+  hints(approvalHints(result.file));
   return EXIT.ok;
+}
+
+function approvalHints(file: string): string[] {
+  return [`See how they do: ${e.cyan('oodle run')}`, `Approve one by deleting its ${e.cyan('status: proposed')} line in ${file}`];
+}
+
+/** The proposals a probe wrote, and the routes it couldn't propose anything for. */
+function printProposals(added: { section: string; id: string }[], file: string, skipped: string[]): void {
+  for (const a of added) console.log(`  ${o.green('+')} ${a.section.slice(0, -1).padEnd(10)} ${a.id}`);
+  for (const s of skipped) console.log(`  ${o.yellow(sym.warn)} ${s}`);
+  if (added.length) console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(added.length, 'entry', 'entries')} in ${file} · reported, not blocking`)}`);
 }
 
 async function cmdDraft(ctx: Ctx): Promise<number> {
@@ -760,7 +787,7 @@ async function diffAndReport(ctx: Ctx, baseDir: string | null, headDir: string, 
     const next: string[] = [];
     if (typeof ctx.flags.md === 'string') next.push(`PR comment written to ${e.cyan(ctx.flags.md)}`);
     else next.push(`Write a PR comment: ${e.cyan(`oodle ${withoutFormat(process.argv.slice(2)).join(' ')} --md diff.md`)}`);
-    if (report.gaps.length) next.push(`See a proposed catalog entry for each unknown route: ${e.cyan(`oodle run ${display(headDir)} --verbose`)}`);
+    if (report.gaps.length) next.push(`Propose an outcome for each unknown route: ${e.cyan(`oodle propose --routes${display(headDir) === '.' ? '' : ` ${display(headDir)}`}`)}`);
     const tokens = approvalTokens(report);
     if (tokens.length) next.push(`Intended? A human approves with: ${e.cyan(`--approve ${tokens.join(' --approve ')}`)}`);
     if (report.blocking > tokens.length) next.push('A broken outcome or a violated constraint is never approvable: fix the code, or redefine the outcome and get that approved.');
@@ -846,24 +873,58 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     return EXIT.ok;
   }
   const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force, ci: ctx.flags.ci });
-  if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+  const svc = result.service;
+  // A first catalog to promote from, instead of an empty outcomes list: what each route does today, probed in the simulation.
+  // Not when importing the app would open a port, or when there is no app export to import.
+  let proposals: (Awaited<ReturnType<typeof proposeRoutes>>) | undefined;
+  let unprobed: string | undefined;
+  if (svc && (!svc.exportName || svc.listensOnImport)) unprobed = svc.listensOnImport ? `${svc.entry} calls listen() on import` : `${svc.entry} doesn't export the app`;
+  else if (svc) {
+    const spin = ctx.format === 'text' ? spinner('Probing routes') : null;
+    try {
+      proposals = await proposeRoutes(result.dir);
+    } catch (err) {
+      unprobed = (err as Error).message;
+    } finally {
+      spin?.stop();
+    }
+  }
+  if (ctx.format === 'json') return printJson({ ok: true, ...result, ...(proposals ? { proposed: proposals } : {}), ...(unprobed ? { unprobed } : {}) }), EXIT.ok;
   heading('init', result.dir);
   for (const f of result.created) console.log(`  ${o.green('+')} ${f}`);
   for (const f of result.kept) console.log(`  ${o.dim(`${sym.dot} ${f} (kept)`)}`);
   const where = display(result.dir) === '.' ? '' : ` ${display(result.dir)}`;
-  const svc = result.service;
+  if (result.workflowOnly) {
+    console.log(`\n${o.green(o.bold(`${sym.ok} ${result.created.length ? 'Workflow added' : 'Workflow already there'}`))}  ${o.dim('the catalog in oodlc/ is unchanged')}`);
+    hints([`Commit it: every pull request gets an outcome diff, and a broken outcome blocks the merge`, `Try the same diff locally: ${e.cyan(`oodle check${where}`)}`]);
+    return EXIT.ok;
+  }
   if (svc) {
     const app = loadConfig(result.dir).app;
     const what = svc.framework === 'next' ? `Next.js route handlers in ${svc.entry}/` : `${svc.framework} app in ${svc.entry}`;
     console.log(`\n${o.green(o.bold(`${sym.ok} Wrapped your service`))}  ${o.dim(`${what}, run through ${app}`)}`);
-    await say('curious', 'Found your service. Show me what it promises.');
+    const calls = result.effects ?? [];
+    if (calls.length) {
+      console.log(`\n  Outbound calls, named under effects in ${app} and stubbed in oodlc/config.yaml:`);
+      for (const c of calls) console.log(`  ${o.cyan(sym.arrow)} ${c.host} ${o.dim(`as ${c.kind} · ${c.found.slice(0, 2).join(', ')}${c.found.length > 2 ? ', …' : ''}`)}`);
+    }
+    if (proposals?.added.length || proposals?.skipped.length) {
+      console.log(`\n  A first catalog, from probing each route:`);
+      printProposals(proposals.added, proposals.file, proposals.skipped);
+    }
+    await say('curious', proposals?.added.length ? 'Here is what your routes do today. Which of it is a promise?' : 'Found your service. Show me what it promises.');
     hints([
       ...(svc.listensOnImport ? [`${svc.entry} calls listen() on import. Guard it, e.g. ${e.cyan('if (import.meta.main) app.listen(port)')}`] : []),
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
       ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import it: ${e.cyan(installOodle(packageManager(result.dir)))}`]),
       ...(svc.framework === 'next' && !['.env.test', '.env'].some((f) => existsSync(join(result.dir, f))) ? [`Commit a ${e.cyan('.env.test')} with placeholder values your modules need to load. Oodle never reads .env.local`] : []),
-      `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
-      `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
+      calls.length
+        ? `Put what each API answers into the placeholder stubs in ${e.cyan('oodlc/config.yaml')}`
+        : `Name outbound calls under effects in ${e.cyan(app)}, and stub each one in ${e.cyan('oodlc/config.yaml')}`,
+      proposals?.added.length
+        ? `Make one a promise: in ${e.cyan(proposals.file)}, sharpen its statement and delete its ${e.cyan('status: proposed')} line`
+        : `Declare what customers must experience in ${e.cyan(join(display(result.dir), 'oodlc/outcomes.yaml'))}`,
+      ...(unprobed ? [`Couldn't probe the routes yet (${unprobed}). Once it loads, draft an outcome for each: ${e.cyan(`oodle propose --routes${where}`)}`] : []),
       `Then check the wiring: ${e.cyan(`oodle doctor${where}`)}`,
     ]);
     return EXIT.ok;

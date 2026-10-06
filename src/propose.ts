@@ -1,5 +1,5 @@
 /**
- * Propose-only writes to the catalog, for agents and the drafter. A proposal can
+ * Propose-only writes to the catalog, for agents, the drafter and `oodle init`. A proposal can
  * add entries, never change or remove one: every new intent, outcome and
  * constraint is marked `status: proposed` (it runs and is reported, but never
  * blocks), and any id that already exists is refused. Proposals land in
@@ -12,6 +12,8 @@ import { parse, stringify } from 'yaml';
 import { CatalogError, loadCatalog, loadConfig, validateCatalogDoc } from './catalog.ts';
 import { lint } from './lint.ts';
 import { OodleError } from './errors.ts';
+import { runProject } from './runner.ts';
+import type { RunResult } from './types.ts';
 
 export const PROPOSALS_FILE = 'proposed.yaml';
 const SECTIONS = ['intents', 'outcomes', 'behaviors', 'conditions', 'constraints'] as const;
@@ -19,7 +21,7 @@ type Section = (typeof SECTIONS)[number];
 /** Sections a human approves. Behaviors are observed and conditions only add runs, so they need no approval. */
 const APPROVED: Section[] = ['intents', 'outcomes', 'constraints'];
 
-const HEADER = `# Proposed by an agent or \`oodle draft\`, waiting for a human.
+const HEADER = `# Proposed by \`oodle init\`, an agent or \`oodle draft\`, waiting for a human.
 # Proposed entries run and are reported, but never block. To approve one, delete
 # its "status: proposed" line (and move it next to its neighbours if you like).
 # To reject one, delete it. See docs/decisions/0006.
@@ -99,3 +101,58 @@ export function propose(projectDir: string, input: unknown): ProposeResult {
   }
 }
 
+
+// ── Routes nothing describes ────────────────────────────────────────────────
+
+/** Body fields worth pinning exactly: flags and the codes callers branch on. Everything else just has to be there. */
+const EXACT_FIELDS = /^(ok|error|code|status|state|type|kind)$/;
+
+function expectedBody(body: unknown): Record<string, unknown> | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+  const fields = Object.entries(body as Record<string, unknown>).slice(0, 6);
+  if (!fields.length) return undefined;
+  return Object.fromEntries(fields.map(([k, v]) => [k, typeof v === 'boolean' || v === null || (EXACT_FIELDS.test(k) && typeof v !== 'object') ? v : { exists: true }]));
+}
+
+/**
+ * A proposed outcome for each route nothing describes, from what probing it in
+ * the simulation showed: the status, the top-level body fields, and the external
+ * calls it made. A starting point for a human to sharpen, never a promise on its own.
+ */
+export function routeOutcomes(run: RunResult): { fragment: { intents?: unknown[]; outcomes: unknown[] }; skipped: string[] } {
+  const intent = run.catalog.intents.find((i) => i.status !== 'proposed') ?? run.catalog.intents[0];
+  const taken = new Set([...run.catalog.outcomes, ...run.catalog.behaviors].map((x) => x.id));
+  const outcomes: unknown[] = [];
+  const skipped: string[] = [];
+  for (const g of run.gaps) {
+    if (g.probe.status === null) {
+      skipped.push(`${g.route}: ${g.probe.error ?? 'no response'}`);
+      continue;
+    }
+    const [method] = g.route.split(' ');
+    const id = g.proposal.id.replace(/^observed\./, '');
+    if (taken.has(id)) continue;
+    const counts = new Map<string, number>();
+    for (const e of g.probe.effects ?? []) if (e.boundary !== 'internal' && !e.error) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+    const effects = [...counts].map(([kind, count]) => ({ kind, count }));
+    const body = expectedBody(g.probe.body);
+    outcomes.push({
+      id,
+      intent: intent?.id ?? 'service-available',
+      statement: `TODO: say what a caller can count on. Observed: ${g.route} answered ${g.probe.status}`,
+      boundary: 'external',
+      trigger: { http: g.proposal.trigger.http, ...(method === 'GET' ? {} : { given: { body: {} } }) },
+      expect: { status: g.probe.status, ...(body ? { body } : {}), ...(effects.length ? { effects } : {}) },
+    });
+  }
+  const intents = intent ? undefined : [{ id: 'service-available', statement: 'Callers can rely on the service being there when they need it.' }];
+  return { fragment: { ...(intents ? { intents } : {}), outcomes }, skipped };
+}
+
+/** Probes every route nothing describes and adds a proposed outcome for each to oodlc/proposed.yaml. */
+export async function proposeRoutes(projectDir: string): Promise<ProposeResult & { skipped: string[] }> {
+  const run = await runProject(projectDir);
+  const { fragment, skipped } = routeOutcomes(run);
+  if (!fragment.outcomes.length) return { file: join(run.config.catalog, PROPOSALS_FILE), added: [], warnings: [], skipped };
+  return { ...propose(projectDir, fragment), skipped };
+}

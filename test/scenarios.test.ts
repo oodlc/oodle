@@ -538,3 +538,13 @@ test('proposed constraint: a breach is a notice, not a violation', async () => {
   assert.equal(report.blocking, 0);
   assert.deepEqual(report.constraints.map((c) => [c.id, c.status, c.blocking]), [['no-email-ever', 'new', false]]);
 });
+
+test('a missing stub is named first on the failing outcome, and a failed call is not reported as never made', async () => {
+  const dir = copyExample();
+  edit(dir, 'oodlc/config.yaml', /    stubs:\n      payment\.capture:\n        result: \{ id: pay_1, status: succeeded \}\n        latency_ms: 120\n/, '    stubs: {}\n');
+  const run = await runProject(dir);
+  const obs = run.observations.find((o) => o.id === 'checkout.payment-confirmed' && o.condition === 'first_purchase')!;
+  assert.match(obs.failures[0], /no stub for external call "payment\.capture"; add one under defaults\.given\.stubs in oodlc\/config\.yaml/);
+  assert.ok(obs.failures.includes('effect payment.capture {"amount_cents":6200}: expected 1, but the call failed: no stub for external call "payment.capture"'), obs.failures.join('\n'));
+  assert.ok(!obs.failures.some((f) => /payment\.capture.*got 0/.test(f)), obs.failures.join('\n'));
+});

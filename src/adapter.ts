@@ -22,6 +22,8 @@
  * - Time, `crypto.randomUUID`, random bytes and `Math.random` are deterministic,
  *   so two runs of the same code give the same output and the outcome diff only
  *   shows real changes. Turn this off with `deterministic: false`.
+ * - HTTP_PROXY, HTTPS_PROXY and ALL_PROXY are hidden, so a corporate proxy can't
+ *   carry a call past the effect rules.
  *
  * `setup(ctx)` runs once per simulated run, before the first request: point
  * module-level stores (a repository, a cache) at `ctx.state` there.
@@ -293,6 +295,8 @@ const stubServer = http.createServer((req, res) => {
 });
 
 function urlOf(req: http.ClientRequest, options: { port?: number | string | null; defaultPort?: number }, agent: http.Agent): URL {
+  // A client sending through a proxy addresses the proxy and puts the real URL in the request line.
+  if (/^https?:\/\//i.test(req.path)) return new URL(req.path);
   const host = req.host.includes(':') && !req.host.startsWith('[') ? `[${req.host}]` : req.host;
   const port = options.port ?? (agent as http.Agent & { defaultPort?: number }).defaultPort ?? options.defaultPort;
   return new URL(`${req.protocol}//${host}${port ? `:${port}` : ''}${req.path}`);
@@ -316,6 +320,25 @@ function interceptHttp(kindOf: (url: URL, method: string) => string | undefined,
   };
   return () => {
     proto.addRequest = original;
+  };
+}
+
+// ── Proxies ─────────────────────────────────────────────────────────────────
+
+/** The variables axios, got, request and Node itself read to send traffic through a proxy. */
+const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'];
+
+/**
+ * Hides the proxy variables until the returned function is called. With
+ * HTTPS_PROXY set, axios and friends address the proxy instead of the API, so
+ * no effect rule would match and the seal would report the proxy, not the API.
+ * Nothing in a simulated run should reach a proxy anyway.
+ */
+function bypassProxies(): () => void {
+  const saved = PROXY_VARS.filter((k) => k in process.env).map((k) => [k, process.env[k]] as const);
+  for (const [k] of saved) delete process.env[k];
+  return () => {
+    for (const [k, v] of saved) process.env[k] = v;
   };
 }
 
@@ -432,11 +455,13 @@ export function httpApp(target: HttpTarget | Promise<HttpTarget>, options: HttpA
           (url, method) => ruleFor(url, method)?.kind,
           async (kind, url, text) => stubOf(await ctx.effects.call(kind, payloadOf(url, text))),
         );
+        const direct = bypassProxies();
         const thaw = deterministic ? freeze(ctx, clock) : () => {};
         try {
           return await dispatch(req);
         } finally {
           thaw();
+          direct();
           release();
           globalThis.fetch = outer;
         }

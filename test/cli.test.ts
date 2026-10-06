@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -152,6 +152,74 @@ test('init on an existing service wraps it in an adapter instead of writing a st
   assert.match(text.stderr, /Guard it, e\.g\. if \(import\.meta\.main\) app\.listen\(port\)/);
 });
 
+/**
+ * The same service split the common way: src/server.ts only starts it, src/app.ts builds it.
+ * Installed, so the app loads: @oodlc/oodle and express resolve from node_modules.
+ */
+function splitService(): string {
+  const dir = existingService();
+  const server = join(dir, 'src', 'server.ts');
+  writeFileSync(join(dir, 'src', 'app.ts'), readFileSync(server, 'utf8').replace(/^app\.listen.*$/m, ''));
+  writeFileSync(server, "import { app } from './app.js';\napp.listen(Number(process.env.PORT ?? 3000));\n");
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ type: 'module', dependencies: { express: '^5', stripe: '^18' }, scripts: { start: 'node src/server.ts' } }));
+  mkdirSync(join(dir, 'node_modules', '@oodlc'), { recursive: true });
+  symlinkSync(ROOT, join(dir, 'node_modules', '@oodlc', 'oodle'));
+  symlinkSync(join(ROOT, 'node_modules', 'express'), join(dir, 'node_modules', 'express'));
+  return dir;
+}
+
+test('init follows listen() to the module that builds the app, names its outbound calls, and stubs each one', () => {
+  const dir = splitService();
+  const made = json(oodle(['init', dir, '--json']).stdout);
+  assert.deepEqual(made.service, { entry: 'src/app.ts', framework: 'express', exportName: 'app', listensOnImport: false });
+  assert.deepEqual(made.effects.map((c: any) => [c.host, c.kind]), [['api.sendgrid.com', 'sendgrid.request'], ['api.stripe.com', 'stripe.request']]);
+  assert.deepEqual(made.effects[1].found, ['package.json (stripe)', 'src/payments.ts']);
+  const adapter = readFileSync(join(dir, 'oodle.app.ts'), 'utf8');
+  assert.match(adapter, /import \{ app \} from '\.\/src\/app\.ts';/);
+  assert.match(adapter, /'api\.stripe\.com': 'stripe\.request', +\/\/ package\.json \(stripe\), src\/payments\.ts/);
+  assert.doesNotMatch(adapter, /calls listen\(\)/);
+  const config = readFileSync(join(dir, 'oodlc', 'config.yaml'), 'utf8');
+  assert.match(config, /stubs:\n {6}sendgrid\.request: \{ result: \{\} \}\n {6}stripe\.request: \{ result: \{\} \}\n/);
+});
+
+test('init writes a first catalog: a proposed outcome for each route nothing describes', () => {
+  const dir = splitService();
+  const made = oodle(['init', dir]);
+  assert.equal(made.code, 0, made.stderr);
+  assert.match(made.stdout, /\+ outcome +post-orders\n/);
+  assert.match(made.stderr, /delete its status: proposed line/);
+  const proposed = readFileSync(join(dir, 'oodlc', 'proposed.yaml'), 'utf8');
+  assert.match(proposed, /- id: post-orders\n {4}intent: service-available\n {4}statement: "TODO: say what a caller can count on\. Observed: POST \/orders answered 400"/);
+  assert.match(proposed, /expect:\n {6}status: 400\n {6}body:\n {8}error: empty_cart\n {4}status: proposed/);
+  // /health already has the starter outcome, so nothing is proposed for it.
+  assert.doesNotMatch(proposed, /get-health/);
+  const run = json(oodle(['run', dir, '--json']).stdout);
+  assert.equal(run.ok, true);
+  assert.equal(run.summary.proposed, 2);
+  assert.equal(run.summary.unknown_routes, 0);
+  // Run again later, it finds nothing new to propose.
+  const again = json(oodle(['propose', '--routes', dir, '--json']).stdout);
+  assert.deepEqual(again.added, []);
+});
+
+test('init on a service that listens on import writes no proposals, and says how to get them later', () => {
+  const made = oodle(['init', existingService()]);
+  assert.match(made.stderr, /Couldn't probe the routes yet \(src\/server\.ts calls listen\(\) on import\)\. Once it loads, draft an outcome for each: oodle propose --routes/);
+});
+
+test('doctor flags an effect named in the app module with no stub, without running it', () => {
+  const dir = splitService();
+  oodle(['init', dir]);
+  const config = join(dir, 'oodlc', 'config.yaml');
+  writeFileSync(config, readFileSync(config, 'utf8').replace('      stripe.request: { result: {} }\n', ''));
+  const r = json(oodle(['doctor', dir, '--json']).stdout);
+  const stubs = r.checks.find((c: any) => c.name === 'stubs');
+  assert.equal(stubs.status, 'fail');
+  assert.equal(stubs.detail, 'no stub for stripe.request, named in oodle.app.ts');
+  assert.match(stubs.hint, /stripe\.request: \{ result: \{\} \}/);
+  assert.equal(r.ok, false);
+});
+
 test('init --ci writes the GitHub workflow at the repository root, pointing at the project', () => {
   const repo = mkdtempSync(join(tmpdir(), 'oodle-ci-'));
   spawnSync('git', ['init', '-q'], { cwd: repo });
@@ -161,6 +229,18 @@ test('init --ci writes the GitHub workflow at the repository root, pointing at t
   assert.match(wf, /pull_request_review:\n\s+types: \[submitted\]/);
   assert.match(wf, /uses: oodlc\/oodle@v0\n\s+with:\n\s+project: services\/api/);
   assert.match(wf, /\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
+});
+
+test('init --ci on an existing project adds only the workflow, leaving the catalog alone', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'oodle-ci-later-'));
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  oodle(['init', repo]);
+  const config = join(repo, 'oodlc', 'config.yaml');
+  writeFileSync(config, `${readFileSync(config, 'utf8')}# mine\n`);
+  const made = json(oodle(['init', repo, '--ci', '--json']).stdout);
+  assert.deepEqual([made.created, made.workflowOnly], [['.github/workflows/oodle.yml'], true]);
+  assert.match(readFileSync(config, 'utf8'), /# mine\n$/);
+  assert.match(oodle(['init', repo, '--ci']).stdout, /Workflow already there/);
 });
 
 test('init --ci installs with the package manager the repository locks with', () => {

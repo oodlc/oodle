@@ -77,7 +77,11 @@ export function evaluate(expect: Expect, obs: Observed): string[] {
     const n = obs.effects.filter((r) => r.kind === e.kind && !r.error && effectMatches(r, e.match)).length;
     if (n !== e.count) {
       const what = e.match ? `${e.kind} ${JSON.stringify(e.match)}` : e.kind;
-      failures.push(`effect ${what}: expected ${e.count}, got ${n}`);
+      // A call that was made and failed is not a call that was never made: say why it failed.
+      const failed = obs.effects.filter((r) => r.kind === e.kind && r.error && effectMatches(r, e.match));
+      const reason = failed[0]?.error?.split(';')[0];
+      const calls = failed.length === 1 ? 'the call' : `${failed.length} calls`;
+      failures.push(`effect ${what}: expected ${e.count}, ${!failed.length ? `got ${n}` : n ? `got ${n} (${failed.length} more failed: ${reason})` : `but ${calls} failed: ${reason}`}`);
     }
   }
   if (expect.latency_ms_max !== undefined && obs.latency_ms > expect.latency_ms_max) {

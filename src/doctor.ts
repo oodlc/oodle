@@ -7,6 +7,7 @@ import { jsonDiff } from './expect.ts';
 import { STARTER_MARK, detectService } from './init.ts';
 import { installOodle, packageManager } from './invocation.ts';
 import { SEALED_ID } from './seal.ts';
+import { declaredEffects } from './scan.ts';
 import type { Observation } from './types.ts';
 import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
@@ -118,6 +119,21 @@ export async function doctor(arg?: string): Promise<Check[]> {
   // A starter app passes every check while protecting none of your code.
   const config = loadConfig(dir);
   const appPath = resolve(dir, config.app);
+
+  // Read, not run: every effect the app module names needs a stub, or the first outcome that reaches it fails.
+  const named = declaredEffects(appPath);
+  if (named.length) {
+    const catalog = loadCatalog(dir, config);
+    const defaults = new Set(Object.keys(config.defaults?.given?.stubs ?? {}));
+    const elsewhere = new Set([...catalog.outcomes, ...catalog.behaviors].map((x) => x.trigger.given).concat(catalog.conditions.map((c) => c.given)).flatMap((g) => Object.keys(g?.stubs ?? {})));
+    const missing = named.filter((k) => !defaults.has(k) && !elsewhere.has(k));
+    const partly = named.filter((k) => !defaults.has(k) && elsewhere.has(k));
+    checks.push(missing.length
+      ? { name: 'stubs', status: 'fail', detail: `no stub for ${missing.join(', ')}, named in ${config.app}`, hint: `Add each under defaults.given.stubs in oodlc/config.yaml, e.g. ${missing[0]}: { result: {} }, with what the API answers.` }
+      : partly.length
+        ? { name: 'stubs', status: 'warn', detail: `${partly.join(', ')} ${partly.length === 1 ? 'is' : 'are'} stubbed only in some outcomes or conditions`, hint: 'Any other run that makes the call fails. Add a default under defaults.given.stubs in oodlc/config.yaml.' }
+        : { name: 'stubs', status: 'ok', detail: `${plural(named.length, 'effect')} in ${config.app}, each stubbed` });
+  }
   if (existsSync(appPath) && readFileSync(appPath, 'utf8').includes(STARTER_MARK)) {
     const service = detectService(dir);
     if (service) {

@@ -71,27 +71,28 @@ Other agents can use the same commands: each hook reads an event as JSON on stdi
     security.no-credentials: { status: 401, body: { error: unauthorized }, effects: [{ kind: payment.capture, count: 0 }] }
 ```
 
-**Measure the catalog with `oodle mutate`.** Oodle plants small bugs (a flipped comparison, a dropped effect, a changed literal) in the files the app imports, and runs the outcomes against each one in its own mirror of the repository:
+**Measure the catalog with `oodle mutate`.** Oodle plants small bugs (a flipped comparison, a dropped effect, a changed literal) in the files the app imports, and runs the outcomes against each one in its own mirror of the repository. Run it once your proposed outcomes hold, with `--files` and `--only` narrowed to the code you touched. The MCP `mutate` tool samples 60 mutants unless asked for more.
 
 ```
 Survived  no outcome or constraint noticed these bugs
-  ✘ src/checkout.ts:9   literal   404 → 405
-  ✘ src/checkout.ts:29  remove-statement  removed customer.orders = (customer.orders ?? 0) + 1;
+  ✘ src/checkout.ts:9   literal          404 → 405
+  ✘ src/checkout.ts:29  remove-statement removed customer.orders = (customer.orders ?? 0) + 1;
 
 What caught them  unique = bugs nothing else catches
-  checkout.payment-confirmed   26 bugs · 8 unique
+  checkout.payment-confirmed               26 bugs · 8 unique
   ...
 ▲ 65% of planted bugs caught  37 caught · 6 only noticed · 2 internal only · 14 survived
 ```
 
-- **Survived**: nothing checks this. Here, no outcome covers an unknown customer, and nothing checks the order count in state. Each survivor is an outcome or condition worth proposing.
-- **Only noticed**: the output changed but no expectation failed, so only a reviewer reading the `oodle check` diff would catch it. Tighten the expectation.
-- **Internal only**: only `internal.*` effects changed. Outcomes allow that on purpose, so these don't count against the score.
-- **Redundant outcomes**: every bug they catch, a smaller set of outcomes also catches.
+What an agent does with each finding:
 
-`--min-score 80` turns the score into a CI gate.
+- **Survived**: nothing checks this code. Here, no outcome sends an unknown customer, and nothing checks the order count. Propose an outcome or a condition that reaches it, with `oodle propose`.
+- **Only noticed**: the output changed but no expectation failed. Tightening the expectation of an approved outcome is a redefinition, which a person approves: the hook asks them. Propose a sharper outcome instead, or say what you'd tighten.
+- **Redundant outcomes**: every bug they catch, a smaller set of outcomes catches too. Removing an approved outcome blocks, so report these rather than deleting them.
 
-**Prune unit tests with `oodle mutate --tests "npm test"`.** Each mutant also runs through your suite (TAP or `node --test` output). Tests whose every caught bug an outcome caught too are listed as **covered by the catalog**: candidates to delete, after a read, since a test can still guard inputs no outcome sends. Tests that caught no planted bug are listed apart, because that is no evidence either way. Tests that catch bugs the catalog misses are worth keeping, or turning into an outcome.
+**Prune unit tests with `oodle mutate --tests "npm test"`.** Each mutant also runs through the test suite. Tests whose every caught bug an outcome caught too are listed as **covered by the catalog**: candidates to delete, but leave the decision to a person, since a test can still guard inputs no outcome sends. Tests that catch bugs the catalog misses are worth keeping, or turning into a proposed outcome.
+
+Every status, flag and the JSON shape are in the [CLI reference](cli.md#mutation-testing).
 
 ## Security
 

@@ -279,6 +279,35 @@ When a change to a promise is intended (a new field in a confirmation, a price t
 
 A maintainer other than the author submits a review containing it, and the check re-runs green, with the change marked approved and by whom. The approval covers that change exactly as it is. If a later push changes it, it needs approving again. A broken outcome is never approvable: fix the code, or redefine the outcome and approve that. See [`docs/cli.md`](docs/cli.md#ci) and [0007](docs/decisions/0007-approvals-in-ci.md).
 
+### Is the catalog any good?
+
+A green run says your outcomes hold. It doesn't say they would notice if the code broke. `oodle mutate` checks that: it plants small bugs in your app, one at a time (a flipped comparison, a changed status code, a dropped effect), and runs the catalog against each one. This is mutation testing, pointed at your outcomes instead of your unit tests.
+
+```
+$ npx oodle mutate examples/checkout
+
+Survived  no outcome or constraint noticed these bugs
+  ✘ src/checkout.ts:9   literal          404 → 405
+  ✘ src/checkout.ts:29  remove-statement removed customer.orders = (customer.orders ?? 0) + 1;
+
+Only noticed  output changed but every expectation passed · `oodle check` would hold it for review
+  ◆ src/checkout.ts:27  string           'ord' → ''  checkout.payment-confirmed
+
+What caught them  unique = bugs nothing else catches
+  checkout.payment-confirmed               26 bugs · 8 unique
+  checkout.payment-declined                21 bugs · 3 unique
+
+▲ 65% of planted bugs caught  37 caught · 6 only noticed · 2 internal only · 14 survived · 3 files in 4.32s
+```
+
+Each section tells you what to do next:
+
+- **Survived**: nothing checks this code. Here, no outcome sends an unknown customer, and nothing checks the order count. Propose an outcome or add a condition that reaches it.
+- **Only noticed**: the response changed, but no expectation failed, so only a reviewer reading the outcome diff would catch it. Tighten the expectation, e.g. `order_id: { matches: "^ord_" }` instead of `{ exists: true }`.
+- **Redundant outcomes**: every bug they catch, a smaller set of outcomes catches too. Merge or drop them.
+
+`oodle mutate --tests "npm test"` runs your unit tests against the same bugs, and lists the tests whose every catch an outcome made too: candidates to delete once you've read them. `--min-score 80` makes the score a CI gate. Every flag, status and the JSON output are in [`docs/cli.md`](docs/cli.md#mutation-testing).
+
 ## The CLI
 
 ```

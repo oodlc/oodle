@@ -126,5 +126,6 @@ Once one outcome holds, add the rest as you need them:
 - **Constraints**: invariants that must hold on every run, like "never charge without an order".
 - **The security pack**: built-in conditions for missing credentials, injection, oversize bodies, mass assignment and replays.
 - **Approvals**: how a reviewer approves an intended change to a promise on a pull request.
+- **Is the catalog any good?** `npx oodle mutate` plants small bugs in your app and lists the ones no outcome caught.
 
 All of it is in the [README](../README.md#day-two).

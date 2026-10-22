@@ -196,7 +196,7 @@ const COMMANDS: Command[] = [
       'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite. Tests whose every caught bug an outcome caught too are listed as covered by the catalog: candidates to delete after a read, since a test can guard inputs no outcome sends. Entry-point boilerplate (listen, process.argv, logging) and @oodlc/oodle/adapter modules are never mutated.',
     args: [PROJECT_ARG],
     flags: [
-      { name: 'files', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Mutate these files, relative to the project, e.g. "src/**/*.ts" (repeatable). Default: the app\'s directory, minus tests' },
+      { name: 'files', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Mutate these files, relative to the project, e.g. "src/**/*.ts" (repeatable). Default: every project file the app imports, minus tests' },
       { name: 'only', short: 'o', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Run only outcomes and behaviors whose id matches (repeatable)' },
       { name: 'max', type: 'string', value: 'n', complete: 'none', description: 'At most this many mutants, sampled evenly across files. Default: 200' },
       { name: 'jobs', short: 'j', type: 'string', value: 'n', complete: 'none', description: 'Mutants to run in parallel. Default: CPU cores minus one' },

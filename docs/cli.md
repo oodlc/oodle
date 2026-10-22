@@ -215,18 +215,72 @@ oodle completion fish > ~/.config/fish/completions/oodle.fish
 
 ## Mutation testing
 
-`oodle mutate` plants small bugs (flipped comparisons and logic, arithmetic, negation, changed literals and strings, removed effects and assignments) in every file the app imports, and for a Next.js app every route file and the middleware (or `--files`). It skips `@oodlc/oodle/adapter` and `/next` modules, which only wire the app in, and entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines. It runs `oodle run --json` against each in a mirror of the repository under `.git/oodle/mutants/`, removed afterwards, with a timeout of five times the baseline run. Each mutant is:
+`oodle mutate` measures how much the catalog would notice if the code broke. It plants one small bug at a time in the app, runs the catalog against each, and reports which bugs an outcome or constraint caught. For why and how to read the result, see [Is the catalog any good?](../README.md#is-the-catalog-any-good) in the guide.
 
-| Status | Meaning |
+**What it mutates.** Every project file the app imports, following relative imports (not path aliases like `@/`), minus tests. For a Next.js app, it also starts from every route file and the middleware. `--files <glob>` (repeatable) picks the files instead. It never mutates `@oodlc/oodle/adapter` and `/next` modules, which only wire the app in, or entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines.
+
+**The bugs.** Each has an operator name in the output:
+
+| Operator | Bug |
 | --- | --- |
-| killed | An outcome failed or a constraint was violated |
-| noticed | Customer-visible output changed but every expectation passed: only `oodle check`'s `changed` would catch it |
-| internal | Only `internal.*` effects changed, which outcomes allow. Not counted |
-| survived | Nothing that is checked changed |
-| timeout | The mutant hung. Counted as caught |
-| invalid | The mutant did not load. Not counted |
+| `equality` | `===` ↔ `!==`, `==` ↔ `!=` |
+| `boundary` | `<` ↔ `<=`, `>` ↔ `>=` |
+| `logic` | `&&` ↔ `\|\|` |
+| `arithmetic` | `+` ↔ `-`, `*` ↔ `/` |
+| `negation` | a `!` removed |
+| `literal` | a number changed (`0` → `1`, `404` → `405`), `true` ↔ `false` |
+| `string` | a string emptied |
+| `remove-effect` | a `ctx.effects.emit` or `call` removed |
+| `remove-statement` | any other statement removed |
 
-The score is caught ÷ (all − invalid − internal). `--max` samples evenly (default 200), `--jobs` sets parallelism, and `--only` limits the outcomes run. With `--tests "<cmd>"`, the command runs in each mirror too, and failing tests are read from TAP (`not ok N - name`) or spec (`✖ name (1ms)`) output. A test whose every caught bug an outcome caught too is **covered by the catalog**: a candidate to delete after a read, since a test can still guard inputs no outcome sends. A test that caught no planted bug is listed apart (`no_kills` in JSON): that's no evidence either way.
+**How it runs.** It runs the catalog once unmutated first, and stops with `not-holding` if it doesn't hold: a red catalog can't measure anything. Then it runs `oodle run --json` against each mutant in its own mirror of the repository under `.git/oodle/mutants/`, removed afterwards, even on Ctrl-C. Each mutant times out at five times the unmutated run. A mutant costs one full catalog run, so the total is roughly mutants × run time ÷ jobs. `examples/checkout` (59 mutants, 3 files) takes about 4 seconds.
+
+Each mutant ends up as one of:
+
+| Status | Meaning | Score |
+| --- | --- | --- |
+| killed | An outcome failed or a constraint was violated | caught |
+| timeout | The mutant hung | caught |
+| noticed | Output changed but every expectation passed. Only a reviewer reading `oodle check`'s diff would catch it. Shown as **Only noticed** | not caught |
+| survived | Nothing that is checked changed | not caught |
+| internal | Only `internal.*` effects changed, which outcomes allow | not counted |
+| invalid | The mutant did not load | not counted |
+
+The score is caught ÷ (all − invalid − internal), as a percentage.
+
+The text output lists the survived and only-noticed mutants, **what caught them** (each outcome and constraint with how many bugs it caught, and how many nothing else caught), and **redundant outcomes**: those whose every catch a smaller set of outcomes makes too, so they may be merged or dropped. `--verbose` also lists the caught and invalid mutants.
+
+| Flag | Default | |
+| --- | --- | --- |
+| `--files <glob>` | the app's imports | Files to mutate, relative to the project. Repeatable |
+| `--only <glob>` | all | Run only the outcomes and behaviors whose id matches. Repeatable |
+| `--max <n>` | `200` | At most this many mutants, sampled evenly across files |
+| `--jobs <n>` | CPU cores − 1 | Mutants run in parallel |
+| `--tests "<cmd>"` | | Also run your test command against each mutant (below) |
+| `--min-score <pct>` | | Exit 1 when the score is below this percentage |
+
+The MCP `mutate` tool samples 60 mutants unless the agent asks for more.
+
+**Unit tests the catalog covers.** With `--tests "<cmd>"`, the command also runs in each mirror, and failing tests are read from TAP (`not ok N - name`) or spec (`✖ name (1ms)`) output, which `node --test` prints. Tests already failing before any mutation are ignored. Each test then falls in one group:
+
+- **Covered by the catalog**: every bug it caught, an outcome caught too. A candidate to delete, after a read: a test can still guard inputs no outcome sends.
+- **Worth keeping**: it catches bugs the catalog misses. Keep it, or write the outcome it implies.
+- **Caught no planted bug**: no evidence either way. Try a larger `--max`, or `--files` for the code it tests.
+
+**In CI.** `--min-score` turns the score into a gate. Run it as its own job, since it takes longer than `oodle check`:
+
+```yaml
+  mutate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx oodle mutate --min-score 80
+```
+
+**JSON.** `--json` prints `score` (0–100), `summary` (a count per status, plus `mutants` run and `generated` before sampling), `mutants` (each with `file`, `line`, `operator`, `from`, `to`, `status`, `killed_by` and `changed`), `killers`, `redundant`, `elapsed_ms`, `min_score` when given, and with `--tests` a `tests` object: `redundant` (covered by the catalog), `no_kills`, `killers` (each with `beyond_catalog`), `catalog_misses` and `baseline_failing`. `ok` is false only below `--min-score`.
 
 ## For agents
 

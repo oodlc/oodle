@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
+version: 0
+# What the words mean here (docs/decisions/0013).
+terms:
+  - id: outcome
+    statement: A promise a person declared about what a trigger returns; when it stops holding, the merge is blocked
+    aka: [promise]
+  - id: behavior
+    statement: What Oodle observed a route doing, recorded so its drift is reported; it never blocks
+    aka: [observed behavior]
+  - id: proposal
+    statement: A catalog entry marked status proposed; it runs and is reported but blocks nothing until a person deletes that line
+    aka: [proposed entry]
+  - id: diff
+    statement: The outcome diff, what a change does to each outcome, behavior, constraint and route between a base and a head
+    aka: [outcome diff]
+  - id: change
+    statement: A file in oodlc/changes/ that says, before the code, why a change is made, what it may reach and which outcomes it amends
+  - id: developer
+    statement: The person adopting Oodle on a service, or writing its catalog, from a terminal
+    aka: [team]
+  - id: reviewer
+    statement: The person who approves or rejects what a pull request does to the catalog; an agent is never one
+    aka: [approver, human]
+  - id: script
+    statement: Anything that runs Oodle without a person watching and acts on its exit code and JSON, such as CI
+    aka: [CI job]

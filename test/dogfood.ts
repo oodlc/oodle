@@ -12,7 +12,7 @@
  * in an outcome diff.
  */
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,9 +25,9 @@ const EXAMPLE = join(ROOT, 'examples', 'checkout');
 /** The child must not inherit the outer run's CI settings unless a condition asks for them. */
 const SCRUB = /^(CI|GITHUB_.*|RUNNER_.*|FORCE_COLOR|NO_COLOR|OODLE_.*|COLUMNS)$/;
 
-function oodle(args: string[], env: Record<string, string>) {
+function oodle(args: string[], env: Record<string, string>, input?: string) {
   const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !SCRUB.test(k)));
-  const res = spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: 120_000, env: { ...clean, ...env } });
+  const res = spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: 120_000, env: { ...clean, ...env }, input });
   return { code: res.status ?? 128, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
 }
 
@@ -70,6 +70,12 @@ function contract(r: { code: number; stdout: string; stderr: string }, jsonMode:
     if (Array.isArray(doc.exit_codes)) body.exit_codes = doc.exit_codes.map((e: any) => e.code).join(' ');
     if (Array.isArray(doc.created)) body.created = doc.created.join(' ');
     if (Array.isArray(doc.checks)) body.checks = Object.fromEntries(doc.checks.map((c: any) => [c.name, c.status]));
+    // discover, explain, changes and hook answers: ids and decisions, never their wording.
+    if (Array.isArray(doc.added)) body.added = doc.added.map((a: any) => a.id).sort().join(' ');
+    if (Array.isArray(doc.undefined_words)) body.undefined_words = doc.undefined_words.join(' ');
+    if (Array.isArray(doc.changes)) body.changes = doc.changes.map((c: any) => c.id).sort().join(' ');
+    if (typeof doc.brief === 'string') body.brief = doc.id;
+    if (doc.hookSpecificOutput) body.decision = doc.hookSpecificOutput.permissionDecision;
     if (typeof doc.blocking === 'number') {
       body.blocking = doc.blocking;
       body.outcomes = byStatus(doc.outcomes);
@@ -106,18 +112,28 @@ type Handler = (body: any) => Record<string, unknown>;
 export default function createApp(ctx: AppContext): OodleApp {
   const tmp = () => mkdtempSync(join(tmpdir(), 'oodle-dogfood-'));
 
-  /** Runs CLI command lines in order and reports the last. $EXAMPLE, $TMP and $MISSING expand to paths. */
+  /**
+   * Runs CLI command lines in order and reports the last. $EXAMPLE, $TMP, $COPY and $MISSING expand to paths.
+   * `copy` puts a copy of examples/checkout at $COPY for commands that write, `files` (paths under $TMP) are
+   * written before the first step, and `stdin` is given to every step.
+   */
   const invoke: Handler = (body) => {
     const dir = tmp();
     try {
       const steps: string[][] = body?.steps ?? [];
-      const expand = (a: string) => a.replace('$EXAMPLE', EXAMPLE).replace('$TMP', dir).replace('$MISSING', join(dir, 'missing'));
+      const expand = (a: string) => a.replaceAll('$EXAMPLE', EXAMPLE).replaceAll('$TMP', dir).replaceAll('$COPY', join(dir, 'checkout')).replaceAll('$MISSING', join(dir, 'missing'));
+      if (body?.copy) cpSync(EXAMPLE, join(dir, 'checkout'), { recursive: true });
+      for (const [file, content] of Object.entries<string>(body?.files ?? {})) {
+        mkdirSync(dirname(join(dir, file)), { recursive: true });
+        writeFileSync(join(dir, file), expand(content));
+      }
+      const stdin = body?.stdin === undefined ? undefined : expand(typeof body.stdin === 'string' ? body.stdin : JSON.stringify(body.stdin));
       let last = { code: 0, stdout: '', stderr: '' };
       let args: string[] = [];
       for (const step of steps) {
         args = step.map(expand);
         ctx.effects.emit('internal.cli', { args: step });
-        last = oodle(args, body?.env ?? {});
+        last = oodle(args, body?.env ?? {}, stdin);
       }
       return contract(last, args.includes('--json'));
     } finally {

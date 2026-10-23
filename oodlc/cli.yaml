@@ -4,6 +4,7 @@ version: 0
 outcomes:
   - id: cli.json-results
     intent: scriptable
+    capability: results.read
     statement: With --json, a run prints one JSON document with a summary, and nothing else
     boundary: external
     trigger:
@@ -22,6 +23,7 @@ outcomes:
 
   - id: cli.json-errors
     intent: scriptable
+    capability: results.read
     statement: With --json, even a failure is one JSON document with a stable error code
     boundary: external
     trigger:
@@ -38,6 +40,7 @@ outcomes:
 
   - id: cli.describes-itself
     intent: scriptable
+    capability: results.read
     statement: help --json lists every command and the documented exit codes
     boundary: external
     trigger:
@@ -53,6 +56,7 @@ outcomes:
 
   - id: cli.typo-suggests-command
     intent: self-serve
+    capability: mistakes.correct
     statement: A mistyped command is answered with the command that was meant
     boundary: customer
     trigger:
@@ -67,6 +71,7 @@ outcomes:
 
   - id: cli.typo-suggests-flag
     intent: self-serve
+    capability: mistakes.correct
     statement: A mistyped flag is answered with the flag that was meant
     boundary: customer
     trigger:
@@ -81,6 +86,7 @@ outcomes:
 
   - id: cli.init-starts-green
     intent: self-serve
+    capability: projects.start
     statement: A project made by oodle init passes oodle run straight away
     boundary: customer
     trigger:
@@ -96,6 +102,7 @@ outcomes:
 
   - id: cli.doctor-checks-setup
     intent: self-serve
+    capability: projects.start
     statement: oodle doctor confirms a working project is ready
     boundary: customer
     trigger:
@@ -112,6 +119,7 @@ outcomes:
 
   - id: cli.answers-fast
     intent: self-serve
+    capability: projects.start
     statement: oodle answers --version without a noticeable wait
     boundary: customer
     trigger:
@@ -126,6 +134,7 @@ outcomes:
 
   - id: cli.propose-only-adds
     intent: agents-propose-humans-approve
+    capability: proposals.add
     statement: oodle propose refuses to touch an outcome that already exists, and says so with a stable error code
     boundary: external
     trigger:
@@ -138,3 +147,147 @@ outcomes:
         exit_code: 2
         ok: false
         error_code: proposal-exists
+
+  # The inventory and the commands around a pull request (docs/decisions/0010 to 0013).
+  - id: cli.explain-maps-system
+    intent: systems-are-explained
+    capability: systems.explain
+    statement: oodle explain counts a project's routes, how many a capability claims and how many capabilities an outcome protects
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[explain, $EXAMPLE, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        summary.routes: 2
+        summary.claimed: 0
+        summary.protected: 0
+
+  - id: cli.discover-proposes-inventory
+    intent: systems-are-explained
+    capability: inventory.draft
+    statement: oodle discover proposes a capability for each group of routes, and a question for what only a person can say
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { copy: true, steps: [[discover, $COPY, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        added: checkout.create health.read unserved.customers-track-orders why.health.read
+
+  - id: cli.discover-adds-only-new
+    intent: systems-are-explained
+    capability: inventory.draft
+    statement: Running oodle discover again adds nothing it already proposed
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { copy: true, steps: [[discover, $COPY, --json], [discover, $COPY, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        added: ''
+
+  - id: cli.undefined-word-named
+    intent: systems-are-explained
+    capability: terms.define
+    statement: Once a catalog defines a term, oodle explain names each word its statements use that no term defines
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body:
+          copy: true
+          files:
+            checkout/oodlc/inventory.yaml: |
+              version: 0
+              actors:
+                - { id: shopper, statement: Someone buying from the store }
+              capabilities:
+                - { id: buy, statement: A shopper can pay for a cart and get one receipt, actor: shopper, surfaces: [POST /checkout] }
+            checkout/oodlc/terms.yaml: |
+              version: 0
+              terms:
+                - { id: receipt, statement: What a shopper is sent once a payment is confirmed }
+          steps: [[explain, $COPY, --json]]
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        undefined_words: shopper
+
+  - id: cli.change-briefs-agent
+    intent: agents-propose-humans-approve
+    capability: changes.agree
+    statement: oodle changes lists a change agreed before its code, and briefs a coding agent on it
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body:
+          copy: true
+          files:
+            checkout/oodlc/changes/show-currency.yaml: |
+              version: 0
+              changes:
+                - id: show-currency
+                  because: Shoppers ask support which currency they were charged in
+                  amends:
+                    - outcome: checkout.payment-confirmed
+                      expect: { status: 200 }
+                  rules_out: [new hosts]
+          steps: [[changes, $COPY, --json], [changes, brief, show-currency, $COPY, --json]]
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        brief: show-currency
+
+  - id: cli.mutate-scores-catalog
+    intent: merges-guard-outcomes
+    capability: catalog.test
+    statement: oodle mutate plants bugs in a copy of the app and reports how many the catalog caught, leaving the project untouched
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body: { steps: [[mutate, $EXAMPLE, --json]] }
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        summary.killed: { gte: 1 }
+
+  - id: cli.hook-asks-before-outcome-edit
+    intent: agents-propose-humans-approve
+    capability: agents.connect
+    statement: When a coding agent edits an approved outcome, the Claude Code hook asks the person first
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body:
+          stdin:
+            cwd: $EXAMPLE
+            tool_name: Edit
+            tool_input: { file_path: $EXAMPLE/oodlc/checkout.yaml, old_string: gets exactly one receipt, new_string: gets a receipt }
+          steps: [[hook, pre-tool-use]]
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        decision: ask

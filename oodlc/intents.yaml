@@ -12,3 +12,5 @@ intents:
     statement: Coding agents can build against outcomes and propose new ones, but only a human can approve or change what blocks a merge.
   - id: self-serve
     statement: A developer who gets Oodle wrong is told how to get it right, and can start from nothing.
+  - id: systems-are-explained
+    statement: A team can see what its system does, for whom and why, and how much of it is protected, before it writes a single promise.

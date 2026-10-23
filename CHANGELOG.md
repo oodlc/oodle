@@ -4,6 +4,14 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## Unreleased: describing the system
+
+- The catalog gains an inventory: `actors`, `capabilities`, `experiences` and `unknowns`. It explains the system and never blocks. A catalog of capabilities alone is valid. See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).
+- **Changes:** an outcome traces to an intent, a confirmed capability, or both. An outcome with neither is still an error, now worded "outcome traces to nothing". Outcomes and behaviors take an optional `capability`.
+- `oodle discover` proposes the capabilities a project's routes add up to, each with its evidence, and open questions for a person. Also an MCP tool. `oodle propose --routes` links the outcomes it drafts to the capability that lists their route.
+- `oodle interview` asks a person what only they can say about each capability (what it does, for whom, why), shows the evidence, and writes the answers in place. Agents get the same interview as the `interview` MCP prompt and record answers with the `answer` tool, which never confirms. Unknowns take an `answer`.
+- `oodle propose` accepts the new sections and marks actors, capabilities and experiences as proposed. The MCP `catalog` tool lists them, the drafter asks for them, and the Claude Code hook asks before a capability is confirmed.
+
 ## 0.8.0 (2026-10-06): schemas at oodlc.com, docs for agents
 
 - The catalog and config schemas are published at `https://oodlc.com/schema/v0/catalog.json` and `https://oodlc.com/schema/v0/config.json`, and their `$id`s say so.

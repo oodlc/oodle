@@ -75,6 +75,17 @@ test('propose: a proposal that breaks traceability is rolled back', () => {
   assert.equal(existsSync(join(dir, 'oodlc', 'proposed.yaml')), false);
 });
 
+test('propose: capabilities, actors and experiences arrive as proposals; unknowns are just questions', () => {
+  const dir = copyExample();
+  const input = 'capabilities:\n  - { id: buy-items, statement: A shopper can pay for a cart, surfaces: [POST /checkout] }\nunknowns:\n  - { id: who-pays, question: Can a guest pay? }\n';
+  const r = oodle(['propose', '-', dir, '--json'], { input });
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).added, [{ section: 'capabilities', id: 'buy-items' }, { section: 'unknowns', id: 'who-pays' }]);
+  const file = readFileSync(join(dir, 'oodlc', 'proposed.yaml'), 'utf8');
+  assert.match(file, /id: buy-items[\s\S]*status: proposed/);
+  assert.doesNotMatch(file.slice(file.indexOf('unknowns:')), /status/);
+});
+
 test('draft: the prompt carries the rules, this catalog and the brief', () => {
   const dir = copyExample();
   writeFileSync(join(dir, 'brief.md'), 'Customers can see the status of their order.');
@@ -100,7 +111,7 @@ test('mcp: lists propose-only tools and answers a run over stdio', () => {
   const replies = new Map(r.stdout.trim().split('\n').map((l) => JSON.parse(l)).map((m) => [m.id, m]));
   assert.equal(replies.get(1).result.protocolVersion, '2025-06-18');
   const tools = replies.get(2).result.tools.map((t: any) => t.name);
-  assert.deepEqual(tools, ['run', 'check', 'lint', 'catalog', 'explain', 'mutate', 'propose']);
+  assert.deepEqual(tools, ['run', 'check', 'lint', 'catalog', 'explain', 'mutate', 'discover', 'answer', 'propose']);
   assert.equal(JSON.parse(replies.get(3).result.content[0].text).ok, true);
   assert.equal(replies.get(4).result.isError, true, 'the propose tool cannot overwrite an outcome');
 });
@@ -115,6 +126,8 @@ test('hook concerns: changing, removing, approving or silencing an approved entr
   assert.deepEqual(catalogConcerns(base, base.replace('status: proposed, ', '')), ['approves the proposed outcome p']);
   assert.deepEqual(catalogConcerns(base, base.replace('statement: P', 'statement: P2')), []);
   assert.deepEqual(catalogConcerns(base, `${base}  - { id: q, status: proposed, statement: Q }\n`), []);
+  const caps = 'capabilities:\n  - { id: c, status: proposed, statement: C }\n';
+  assert.deepEqual(catalogConcerns(caps, caps.replace('status: proposed, ', '')), ['approves the proposed capability c']);
 });
 
 test('hook pre-tool-use: asks before an edit to an approved outcome, stays out of the way otherwise', () => {

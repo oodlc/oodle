@@ -187,6 +187,9 @@ export function renderLint(result: LintResult, catalog: Catalog): string {
     plural(catalog.behaviors.length, 'behavior'),
     plural(catalog.conditions.length, 'condition'),
     plural(catalog.constraints.length, 'constraint'),
+    // The inventory is optional (0010): counted only once a catalog has one.
+    ...(catalog.capabilities.length ? [plural(catalog.capabilities.length, 'capability', 'capabilities')] : []),
+    ...(catalog.experiences.length ? [plural(catalog.experiences.length, 'experience')] : []),
   ].join(` ${sym.dot} `);
   if (lines.length) lines.push('');
   const verdict = result.errors.length

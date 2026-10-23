@@ -43,7 +43,7 @@ test('help: top level, per command, and every spelling of it', () => {
 
 test('help --json describes every command, flag and exit code', () => {
   const spec = json(oodle(['help', '--json']).stdout);
-  assert.deepEqual(spec.commands.map((c: any) => c.name), ['run', 'check', 'diff', 'lint', 'init', 'doctor', 'mutate', 'propose', 'draft', 'mcp', 'hook', 'completion', 'hello', 'help']);
+  assert.deepEqual(spec.commands.map((c: any) => c.name), ['run', 'check', 'diff', 'lint', 'init', 'doctor', 'mutate', 'discover', 'interview', 'propose', 'draft', 'mcp', 'hook', 'completion', 'hello', 'help']);
   assert.ok(spec.commands.find((c: any) => c.name === 'run').flags.some((f: any) => f.name === 'only' && f.multiple));
   assert.deepEqual(spec.exit_codes.map((e: any) => e.code), [0, 1, 2, 130]);
 });
@@ -200,6 +200,21 @@ test('init writes a first catalog: a proposed outcome for each route nothing des
   // Run again later, it finds nothing new to propose.
   const again = json(oodle(['propose', '--routes', dir, '--json']).stdout);
   assert.deepEqual(again.added, []);
+});
+
+test('discover: proposes capabilities and questions, prints one JSON document, and adds nothing the second time', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'oodle-cli-')), 'checkout');
+  cpSync(EXAMPLE, dir, { recursive: true });
+  const first = oodle(['discover', dir, '--json']);
+  assert.equal(first.code, 0, first.stderr);
+  const doc = json(first.stdout);
+  assert.equal(doc.ok, true);
+  assert.deepEqual(doc.capabilities.map((c: any) => c.id).sort(), ['checkout.create', 'health.read']);
+  assert.equal(doc.file, join('oodlc', 'proposed.yaml'));
+  const text = oodle(['discover', dir]);
+  assert.equal(text.code, 0);
+  assert.match(text.stdout, /Nothing new/);
+  assert.match(text.stdout, /checkout\.create\s+checkout\.payment-confirmed/);
 });
 
 test('init on a service that listens on import writes no proposals, and says how to get them later', () => {

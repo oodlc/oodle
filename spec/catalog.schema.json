@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://oodlc.com/schema/v0/catalog.json",
   "title": "OODLC catalog file (v0)",
-  "description": "One YAML file in a catalog directory. Any file may hold any of the five sections.",
+  "description": "One YAML file in a catalog directory. Any file may hold any of the sections: intents, outcomes, behaviors, conditions and constraints, and the inventory (actors, capabilities, experiences, unknowns), which explains the system and never blocks.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -11,7 +11,11 @@
     "outcomes": { "type": "array", "items": { "$ref": "#/definitions/outcome" } },
     "behaviors": { "type": "array", "items": { "$ref": "#/definitions/behavior" } },
     "conditions": { "type": "array", "items": { "$ref": "#/definitions/condition" } },
-    "constraints": { "type": "array", "items": { "$ref": "#/definitions/constraint" } }
+    "constraints": { "type": "array", "items": { "$ref": "#/definitions/constraint" } },
+    "actors": { "type": "array", "items": { "$ref": "#/definitions/actor" } },
+    "capabilities": { "type": "array", "items": { "$ref": "#/definitions/capability" } },
+    "experiences": { "type": "array", "items": { "$ref": "#/definitions/experience" } },
+    "unknowns": { "type": "array", "items": { "$ref": "#/definitions/unknown" } }
   },
   "definitions": {
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 128 },
@@ -107,7 +111,8 @@
       "required": ["id", "statement", "boundary", "trigger", "expect"],
       "properties": {
         "id": { "$ref": "#/definitions/id" },
-        "intent": { "$ref": "#/definitions/id" },
+        "intent": { "description": "The intent this outcome serves. An outcome traces to an intent, a confirmed capability, or both. See docs/decisions/0010.", "$ref": "#/definitions/id" },
+        "capability": { "description": "The capability this outcome protects. See docs/decisions/0010.", "$ref": "#/definitions/id" },
         "statement": { "type": "string", "minLength": 1 },
         "boundary": { "$ref": "#/definitions/boundary" },
         "trigger": { "$ref": "#/definitions/trigger" },
@@ -132,6 +137,7 @@
       "properties": {
         "id": { "$ref": "#/definitions/id" },
         "statement": { "type": "string", "minLength": 1 },
+        "capability": { "description": "The capability this behavior is part of. See docs/decisions/0010.", "$ref": "#/definitions/id" },
         "boundary": { "$ref": "#/definitions/boundary" },
         "trigger": { "$ref": "#/definitions/trigger" },
         "conditions": { "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
@@ -146,6 +152,61 @@
         "id": { "$ref": "#/definitions/id" },
         "statement": { "type": "string" },
         "given": { "$ref": "#/definitions/given" }
+      }
+    },
+    "surface": { "type": "string", "pattern": "^(GET|POST|PUT|PATCH|DELETE) /\\S*$" },
+    "actor": {
+      "description": "Who uses the system. Part of the inventory, which never blocks. See docs/decisions/0010.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/definitions/status" }
+      }
+    },
+    "capability": {
+      "description": "What the system lets an actor do: 'actor can verb object'. Proposed when discovered or drafted; a person confirms it by deleting status. A confirmed capability can justify an outcome. Never blocks. See docs/decisions/0010.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "actor": { "$ref": "#/definitions/id" },
+        "intent": { "$ref": "#/definitions/id" },
+        "surfaces": { "description": "Triggers that reach it, e.g. POST /checkout", "type": "array", "items": { "$ref": "#/definitions/surface" }, "uniqueItems": true },
+        "evidence": { "description": "Where the claim comes from: a file, a probe, a record", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "status": { "$ref": "#/definitions/status" }
+      }
+    },
+    "experience": {
+      "description": "What an actor goes through across capabilities, and when it feels broken. Never blocks. See docs/decisions/0010.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "actor": { "$ref": "#/definitions/id" },
+        "intent": { "$ref": "#/definitions/id" },
+        "steps": { "description": "Capability ids, in the order the actor meets them", "type": "array", "items": { "$ref": "#/definitions/id" } },
+        "feels_broken_when": { "description": "Failures the actor would notice. Each is a candidate condition or constraint.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "status": { "$ref": "#/definitions/status" }
+      }
+    },
+    "unknown": {
+      "description": "A question the system can't answer about itself, and who can. See docs/decisions/0010.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "question": { "type": "string", "minLength": 1 },
+        "ask": { "description": "The role that can answer it, e.g. product owner", "type": "string", "minLength": 1 },
+        "about": { "description": "Ids of the entries it is about", "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
+        "answer": { "description": "What a person said. An answered question is no longer open.", "type": "string", "minLength": 1 }
       }
     },
     "constraint": {

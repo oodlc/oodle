@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { CatalogError, FOLDER, configFile, isProject, loadCatalog, loadConfig } from './catalog.ts';
+import { createInterface } from 'node:readline';
+import { CatalogError, FOLDER, configFile, emptyCatalog, isProject, loadCatalog, loadConfig, singular, type Section } from './catalog.ts';
 import { lint } from './lint.ts';
 import { runProject } from './runner.ts';
 import { diffRuns, parseApproval, type Approval } from './diff.ts';
@@ -17,6 +18,8 @@ import { doctor } from './doctor.ts';
 import { hasPGlite } from './database.ts';
 import { mutate, type MutateReport } from './mutate.ts';
 import { propose, proposeRoutes } from './propose.ts';
+import { discover } from './discover.ts';
+import { questions, runInterview } from './interview.ts';
 import { draftPrompt } from './draft.ts';
 import { serveMcp } from './mcp.ts';
 import { runHook, HOOKS } from './hooks.ts';
@@ -212,6 +215,36 @@ const COMMANDS: Command[] = [
       ['oodle mutate --min-score 80 --json', 'Gate CI on mutation score'],
     ],
     run: cmdMutate,
+  },
+  {
+    name: 'discover',
+    summary: 'Propose the capabilities your routes add up to, and the questions only a person can answer',
+    description:
+      'Runs the project in the sealed simulation and groups its routes into capabilities by the resource each acts on and what it does to it (POST /orders/:id/refund is orders.refund). Each capability lists its routes and its evidence: the outcomes and behaviors that describe it, the calls and table writes seen, how a probe answered. An intent comes from its approved outcomes when they agree. What the code can\'t say becomes an open question: who a capability is for, and whether an intent nothing serves is still wanted. Everything lands in oodlc/proposed.yaml as a proposal that never blocks; confirm a capability by giving it a real statement and deleting its status line. Routes a capability already lists are left alone, so running it again only adds what is new. See docs/decisions/0010.',
+    args: [PROJECT_ARG],
+    flags: [],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle discover', 'Propose capabilities and open questions for this project'],
+      ['oodle discover --json', 'The same, plus which outcomes could name their capability'],
+    ],
+    run: cmdDiscover,
+  },
+  {
+    name: 'interview',
+    summary: 'Answer what only a person can say: what each capability does, for whom, and why',
+    description:
+      'Walks you through each capability whose statement is still a TODO or says nothing, showing its evidence: what can someone do there, who are they, and which intent does it serve. Then it offers to confirm the capability, and asks the other open questions. Each answer is written into the catalog as soon as you give it, keeping comments and layout; enter skips, q stops. Without a terminal, or with --json, it lists the questions and writes nothing. --ask reads answers line by line from stdin instead, and never confirms: confirming needs someone there. Agents use the `interview` MCP prompt and the `answer` tool. See docs/decisions/0010.',
+    args: [PROJECT_ARG],
+    flags: [
+      { name: 'ask', type: 'boolean', description: 'Read answers from stdin even when it is not a terminal; never confirms' },
+    ],
+    formats: ['text', 'json'],
+    examples: [
+      ['oodle discover && oodle interview', 'Draft the capabilities, then say what they are'],
+      ['oodle interview --json', 'The questions still waiting, for a script or an agent'],
+    ],
+    run: cmdInterview,
   },
   {
     name: 'propose',
@@ -642,10 +675,83 @@ async function cmdPropose(ctx: Ctx): Promise<number> {
   const result = propose(dir, readInput(ctx.args[0], 'Proposal'));
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
   heading('propose', dir);
-  for (const a of result.added) console.log(`  ${o.green('+')} ${a.section.slice(0, -1).padEnd(10)} ${a.id}`);
+  for (const a of result.added) console.log(`  ${o.green('+')} ${singular(a.section as Section).padEnd(10)} ${a.id}`);
   console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(result.added.length, 'entry', 'entries')} in ${result.file} · reported, not blocking`)}`);
   await say('curious', 'Proposals noted. A human gets the final say.');
   hints(approvalHints(result.file));
+  return EXIT.ok;
+}
+
+async function cmdDiscover(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0], 'discover');
+  const spin = ctx.format === 'text' ? spinner('Running and probing every route') : null;
+  const result = await discover(dir).finally(() => spin?.stop());
+  if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+  heading('discover', dir);
+  const width = Math.max(0, ...result.capabilities.map((c) => c.id.length), ...result.unknowns.map((u) => u.id.length), ...result.links.map((l) => l.capability.length));
+  for (const c of result.capabilities) console.log(`  ${o.green('+')} ${'capability'.padEnd(10)} ${c.id.padEnd(width)}  ${o.dim([c.surfaces!.join(', '), c.intent].filter(Boolean).join(` ${sym.dot} `))}`);
+  for (const u of result.unknowns) console.log(`  ${o.yellow('?')} ${'question'.padEnd(10)} ${u.id.padEnd(width)}  ${o.dim(u.question)}`);
+  const byCapability = new Map<string, string[]>();
+  for (const l of result.links) byCapability.set(l.capability, [...(byCapability.get(l.capability) ?? []), l.id]);
+  if (byCapability.size) {
+    console.log(`\n  ${o.bold('Could name their capability')}  ${o.dim('add capability: <id> to each; it changes no promise')}`);
+    for (const [cap, ids] of byCapability) console.log(`    ${cap.padEnd(width)}  ${o.dim(ids.join(', '))}`);
+  }
+  if (result.added.length) {
+    console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(result.added.length, 'entry', 'entries')} in ${result.file} · reported, not blocking`)}`);
+    await say('curious', 'Here is what your system seems to do. You know who it is for.');
+  } else {
+    console.log(`\n${o.green(o.bold(`${sym.ok} Nothing new`))}  ${o.dim(`every route is part of a capability${result.known.length ? ` (${plural(result.known.length, 'route')})` : ''}`)}`);
+    await say('happy', 'Every route belongs to a capability.');
+  }
+  const next: string[] = [];
+  if (result.capabilities.length) next.push(`Say what each capability does as "<actor> can <verb> <object>", then confirm it by deleting its ${e.cyan('status: proposed')} line in ${result.file}`);
+  if (result.unknowns.length) next.push(`Answer the open questions in ${result.file}, then delete them: ${e.cyan('oodle lint')} lists them`);
+  if (result.undescribed) next.push(`Propose outcomes for the ${plural(result.undescribed, 'route')} nothing describes, linked to their capability: ${e.cyan('oodle propose --routes')}`);
+  hints(next);
+  return EXIT.ok;
+}
+
+const QUESTION_TAG = { statement: 'say', why: 'why', confirm: 'confirm', open: 'question' } as const;
+
+async function cmdInterview(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0], 'interview');
+  const queue = questions(loadCatalog(dir, loadConfig(dir)));
+  if (ctx.format === 'json') return printJson({ ok: true, questions: queue }), EXIT.ok;
+  heading('interview', dir);
+  const interactive = !!process.stdin.isTTY || !!ctx.flags.ask;
+  if (!queue.length) {
+    console.log(`${o.green(o.bold(`${sym.ok} Nothing to ask`))}  ${o.dim('every capability says what it does, and no question is open')}`);
+    await say('happy', 'Your catalog speaks for itself.');
+    hints([`Draft capabilities for routes no capability lists: ${e.cyan('oodle discover')}`]);
+    return EXIT.ok;
+  }
+  if (!interactive) {
+    const width = Math.max(...queue.map((q) => q.target.length));
+    for (const q of queue) console.log(`  ${o.yellow('?')} ${QUESTION_TAG[q.kind].padEnd(8)} ${q.target.padEnd(width)}  ${o.dim(q.ask)}`);
+    console.log(`\n${o.bold(plural(queue.length, 'question'))}  ${o.dim('nothing written')}`);
+    hints([`Answer them in a terminal: ${e.cyan('oodle interview')}`, `Or let an agent ask you, with the ${e.cyan('interview')} MCP prompt`]);
+    return EXIT.ok;
+  }
+  const rl = createInterface({ input: process.stdin, terminal: false });
+  const lines = rl[Symbol.asyncIterator]();
+  const io = {
+    async ask(prompt: string) {
+      process.stderr.write(`\n${prompt}`);
+      const next = await lines.next();
+      return next.done ? null : String(next.value);
+    },
+    say: (line: string) => process.stderr.write(`${line}\n`),
+  };
+  const summary = await runInterview(dir, io, { canConfirm: !!process.stdin.isTTY }).finally(() => rl.close());
+  console.log('');
+  for (const c of summary.changed) console.log(`  ${o.green('✎')} ${c}`);
+  console.log(`\n${o.green(o.bold(`${sym.ok} ${plural(summary.changed.length, 'answer')} written`))}  ${o.dim(summary.remaining ? `${plural(summary.remaining, 'question')} still waiting` : 'nothing left to ask')}`);
+  if (summary.changed.length) await say('happy', 'Thank you. That is the part only you could say.');
+  hints([
+    ...(summary.remaining ? [`Pick up where you left off: ${e.cyan('oodle interview')}`] : []),
+    `Propose outcomes that protect what you described: ${e.cyan('oodle propose --routes')}`,
+  ]);
   return EXIT.ok;
 }
 
@@ -655,7 +761,7 @@ function approvalHints(file: string): string[] {
 
 /** The proposals a probe wrote, and the routes it couldn't propose anything for. */
 function printProposals(added: { section: string; id: string }[], file: string, skipped: string[]): void {
-  for (const a of added) console.log(`  ${o.green('+')} ${a.section.slice(0, -1).padEnd(10)} ${a.id}`);
+  for (const a of added) console.log(`  ${o.green('+')} ${singular(a.section as Section).padEnd(10)} ${a.id}`);
   for (const s of skipped) console.log(`  ${o.yellow(sym.warn)} ${s}`);
   if (added.length) console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(added.length, 'entry', 'entries')} in ${file} · reported, not blocking`)}`);
 }
@@ -752,7 +858,7 @@ function emptyRun(head: string): RunResult {
   return {
     projectDir: head,
     config: { app: '', catalog: FOLDER },
-    catalog: { intents: [], outcomes: [], behaviors: [], conditions: [], constraints: [], sources: {} },
+    catalog: emptyCatalog(),
     lint: { errors: [], warnings: [] },
     routes: [],
     observations: [],

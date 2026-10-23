@@ -29,7 +29,7 @@ What it does:
 | **SessionStart** hook (`oodle hook session-start`) | Tells the agent the catalog's size and the rules: build against outcomes, propose new ones, never edit approved ones, external calls only through `ctx.effects`. |
 | **PreToolUse** hook (`oodle hook pre-tool-use`) | Before an `Edit`, `MultiEdit` or `Write` to a catalog file, works out what the edit does to approved entries. Changing, removing, approving (deleting `status: proposed`) or silencing (adding it) an outcome, constraint or intent **asks you first**, and so do changes to `sealed`, `probe`, `app` or `database` in `config.yaml`. Shell commands that rewrite `oodlc/*.yaml` ask too. Set `OODLE_HOOK_STRICT=1` to refuse instead of asking. |
 | **Stop** hook (`oodle hook stop`) | Runs `oodle check` (or `oodle run` outside git). If an outcome the agent can fix is broken or failing, a constraint is violated, the catalog doesn't lint, or the app doesn't load, it **sends the agent back to work** with the findings and a reminder not to weaken outcomes. Things only you can approve (changed, redefined or removed outcomes, constraint changes) are shown to **you** instead. After 3 blocked attempts in a row it lets the agent stop and tells you why. |
-| **MCP server** (`oodle mcp`) | Tools: `run`, `check`, `lint`, `catalog`, `explain`, `mutate`, `propose`, plus a `draft` prompt. No tool edits or removes an approved entry. |
+| **MCP server** (`oodle mcp`) | Tools: `run`, `check`, `lint`, `catalog`, `explain`, `mutate`, `discover`, `answer`, `propose`, plus `draft` and `interview` prompts. No tool edits or removes an approved entry, and none confirms a capability. |
 | **Skill** (`oodle`) | How to work against a catalog: the loop, writing fewer and better tests, security, and what never to do. |
 
 Without the plugin, wire the same pieces by hand:
@@ -54,7 +54,7 @@ Other agents can use the same commands: each hook reads an event as JSON on stdi
 ## The loop
 
 1. **Read** the catalog (`catalog` tool, or `oodlc/*.yaml`).
-2. **Propose** the outcomes a feature promises before building it: `oodle propose draft.yaml`, or the `propose` tool. From a brief: `oodle draft brief.md | claude -p | oodle propose -`.
+2. **Propose** the outcomes a feature promises before building it: `oodle propose draft.yaml`, or the `propose` tool. A new capability is proposed the same way, and its outcomes name it with `capability:`. On a service with no inventory yet, start with `oodle discover` (or the `discover` tool), then interview the person with the `interview` prompt: offer drafts read from the code, record their answers with the `answer` tool, and leave confirming to them. See [0010](decisions/0010-capabilities-and-the-inventory.md). From a brief: `oodle draft brief.md | claude -p | oodle propose -`.
 3. **Iterate** with `oodle run --only "<glob>" --json` until the proposals hold. `explain <id>` shows what the app returned and emitted under each condition.
 4. **Check** with `oodle check --json` and follow it. The Stop hook does this anyway.
 5. **Hand over** a PR with the outcome diff. You approve the proposals by deleting their `status: proposed` lines.

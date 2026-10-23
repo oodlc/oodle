@@ -4,7 +4,7 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
-## Unreleased: describing the system
+## 0.9.0 (2026-10-23): describing the system
 
 - The catalog gains an inventory: `actors`, `capabilities`, `experiences` and `unknowns`. It explains the system and never blocks. A catalog of capabilities alone is valid. See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).
 - **Changes:** an outcome traces to an intent, a confirmed capability, or both. An outcome with neither is still an error, now worded "outcome traces to nothing". Outcomes and behaviors take an optional `capability`.

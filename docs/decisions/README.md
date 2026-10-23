@@ -18,6 +18,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0012](0012-changes-merge-intent-before-code.md) | Changes: the intent merges before the code | Proposed |
 | [0013](0013-terms.md) | Terms: one meaning per word | Proposed |
 | [0014](0014-evidence-grades.md) | Evidence is graded observed or inferred, and coverage is not absence | Proposed |
+| [0015](0015-stubs-and-bodies-from-traffic.md) | Stubs and request bodies are proposed from traffic, scrubbed, and accepted by a person | Proposed (design) |
 
 ## When to write one
 

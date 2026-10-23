@@ -304,6 +304,36 @@ test('doctor fails when Oodle runs the starter app instead of the service beside
   assert.equal(json(oodle(['doctor', starter, '--json']).stdout).checks.find((c: any) => c.name === 'starter').status, 'warn');
 });
 
+test('init refuses a stack it cannot run instead of testing a placeholder, and doctor fails one already there', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oodle-worker-'));
+  mkdirSync(join(dir, 'src'));
+  writeFileSync(join(dir, 'src', 'index.ts'), 'export default { async fetch() { return new Response("ok"); } };\n');
+  writeFileSync(join(dir, 'wrangler.jsonc'), '{ "main": "src/index.ts" }\n');
+  const r = oodle(['init', dir, '--json']);
+  assert.equal(r.code, 2);
+  const err = json(r.stdout).error;
+  assert.equal(err.code, 'unsupported-stack');
+  assert.match(err.message, /wrangler\.jsonc: a Cloudflare Worker/);
+  assert.ok(!existsSync(join(dir, 'src', 'app.ts')));
+  assert.ok(!existsSync(join(dir, 'oodlc')));
+
+  // A placeholder an older init wrote beside it: doctor says Not ready, not Ready.
+  const starter = mkdtempSync(join(tmpdir(), 'oodle-starter-'));
+  oodle(['init', starter]);
+  cpSync(join(starter, 'oodlc'), join(dir, 'oodlc'), { recursive: true });
+  cpSync(join(starter, 'src', 'app.ts'), join(dir, 'src', 'app.ts'));
+  const doc = json(oodle(['doctor', dir, '--json']).stdout);
+  assert.equal(doc.ok, false);
+  assert.match(doc.checks.find((c: any) => c.name === 'app').detail, /not a Cloudflare Worker \(wrangler\.jsonc\)/);
+
+  // Code in src/ with no server Oodle recognises is refused too; --app is the way through.
+  const lib = mkdtempSync(join(tmpdir(), 'oodle-lib-'));
+  mkdirSync(join(lib, 'src'));
+  writeFileSync(join(lib, 'src', 'handler.ts'), 'export const handler = () => 1;\n');
+  assert.match(json(oodle(['init', lib, '--json']).stdout).error.message, /src\/: code with no Express/);
+  assert.equal(oodle(['init', lib, '--app', 'oodle.app.ts']).code, 0);
+});
+
 test('doctor warns when nothing is declared, and when output differs between identical runs', () => {
   const dir = join(mkdtempSync(join(tmpdir(), 'oodle-')), 'checkout');
   cpSync(EXAMPLE, dir, { recursive: true });

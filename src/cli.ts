@@ -201,7 +201,7 @@ const COMMANDS: Command[] = [
     name: 'mutate',
     summary: 'Plant small bugs in the app and see which ones the catalog catches',
     description:
-      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that catch nothing a smaller set does not are listed as redundant. With --tests, each bug also runs through your test suite. Tests whose every caught bug an outcome caught too are listed as covered by the catalog: candidates to delete after a read, since a test can guard inputs no outcome sends. Entry-point boilerplate (listen, process.argv, logging) and @oodlc/oodle/adapter modules are never mutated.',
+      'Makes small, plausible bugs in the app (a flipped comparison, a dropped effect, a changed literal), runs every outcome against each one in its own sealed simulation, and reports which bugs an outcome or constraint catches. A bug nothing catches points at an outcome that is too loose or a missing condition. Outcomes that caught nothing the others missed, in this sample, are listed as overlapping: a reason to read them, not to drop them. With --tests, each bug also runs through your test suite. Tests whose every caught bug an outcome caught too are listed as covered by the catalog: candidates to delete after a read, since a test can guard inputs no outcome sends. Entry-point boilerplate (listen, process.argv, logging) and @oodlc/oodle/adapter modules are never mutated.',
     args: [PROJECT_ARG],
     flags: [
       { name: 'files', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Mutate these files, relative to the project, e.g. "src/**/*.ts" (repeatable). Default: every project file the app imports, minus tests' },
@@ -703,7 +703,7 @@ async function cmdMutate(ctx: Ctx): Promise<number> {
   const next: string[] = [];
   const first = report.mutants.find((m) => m.status === 'survived');
   if (first) next.push(`Tighten the outcome that runs through ${e.cyan(`${first.file}:${first.line}`)}, or add a condition that reaches it`);
-  if (report.redundant.length) next.push(`Outcomes that catch nothing extra may be merged or dropped: ${report.redundant.slice(0, 3).join(', ')}`);
+  if (report.redundant.length) next.push(`Read before trimming: ${report.redundant.slice(0, 3).join(', ')} caught nothing the others missed in this sample of ${report.summary.mutants} bugs. A bigger sample (--max) may need them, and one that guards security or backs a constraint is worth keeping anyway`);
   if (!ctx.flags.tests) next.push(`Find redundant unit tests: ${e.cyan('oodle mutate --tests "npm test"')}`);
   hints(next);
   return below ? EXIT.blocking : EXIT.ok;
@@ -1214,7 +1214,8 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     ]);
     return EXIT.ok;
   }
-  console.log(`\n${o.green(o.bold(`${sym.ok} Project ready`))}  ${o.dim(display(result.dir))}`);
+  const app = loadConfig(result.dir).app ?? 'src/app.ts';
+  console.log(`\n${o.green(o.bold(`${sym.ok} Starter project ready`))}  ${o.dim(`${app} is a placeholder: outcomes test it until you build your app there`)}`);
   await say('happy', 'A fresh catalog! Tell me what matters.');
   hints([
     `Run it: ${e.cyan(`oodle run${where}`)}`,

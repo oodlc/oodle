@@ -369,8 +369,13 @@ export function renderMutate(r: MutateReport, view: { verbose?: boolean; minScor
     lines.push('');
   }
   if (r.redundant.length) {
-    lines.push(heading('Redundant outcomes', 'every bug they catch, a smaller set catches too'));
-    for (const id of r.redundant) lines.push(`  ${s.dim(sym.dot)} ${id}`);
+    lines.push(heading('Overlapping outcomes', `in this sample of ${plural(r.summary.mutants, 'bug')}, they caught nothing the others missed`));
+    const w = Math.max(...r.redundant.map((id) => id.length));
+    for (const id of r.redundant) {
+      const o = r.overlap?.find((x) => x.id === id);
+      lines.push(`  ${pad(id, w)}  ${s.dim(o?.kills ? `${plural(o.kills, 'bug')}, also caught by ${o.also_caught_by.join(', ')}` : 'caught none of them')}`);
+    }
+    lines.push(`  ${s.dim('A reason to read them, not to drop them: a sample misses bugs, and an outcome that guards security or backs a constraint earns its place.')}`);
     lines.push('');
   }
   if (r.tests) {

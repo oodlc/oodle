@@ -108,6 +108,11 @@ function simulate(given: Given): Sim {
   return { ctx, effects, virtualMs: () => virtual };
 }
 
+/** A readable id for a route: "GET /orders/:id" is get-orders-id, and "GET /" is get-root rather than a bare get. */
+export function routeSlug(method: string, path: string): string {
+  return `${method.toLowerCase()}-${path.replace(/[/:[\]]+/g, '-').replace(/^-+|-+$/g, '') || 'root'}`;
+}
+
 /** The request a run sends: the merged body, fuzzed if asked, and headers with dropped ones removed. */
 export function requestFor(method: string, path: string, given: Given): Request {
   const body = given.fuzz ? fuzzBody(structuredClone(given.body), given.fuzz) : structuredClone(given.body);
@@ -266,7 +271,7 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
       violations.push(...[...checked.violations, ...builtinViolations(escapes, db)].map(label));
       notices.push(...checked.notices.map(label));
     }
-    const slug = `${route.method.toLowerCase()}${route.path.replace(/[/:]+/g, '-').replace(/-+$/, '')}`;
+    const slug = routeSlug(route.method, route.path);
     gaps.push({
       route: `${route.method} ${route.path}`,
       probe,

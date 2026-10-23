@@ -93,6 +93,8 @@ What an agent does with each finding:
 
 **Prune unit tests with `oodle mutate --tests "npm test"`.** Each mutant also runs through the test suite. Tests whose every caught bug an outcome caught too are listed as **covered by the catalog**: candidates to delete, but leave the decision to a person, since a test can still guard inputs no outcome sends. Tests that catch bugs the catalog misses are worth keeping, or turning into a proposed outcome.
 
+Outcomes `mutate` lists as **overlapping** caught nothing the others missed in that sample. They are approved promises, so an agent never removes one: a bigger sample may need it, and one that guards security or backs a constraint is worth keeping when a constraint catches the same bugs.
+
 Every status, flag and the JSON shape are in the [CLI reference](cli.md#mutation-testing).
 
 ## Security

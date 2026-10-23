@@ -252,7 +252,7 @@ Each mutant ends up as one of:
 
 The score is caught ÷ (all − invalid − internal), as a percentage.
 
-The text output lists the survived and only-noticed mutants, **what caught them** (each outcome and constraint with how many bugs it caught, and how many nothing else caught), and **redundant outcomes**: those whose every catch a smaller set of outcomes makes too, so they may be merged or dropped. `--verbose` also lists the caught and invalid mutants.
+The text output lists the survived and only-noticed mutants, **what caught them** (each outcome and constraint with how many bugs it caught, and how many nothing else caught), and **overlapping outcomes**: those that, in this sample, caught nothing a smaller set of outcomes didn't catch too, each with what else caught its bugs. That is a reason to read them, not to drop them: a sample misses bugs, and an outcome that guards security or backs a constraint earns its place even when a constraint catches the same bugs. `--verbose` also lists the caught and invalid mutants.
 
 | Flag | Default | |
 | --- | --- | --- |
@@ -284,7 +284,7 @@ The MCP `mutate` tool samples 60 mutants unless the agent asks for more.
       - run: npx oodle mutate --min-score 80
 ```
 
-**JSON.** `--json` prints `score` (0–100), `summary` (a count per status, plus `mutants` run and `generated` before sampling), `mutants` (each with `file`, `line`, `operator`, `from`, `to`, `status`, `killed_by` and `changed`), `killers`, `redundant`, `elapsed_ms`, `min_score` when given, and with `--tests` a `tests` object: `redundant` (covered by the catalog), `no_kills`, `killers` (each with `beyond_catalog`), `catalog_misses` and `baseline_failing`. `ok` is false only below `--min-score`.
+**JSON.** `--json` prints `score` (0–100), `summary` (a count per status, plus `mutants` run and `generated` before sampling), `mutants` (each with `file`, `line`, `operator`, `from`, `to`, `status`, `killed_by` and `changed`), `killers`, `redundant` (the overlapping outcomes), `overlap` (each with `kills` and `also_caught_by`), `elapsed_ms`, `min_score` when given, and with `--tests` a `tests` object: `redundant` (covered by the catalog), `no_kills`, `killers` (each with `beyond_catalog`), `catalog_misses` and `baseline_failing`. `ok` is false only below `--min-score`.
 
 ## For agents
 

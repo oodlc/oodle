@@ -220,6 +220,37 @@ export function detectService(dir: string): Service | null {
   return null;
 }
 
+/** Files that mark a stack Oodle can't run, and what to call it. */
+const STACKS: [string[], string][] = [
+  [['wrangler.toml', 'wrangler.json', 'wrangler.jsonc'], 'a Cloudflare Worker'],
+  [['deno.json', 'deno.jsonc'], 'a Deno app'],
+  [['pyproject.toml', 'requirements.txt', 'Pipfile'], 'a Python app'],
+  [['go.mod'], 'a Go service'],
+  [['Gemfile'], 'a Ruby app'],
+  [['Cargo.toml'], 'a Rust service'],
+  [['pom.xml', 'build.gradle', 'build.gradle.kts'], 'a JVM service'],
+  [['composer.json'], 'a PHP app'],
+  [['mix.exs'], 'an Elixir app'],
+];
+
+/** Code Oodle found but can't run: a stack it doesn't support, or a src/ with no server it recognises. */
+export interface Stack {
+  /** The file that gave it away, relative to the project. */
+  file: string;
+  what: string;
+}
+
+/** What else is in `dir` when no service is: so init never drops a starter app beside code it can't see. */
+export function detectStack(dir: string): Stack | null {
+  for (const [files, what] of STACKS) {
+    const file = files.find((f) => existsSync(join(dir, f)));
+    if (file) return { file, what };
+  }
+  const src = join(dir, 'src');
+  const code = existsSync(src) && readdirSync(src, { recursive: true }).some((f) => /\.[cm]?[jt]sx?$/.test(String(f)) && !readFileSync(join(src, String(f)), 'utf8').includes(STARTER_MARK));
+  return code ? { file: 'src/', what: 'code with no Express, Fastify, Koa, Hono, Next.js or node:http server Oodle recognises' } : null;
+}
+
 /** What the generated adapter says about the database, instead of the setup(ctx) example. */
 const DB_NOTE = (db: DatabaseFound) => `  // ${db.driver} needs nothing here: \`database\` in oodlc/config.yaml gives the app a real Postgres on
   // ${db.env.join(', ')}, seeded from given.db before each run. setup(ctx) is for other module-level state.
@@ -400,7 +431,14 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
   }
   // An existing service gets an adapter around it, never a starter app beside it.
   const service = opts.app ? null : detectService(dir);
-  const app = opts.app ?? (service ? 'oodle.app.ts' : 'src/app.ts');
+  // A starter app beside code Oodle can't run would pass every check while testing none of it.
+  const stack = opts.app || service ? null : detectStack(dir);
+  if (stack) {
+    throw new OodleError('unsupported-stack', `Found ${stack.file}: ${stack.what}, which Oodle can't run yet`, {
+      hint: `Write an adapter that runs it (see https://oodlc.com/docs/guide#the-app-contract) and point init at it with --app <file>, or explain it from evidence with \`oodle init --inventory\`.`,
+    });
+  }
+  const app =opts.app ?? (service ? 'oodle.app.ts' : 'src/app.ts');
   const hasHealth = !service || (service.framework !== 'next' && /['"`]\/health['"`]/.test(readFileSync(join(dir, service.entry), 'utf8')));
   const calls = service ? scanOutbound(dir) : [];
   const found = service ? scanDatabase(dir) : null;

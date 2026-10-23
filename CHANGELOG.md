@@ -4,6 +4,14 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.16.1 (2026-10-23): no green checks on a placeholder
+
+- **Fix:** `oodle init` in a project it can't run (a `wrangler.toml`/`.jsonc` Cloudflare Worker, Deno, Python, Go, Ruby, Rust, the JVM, PHP, Elixir, or a `src/` with no server it recognises) no longer drops a starter app into `src/` and says "Project ready". It stops with `unsupported-stack`, names the file that gave the stack away, and points at `--app` and `--inventory`. Before, every check went green while testing the placeholder.
+- **Fix:** `oodle doctor` fails with "Not ready" when the starter app is the configured app and such code sits beside it, so a project an older `init` set up this way says so.
+- A fresh `init` says "Starter project ready" and that `src/app.ts` is a placeholder.
+- `oodle mutate` no longer says outcomes "may be merged or dropped". It lists them as **overlapping** in this sample, with what else caught their bugs, and says a sample misses bugs and that an outcome guarding security or backing a constraint earns its place. The JSON adds `overlap` (`id`, `kills`, `also_caught_by`) next to `redundant`, which keeps its meaning.
+- Proposed outcomes for `GET /` are `get-root`, not `get`, and a route that answers an HTML page names its title in the drafted statement.
+
 ## 0.16.0 (2026-10-23): stubs and request bodies from traffic
 
 - **Changes:** `oodlc/config.yaml` takes a `proposed` section. `oodle propose --stubs --from <file>` writes stubs there from the outbound calls in a HAR capture or OTLP trace export that the app's `effects` rules name: the answer seen most, its status, its median latency, and observed evidence. No run reads `proposed`; a person accepts a stub by moving it into `defaults.given.stubs`. Every other status seen becomes a proposed condition. See [0015](docs/decisions/0015-stubs-and-bodies-from-traffic.md).

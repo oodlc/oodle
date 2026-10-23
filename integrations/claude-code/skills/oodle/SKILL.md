@@ -27,6 +27,7 @@ The `oodlc/` folder is the spec. **Outcomes** and **constraints** are approved b
   ```
 - **Measure, don't guess**: `npx --no-install oodle mutate --files "src/checkout.ts" --only "checkout.*"` plants small bugs. A *survived* mutant is a bug no outcome catches: tighten an expectation or add a condition, then propose it. *Only noticed* means a reviewer reading the diff would have to spot it.
 - **Delete what adds nothing**: `npx --no-install oodle mutate --tests "npm test"` lists tests that catch nothing the catalog doesn't already catch (*candidates to delete*), and tests worth keeping (or turning into an outcome). Scaffolding tests you wrote while debugging go before the PR.
+- **Overlapping outcomes stay**: an outcome `mutate` lists as overlapping caught nothing extra in that sample. It is still an approved promise: never remove one; at most mention it to a person.
 
 ## Security
 

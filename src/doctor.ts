@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configFile, loadCatalog, loadConfig, CatalogError } from './catalog.ts';
 import { jsonDiff } from './expect.ts';
-import { STARTER_MARK, detectService } from './init.ts';
+import { STARTER_MARK, detectService, detectStack } from './init.ts';
 import { installOodle, packageManager } from './invocation.ts';
 import { SEALED_ID } from './seal.ts';
 import { declaredEffects, scanDatabase } from './scan.ts';
@@ -177,6 +177,12 @@ export async function doctor(arg?: string): Promise<Check[]> {
     const service = detectService(dir);
     if (service) {
       checks.push({ name: 'app', status: 'fail', detail: `Oodle is running the starter app in ${config.app}, not your service in ${service.entry}`, hint: `Wrap the service instead: delete ${config.app} and oodlc/config.yaml, then run \`oodle init\`. It writes oodle.app.ts around ${service.entry} and keeps your other catalog files.` });
+      return checks;
+    }
+    // Code Oodle can't run sits beside the starter: every check below would test the placeholder, not it.
+    const stack = detectStack(dir);
+    if (stack) {
+      checks.push({ name: 'app', status: 'fail', detail: `Oodle is running the starter app in ${config.app}, not ${stack.what} (${stack.file})`, hint: `Write an adapter that runs your code and point app in oodlc/config.yaml at it, or describe the system without running it: \`oodle init --inventory --force\`.` });
       return checks;
     }
     checks.push({ name: 'starter', status: 'warn', detail: `${config.app} is still the starter app from \`oodle init\``, hint: 'Build your app there, or point app in oodlc/config.yaml at your own.' });

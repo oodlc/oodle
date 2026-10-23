@@ -15,7 +15,7 @@ import { parse, stringify } from 'yaml';
 import { CatalogError, SECTIONS, type Section, loadCatalog, loadConfig, schemaLine, singular, validateCatalogDoc } from './catalog.ts';
 import { lint, saysNothing } from './lint.ts';
 import { OodleError } from './errors.ts';
-import { reaches, runProject } from './runner.ts';
+import { reaches, routeSlug, runProject } from './runner.ts';
 import { capabilityOf } from './explain.ts';
 import { readEvidence, type Evidence } from './evidence.ts';
 import type { Capability, EffectRecord, Gap, RunResult, Trigger } from './types.ts';
@@ -166,7 +166,8 @@ function probeWords(route: string, from?: string): string | undefined {
  * TODO, and names the capability whose confirmation would make it better. Either way it is a proposal.
  */
 export function draftStatement(capability: Capability | undefined, s: Sighting): string {
-  const todo = `TODO: say what a caller can count on. Observed: ${s.route} answered ${s.status}`;
+  const title = typeof s.body === 'string' ? /<title[^>]*>([^<]*)<\/title>/i.exec(s.body)?.[1]?.trim() : undefined;
+  const todo = `TODO: say what a caller can count on. Observed: ${s.route} answered ${s.status}${title ? `, a page titled "${title}"` : ''}`;
   if (!capability) return todo;
   if (capability.status === 'proposed') return `${todo}. Confirm the capability ${capability.id} first, and the draft starts from what it says.`;
   if (saysNothing(capability.statement)) return `${todo}. Say what the capability ${capability.id} does first, and the draft starts from it.`;
@@ -259,7 +260,7 @@ export function capabilityOutcomes(run: RunResult): { fragment: { outcomes: unkn
         skipped.push(s);
         continue;
       }
-      const slug = `${route.split(' ')[0].toLowerCase()}${route.split(' ')[1].replace(/[/:[\]]+/g, '-').replace(/-+$/, '')}`;
+      const slug = routeSlug(route.split(' ')[0], route.split(' ')[1]);
       const id = taken.has(slug) ? `${c.id}.${slug}` : slug;
       if (taken.has(id)) continue;
       taken.add(id);

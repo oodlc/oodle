@@ -440,8 +440,13 @@ export interface MutateReport {
    * capability's outcomes catch, and how many nothing outside that capability catches. Only with capabilities.
    */
   capabilities?: Killer[];
-  /** Outcomes and constraints that ran and caught no mutant at all, or none that a smaller set doesn't catch too. */
+  /**
+   * Outcomes that ran and, in this sample, caught no mutant at all, or none that a smaller set doesn't catch too.
+   * A sample says nothing about the bugs it didn't plant, so this is a reason to read them, never to drop them.
+   */
   redundant: string[];
+  /** For each of those, how many bugs it caught and which outcomes or constraints caught them too. */
+  overlap: { id: string; kills: number; also_caught_by: string[] }[];
   tests?: {
     command: string;
     /** Failing before any mutation; ignored. */
@@ -641,6 +646,10 @@ export async function mutate(projectDir: string, opts: MutateOptions = {}): Prom
       killers: killersList,
       ...(catalog.capabilities.length ? { capabilities: tally(capKills, outside) } : {}),
       redundant,
+      overlap: redundant.map((id) => {
+        const mine = kills.get(id) ?? new Set<number>();
+        return { id, kills: mine.size, also_caught_by: [...kills].filter(([k, s]) => k !== id && [...s].some((m) => mine.has(m))).map(([k]) => k).sort() };
+      }),
       elapsed_ms: Math.round(performance.now() - t0),
     };
 

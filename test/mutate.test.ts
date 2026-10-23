@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -84,6 +84,14 @@ test('cli: oodle mutate scores the catalog and finds which unit tests it makes r
   assert.deepEqual(r.tests.no_kills, []);
   assert.ok(r.tests.killers.find((k: any) => k.id === 'bulk discount').beyond_catalog > 0);
   assert.ok(r.tests.catalog_misses.length > 0);
+
+  // A second outcome that promises the same thing overlaps, and says what else caught its bugs.
+  const catalog = join(dir, 'oodlc', 'catalog.yaml');
+  writeFileSync(catalog, readFileSync(catalog, 'utf8') + readFileSync(catalog, 'utf8').split('outcomes:\n')[1].replace('id: price.single', 'id: price.single-again'));
+  const twice = JSON.parse(spawnSync(process.execPath, [BIN, 'mutate', dir, '--json'], { encoding: 'utf8', timeout: 300_000 }).stdout);
+  const again = twice.overlap.find((o: any) => o.id === 'price.single-again') ?? twice.overlap.find((o: any) => o.id === 'price.single');
+  assert.ok(again.kills > 0);
+  assert.equal(again.also_caught_by.length, 1);
 
   const gated = spawnSync(process.execPath, [BIN, 'mutate', dir, '--json', '--min-score', '100'], { encoding: 'utf8', timeout: 300_000 });
   assert.equal(gated.status, 1);

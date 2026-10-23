@@ -254,6 +254,7 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
         only_noticed: doc.mutants.filter((m: any) => m.status === 'noticed').map((m: any) => ({ at: `${m.file}:${m.line}`, change: m.to ? `${m.from} -> ${m.to}` : `removed: ${m.from}`, changed: m.changed })),
         killers: doc.killers,
         redundant: doc.redundant,
+        overlap: doc.overlap,
       };
     }
     case 'map':

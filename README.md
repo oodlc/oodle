@@ -462,7 +462,7 @@ See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).
 
 ### Systems Oodle can't run
 
-Describing a system needs no runner. For a Python, Go or Java service, or anything Oodle can't load, start a project with no app:
+Describing a system needs no runner. For a Python, Go or Java service, or anything Oodle can't load, start a project with no app. Plain `oodle init` says so when it finds one (`unsupported-stack`), rather than testing a starter app beside it:
 
 ```bash
 npx oodle init --inventory

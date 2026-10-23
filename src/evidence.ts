@@ -5,11 +5,16 @@
  * the requests it names, with the words and counts it carries, and for traffic,
  * the order requests came in. Nothing here runs or replays anything.
  * See docs/decisions/0010.
+ *
+ * Traffic is scrubbed here, as it is read (0015): paths lose their ids and query
+ * strings, headers are never kept, and bodies keep their shape and codes but none
+ * of anyone's data (src/scrub.ts). No raw value leaves this module.
  */
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { parse } from 'yaml';
 import { OodleError } from './errors.ts';
+import { Scrubber, scrubBody } from './scrub.ts';
 
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -35,6 +40,24 @@ export interface Evidence {
   /** For traffic: requests in the order one caller made them (a HAR page, or the whole capture). */
   sequences: Request[][];
   scope: Scope;
+  /** For traffic: every request with what came of it, scrubbed. What stubs and probe bodies are drafted from (0015). */
+  calls: Call[];
+}
+
+/** One request in a capture or trace export, with nothing personal or secret left in it. */
+export interface Call {
+  method: string;
+  host?: string;
+  /** Scrubbed: `/orders/:id`, never `/orders/ord_9`. */
+  path: string;
+  status?: number;
+  /** How long it took, in milliseconds. */
+  ms?: number;
+  /** The request and response bodies, parsed and scrubbed. A HAR may hold them; traces don't. */
+  request?: unknown;
+  response?: unknown;
+  /** A client span: this service calling another. In a HAR, which way a request went depends on where it was recorded. */
+  outbound?: boolean;
 }
 
 /**
@@ -123,7 +146,7 @@ function openapi(doc: any, name: string): Evidence {
   } catch {
     host = undefined;
   }
-  return { kind: 'openapi', name, seen: host ? seen.map((s) => ({ ...s, host })) : seen, sequences: [], scope: { kind: 'openapi', file: name, requests: seen.length, hosts: host ? [host] : [] } };
+  return { kind: 'openapi', name, seen: host ? seen.map((s) => ({ ...s, host })) : seen, sequences: [], scope: { kind: 'openapi', file: name, requests: seen.length, hosts: host ? [host] : [] }, calls: [] };
 }
 
 /** Counts requests by host, method and path, keeping the first-seen order. */
@@ -142,6 +165,8 @@ function har(doc: any, name: string): Evidence {
   const pages = new Map<string, Request[]>();
   const all: Request[] = [];
   const times: number[] = [];
+  const calls: Call[] = [];
+  const scrubber = new Scrubber();
   const entries = [...(doc.log?.entries ?? [])].sort((a: any, b: any) => String(a.startedDateTime ?? '').localeCompare(String(b.startedDateTime ?? '')));
   for (const e of entries) {
     const method = String(e.request?.method ?? '').toUpperCase();
@@ -154,12 +179,16 @@ function har(doc: any, name: string): Evidence {
     }
     const r = { method, path: scrubPath(url.pathname), host: url.host };
     all.push(r);
+    const status = Number(e.response?.status);
+    const request = scrubBody(scrubber, e.request?.postData?.text, e.request?.postData?.mimeType, undefined, e.request?.postData?.params);
+    const response = scrubBody(scrubber, e.response?.content?.text, e.response?.content?.mimeType, e.response?.content?.encoding);
+    calls.push({ ...r, ...(status > 0 ? { status } : {}), ...(Number(e.time) >= 0 ? { ms: Math.round(Number(e.time)) } : {}), ...(request !== undefined ? { request } : {}), ...(response !== undefined ? { response } : {}) });
     times.push(Date.parse(String(e.startedDateTime ?? '')));
     const page = String(e.pageref ?? '');
     pages.set(page, [...(pages.get(page) ?? []), r]);
   }
   const scope: Scope = { kind: 'har', file: name, ...timeWindow(times), requests: all.length, hosts: hostsOf(all.map((r) => r.host)) };
-  return { kind: 'har', name, seen: tally(all), sequences: [...pages.values()], scope };
+  return { kind: 'har', name, seen: tally(all), sequences: [...pages.values()], scope, calls };
 }
 
 /** OTLP JSON: the attribute value of a span, whichever of the old or new HTTP semantic conventions it uses. */
@@ -175,15 +204,35 @@ function otlp(doc: any, name: string): Evidence {
   const requests: Request[] = [];
   const times: number[] = [];
   const hosts: (string | undefined)[] = [];
+  const calls: Call[] = [];
   for (const rs of doc.resourceSpans ?? []) {
     for (const ss of rs.scopeSpans ?? rs.instrumentationLibrarySpans ?? []) {
       for (const span of ss.spans ?? []) {
-        // Server spans only: a client span is this service calling someone else.
-        if (span.kind !== undefined && span.kind !== 2 && span.kind !== 'SPAN_KIND_SERVER') continue;
         const method = (attribute(span, 'http.request.method', 'http.method') ?? '').toUpperCase();
+        const status = Number(attribute(span, 'http.response.status_code', 'http.status_code'));
+        let ms: number | undefined;
+        try {
+          ms = (fromNanos(span.endTimeUnixNano) - fromNanos(span.startTimeUnixNano)) || undefined;
+        } catch {
+          ms = undefined;
+        }
+        const timing = { ...(status > 0 ? { status } : {}), ...(ms !== undefined && ms >= 0 ? { ms } : {}) };
+        // A client span is this service calling someone else: what a stub stands in for (0015). Traces carry no bodies.
+        if (span.kind === 3 || span.kind === 'SPAN_KIND_CLIENT') {
+          let url: URL | undefined;
+          try {
+            url = new URL(String(attribute(span, 'url.full', 'http.url')));
+          } catch {
+            url = undefined;
+          }
+          if (METHODS.has(method) && url) calls.push({ method, host: url.host, path: scrubPath(url.pathname), ...timing, outbound: true });
+          continue;
+        }
+        if (span.kind !== undefined && span.kind !== 2 && span.kind !== 'SPAN_KIND_SERVER') continue;
         const path = attribute(span, 'http.route') ?? attribute(span, 'url.path', 'http.target')?.split('?')[0];
         if (!METHODS.has(method) || !path) continue;
         requests.push({ method, path: scrubPath(template(path)) });
+        calls.push({ method, path: scrubPath(template(path)), ...timing });
         hosts.push(attribute(span, 'server.address', 'net.host.name', 'http.host')?.replace(/:\d+$/, ''));
         try {
           times.push(fromNanos(span.startTimeUnixNano));
@@ -194,7 +243,7 @@ function otlp(doc: any, name: string): Evidence {
     }
   }
   const scope: Scope = { kind: 'otlp', file: name, ...timeWindow(times), requests: requests.length, hosts: hostsOf(hosts) };
-  return { kind: 'otlp', name, seen: tally(requests), sequences: [], scope };
+  return { kind: 'otlp', name, seen: tally(requests), sequences: [], scope, calls };
 }
 
 const NOUN: Record<Evidence['kind'], [one: string, short: string]> = { har: ['HAR capture', 'HAR'], otlp: ['OTLP trace export', 'OTLP traces'], openapi: ['OpenAPI spec', 'OpenAPI'] };

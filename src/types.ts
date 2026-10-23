@@ -249,6 +249,8 @@ export interface Config {
   sealed?: boolean | { allow?: string[] };
   /** A real Postgres for the app, simulated in process. See src/database.ts and docs/decisions/0009. */
   database?: DatabaseConfig;
+  /** Proposals Oodle drafted for this file. No run reads them; a person accepts one by moving it into `defaults`. See docs/decisions/0015. */
+  proposed?: { stubs?: Record<string, Stub & { evidence?: EvidenceItem[] }> };
 }
 
 export interface DatabaseConfig {
@@ -293,6 +295,8 @@ export interface Observation {
 export interface Gap {
   route: string;
   probe: { status: number | null; body: unknown; error?: string; effects?: EffectRecord[] };
+  /** The captured body the probe sent instead of an empty one, and the file it came from (0015). */
+  sent?: { body: unknown; from: string };
   /** Conditions the route was probed under besides the default (config `probe.conditions`). */
   probed_under?: string[];
   /** Constraints breached while probing, prefixed "[condition] " for non-default probes. Blocking, even though nothing describes the route. */

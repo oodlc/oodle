@@ -44,6 +44,7 @@ The `oodlc/` folder is the spec. **Outcomes** and **constraints** are approved b
 ## Never
 
 - Never confirm a capability yourself (deleting its `status: proposed`): a confirmed capability can justify an outcome, so that is a person's call.
+- Never move a stub from `proposed.stubs` into `defaults.given.stubs` in `oodlc/config.yaml`: accepting one changes what every run sees, so the person does it. You may propose stubs from a capture with `propose` and `draft: stubs`.
 - Never write evidence with `grade: observed`. Observed means Oodle saw it happen, and only `oodle discover` writes it. Whatever you propose is graded `inferred`, and the hook asks the person before an edit adds observed evidence. A capability a capture didn't reach is not seen, not unused: don't call it dead.
 - Never edit, remove or loosen an approved outcome, constraint or intent to make something pass. Never add `status: proposed` to an approved entry (it would stop it blocking), and never delete one to approve your own proposal. The pre-tool-use hook asks the person before any of these.
 - Never set `sealed: false`, or add hosts to `sealed.allow`, to get past a violation. Route the call through `ctx.effects`.

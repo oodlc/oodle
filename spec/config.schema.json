@@ -37,6 +37,34 @@
         }
       }
     },
+    "proposed": {
+      "description": "Proposals Oodle drafted from traffic. No run reads them: accept a stub by moving it into defaults.given.stubs, without its evidence. See docs/decisions/0015",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stubs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "result": {},
+              "error": { "type": "string" },
+              "latency_ms": { "type": "number", "minimum": 0 },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["text"],
+                  "properties": { "text": { "type": "string", "minLength": 1 }, "grade": { "enum": ["observed", "inferred"] } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "sealed": {
       "description": "The simulation is sealed by default: real network access from the app violates the built-in oodle.sealed constraint and blocks. false opens it; { allow: [host, host:port] } lets named hosts through. See docs/decisions/0005",
       "oneOf": [

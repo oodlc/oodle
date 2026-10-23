@@ -46,4 +46,7 @@ export interface OodleApp {
   handle(req: Request): Promise<Response>;
 }
 
-export type CreateApp = (ctx: AppContext) => OodleApp;
+export type CreateApp = ((ctx: AppContext) => OodleApp) & {
+  /** Set by the adapter: the effect kind an outbound call to this URL becomes, if any. */
+  effectKindOf?: (url: URL, method: string) => string | undefined;
+};

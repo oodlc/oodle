@@ -141,6 +141,12 @@ export async function doctor(arg?: string): Promise<Check[]> {
         ? { name: 'stubs', status: 'warn', detail: `${partly.join(', ')} ${partly.length === 1 ? 'is' : 'are'} stubbed only in some outcomes or conditions`, hint: 'Any other run that makes the call fails. Add a default under defaults.given.stubs in oodlc/config.yaml.' }
         : { name: 'stubs', status: 'ok', detail: `${plural(named.length, 'effect')} in ${config.app}, each stubbed` });
   }
+  // Stubs proposed from traffic wait for a person; until one is accepted, runs keep the default (0015).
+  const waiting = Object.keys(config.proposed?.stubs ?? {});
+  if (waiting.length) {
+    const placeholders = waiting.filter((k) => JSON.stringify(config.defaults?.given?.stubs?.[k]?.result ?? {}) === '{}');
+    checks.push({ name: 'proposals', status: 'warn', detail: `${plural(waiting.length, 'stub')} proposed from traffic, waiting: ${waiting.join(', ')}${placeholders.length ? ` (${placeholders.join(', ')} would replace a placeholder)` : ''}`, hint: 'Accept one by moving it from proposed.stubs into defaults.given.stubs in oodlc/config.yaml, without its evidence. No run reads it until then.' });
+  }
   // The simulated database on its own, before any run needs it: PGlite loads and the schema applies.
   if (config.database) {
     try {

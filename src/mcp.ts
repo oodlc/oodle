@@ -164,12 +164,13 @@ const TOOLS = [
   },
   {
     name: 'propose',
-    description: 'Add catalog entries as proposals in oodlc/proposed.yaml. Intents, outcomes, constraints, actors, capabilities and experiences are marked status: proposed: they run and are reported but never block until a human approves them. Any evidence you give is graded inferred: only Oodle grades what it saw. Can only add: existing ids are refused. This is the only way to write to the catalog. Instead of yaml, draft: routes proposes an outcome for each route nothing describes, and draft: capabilities one for each surface of each confirmed capability with no outcome, both from what Oodle saw the app do.',
+    description: 'Add catalog entries as proposals in oodlc/proposed.yaml. Intents, outcomes, constraints, actors, capabilities and experiences are marked status: proposed: they run and are reported but never block until a human approves them. Any evidence you give is graded inferred: only Oodle grades what it saw. Can only add: existing ids are refused. This is the only way to write to the catalog. Instead of yaml, draft: routes proposes an outcome for each route nothing describes, and draft: capabilities one for each surface of each confirmed capability with no outcome, both from what Oodle saw the app do. draft: stubs with from proposes stubs from the outbound calls in a capture, under proposed.stubs in oodlc/config.yaml, which no run reads until the person moves one into defaults; with draft: routes, from probes routes with the bodies callers sent. Captures are scrubbed: no secret or personal value reaches a file or this reply.',
     inputSchema: {
       type: 'object',
       properties: {
         yaml: str('A YAML mapping with any of intents, outcomes, behaviors, conditions, constraints, actors, capabilities, experiences, unknowns, in the oodlc catalog format'),
-        draft: { type: 'string', enum: ['routes', 'capabilities'], description: 'Instead of yaml: let Oodle draft outcomes, as `oodle propose --routes` or `--capabilities` would' },
+        draft: { type: 'string', enum: ['routes', 'capabilities', 'stubs'], description: 'Instead of yaml: let Oodle draft, as `oodle propose --routes`, `--capabilities` or `--stubs` would' },
+        from: strs('With draft stubs or routes: HAR captures or OTLP JSON trace exports, absolute or relative to the project'),
       },
     },
   },
@@ -278,8 +279,8 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
       return applyAnswers(projectDir, [answer], { byPerson: false });
     }
     case 'propose':
-      if (args?.draft === 'routes' || args?.draft === 'capabilities') return (await oodleJson(['propose', `--${args.draft}`, projectDir], projectDir)).doc;
-      if (args?.draft !== undefined) throw new OodleError('usage', `draft is routes or capabilities, not "${args.draft}"`);
+      if (['routes', 'capabilities', 'stubs'].includes(args?.draft)) return (await oodleJson(['propose', `--${args.draft}`, projectDir, ...(args?.from ?? []).flatMap((f: string) => ['--from', f])], projectDir)).doc;
+      if (args?.draft !== undefined) throw new OodleError('usage', `draft is routes, capabilities or stubs, not "${args.draft}"`);
       return propose(projectDir, String(args?.yaml ?? ''));
     default:
       throw new OodleError('usage', `Unknown tool "${name}"`);

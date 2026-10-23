@@ -169,6 +169,8 @@ export interface DatabaseFound {
   env: string[];
   /** A client Oodle can't serve in process, because it talks HTTP to a hosted proxy. */
   unsupported?: boolean;
+  /** sqlite: a Worker's D1 database, run in process with node:sqlite (0017). Postgres otherwise. */
+  engine?: 'sqlite';
 }
 
 function hasSql(path: string, depth = 0): boolean {

@@ -31,6 +31,7 @@ The `oodlc/` folder is the spec. **Outcomes** and **constraints** are approved b
 
 ## Security
 
+- In a Cloudflare Worker, bindings are effects: `EMAIL.send`, `QUEUE.send`, `AUTH.fetch`, named `<BINDING>.<method>`. D1 writes are `db.<table>.inserted` and the rest, KV is `given.state.<BINDING>`, and a test secret goes under `env` in `oodle.app.mts`, never a real one.
 - External calls go through `ctx.effects` only. The simulation is sealed: a direct `fetch`, socket or SDK call to the network is a blocking `oodle.sealed` violation.
 - Use the built-in conditions on outcomes that take input: `security.no-credentials`, `security.injection`, `security.oversize`, `security.extra-fields` (mass assignment and `__proto__` pollution), `security.replayed`. Say what should happen under each with `when`.
 - Propose **constraints** for invariants: they hold on every run, including routes nothing describes. For example:

@@ -257,13 +257,15 @@ export interface Config {
    * built-in `oodle.sealed` constraint. `false` opens it; `allow` lists host or host:port pairs. See docs/decisions/0005.
    */
   sealed?: boolean | { allow?: string[] };
-  /** A real Postgres for the app, simulated in process. See src/database.ts and docs/decisions/0009. */
+  /** A real database for the app, simulated in process: Postgres (src/database.ts, docs/decisions/0009) or SQLite (src/sqlite.ts, 0017). */
   database?: DatabaseConfig;
   /** Proposals Oodle drafted for this file. No run reads them; a person accepts one by moving it into `defaults`. See docs/decisions/0015. */
   proposed?: { stubs?: Record<string, Stub & { evidence?: EvidenceItem[] }> };
 }
 
 export interface DatabaseConfig {
+  /** Which database to simulate: Postgres through PGlite (the default), or SQLite through node:sqlite, which a Worker sees as D1. See docs/decisions/0017. */
+  engine?: 'postgres' | 'sqlite';
   /** SQL applied once before the runs: a .sql file, or a folder of migrations applied in name order. Relative to the project root. */
   schema?: string | string[];
   /** Environment variables set to the simulated database's URL. Default DATABASE_URL. */

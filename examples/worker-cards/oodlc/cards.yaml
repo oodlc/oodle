@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
+version: 0
+intents:
+  - id: readers-trust-the-library
+    statement: Readers see only what an editor put live, and sign-ups are welcomed once
+outcomes:
+  - id: signup.one-welcome
+    intent: readers-trust-the-library
+    refs: [B-041]
+    statement: Signing up records the reader and sends exactly one welcome email
+    boundary: customer
+    trigger:
+      http: POST /signup
+      given: { body: { email: ada@example.com } }
+    expect:
+      status: 201
+      effects:
+        - { kind: EMAIL.send, count: 1 }
+        - { kind: EMAIL.send, match: { to: ada@example.com }, count: 1 }
+        - { kind: db.signups.inserted, match: { email: ada@example.com }, count: 1 }
+
+  - id: signup.bots-and-cross-site-send-nothing
+    intent: readers-trust-the-library
+    refs: [B-064]
+    statement: A bot that fills the honeypot, or a post from another site, sends no email and records no one
+    boundary: customer
+    trigger:
+      http: POST /signup
+      given: { body: { email: ada@example.com } }
+    conditions: [honeypot-filled, cross-site]
+    expect:
+      effects:
+        - { kind: EMAIL.send, count: 0 }
+        - { kind: db.signups.inserted, count: 0 }
+    when:
+      cross-site: { status: 403 }
+
+  - id: admin.logged-out-redirected
+    intent: readers-trust-the-library
+    refs: [B-068]
+    statement: A logged-out visitor to /admin is sent to the login page
+    boundary: customer
+    trigger: { http: GET /admin }
+    expect:
+      status: 302
+      headers: { location: /login }
+
+  - id: mcp.needs-the-token
+    intent: readers-trust-the-library
+    refs: [B-072]
+    statement: /mcp answers 404 without a token and 401 with a wrong one
+    boundary: external
+    trigger: { http: POST /mcp }
+    conditions: [wrong-token, right-token]
+    expect: { status: 404 }
+    when:
+      wrong-token: { status: 401 }
+      right-token: { status: 200, body: { ok: true } }
+
+  - id: library.live-cards-only
+    intent: readers-trust-the-library
+    refs: [B-083, B-138]
+    statement: The library lists live cards, never a queued, draft or killed one, with the site footer
+    boundary: customer
+    trigger:
+      http: GET /library
+      given:
+        db:
+          cards:
+            - { id: 1, title: Live one, status: live }
+            - { id: 2, title: Queued one, status: queued }
+            - { id: 3, title: Draft one, status: draft }
+            - { id: 4, title: Killed one, status: killed }
+    expect:
+      status: 200
+      headers: { content-type: { contains: text/html } }
+      text:
+        contains: [Live one, a library of short reads]
+        not_contains: [Queued one, Draft one, Killed one]
+
+  - id: engine.answers-on-its-host
+    intent: readers-trust-the-library
+    statement: The engine host answers for itself, with the site's name
+    boundary: external
+    trigger:
+      http: GET /
+      given: { headers: { host: engine.cards.example } }
+    expect: { status: 200, body: { engine: true, site: Cards } }
+
+  - id: assets.about-page
+    intent: readers-trust-the-library
+    statement: The about page is served from the static assets
+    boundary: customer
+    trigger: { http: GET /about }
+    expect:
+      status: 200
+      text: { contains: library of short reads }
+
+  - id: flags.beta-from-kv
+    intent: readers-trust-the-library
+    statement: The beta flag is read from KV
+    boundary: external
+    trigger:
+      http: GET /flags
+      given: { state: { FLAGS: { beta: 'on' } } }
+    expect: { status: 200, body: { beta: true } }
+
+conditions:
+  - id: honeypot-filled
+    statement: A bot fills in the field people never see
+    given: { body: { email: bot@example.com, website: spam.example } }
+  - id: cross-site
+    statement: The form is posted from another site
+    given: { headers: { origin: https://evil.example } }
+  - id: wrong-token
+    statement: A token as long as the real one, one letter off
+    given: { headers: { authorization: Bearer test-tokem } }
+  - id: right-token
+    given: { headers: { authorization: Bearer test-token } }
+
+constraints:
+  - id: no-unpublished-card-on-a-page
+    statement: No page shows a card that isn't live
+    check: "typeof response.body !== 'string' || !(db.cards ?? []).filter((c) => c.status !== 'live').some((c) => response.body.includes(c.title))"

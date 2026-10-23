@@ -12,7 +12,7 @@ oodle <command> [project] [flags]
 | `oodle check [project]` | Outcome diff of the working tree against a git ref. `--approve id@fingerprint` approves an intended change to a promise |
 | `oodle diff <base> <head>` | Outcome diff between two project checkouts |
 | `oodle lint [project]` | Validate the catalog and its traceability |
-| `oodle init [dir]` | Start a project: an `oodlc/` folder and a starter catalog, plus `oodle.app.ts` around the service already there (or a starter app). For a service, it names the outbound calls it finds under `effects`, stubs each with a placeholder, and proposes an outcome for each route in `oodlc/proposed.yaml`. `--ci` adds the GitHub workflow, `--migrate` moves a v0 project in |
+| `oodle init [dir]` | Start a project: an `oodlc/` folder and a starter catalog, plus `oodle.app.ts` around the service already there (`oodle.app.mts` for a Cloudflare Worker), or a starter app in an empty project. For a service, it names the outbound calls it finds under `effects`, stubs each with a placeholder, and proposes an outcome for each route in `oodlc/proposed.yaml`. In a project it can't run (Python, Go, a `src/` with no server it recognises), it stops with `unsupported-stack` and writes nothing. `--ci` adds the GitHub workflow, `--migrate` moves a v0 project in |
 | `oodle doctor [project]` | Check your environment and project setup: the app is yours, every effect it names has a stub, nothing escapes the simulation, two runs agree |
 | `oodle mutate [project]` | Plant small bugs in the app and see which ones the catalog catches. `--tests <cmd>` finds unit tests the catalog covers |
 | `oodle explain [project]` | The system map: intents, the capabilities that serve them, who they are for, whether their outcomes hold, and the next rung each needs. `--only <glob>` shows capabilities in full, with each piece of evidence graded observed or inferred, and marks a capability nothing observed backs as inferred only; `--format md` writes a page. Never blocks |
@@ -221,7 +221,7 @@ oodle completion fish > ~/.config/fish/completions/oodle.fish
 
 `oodle mutate` measures how much the catalog would notice if the code broke. It plants one small bug at a time in the app, runs the catalog against each, and reports which bugs an outcome or constraint caught. For why and how to read the result, see [Is the catalog any good?](../README.md#is-the-catalog-any-good) in the guide.
 
-**What it mutates.** Every project file the app imports, following relative imports (not path aliases like `@/`), minus tests. For a Next.js app, it also starts from every route file and the middleware. `--files <glob>` (repeatable) picks the files instead. It never mutates `@oodlc/oodle/adapter` and `/next` modules, which only wire the app in, or entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines.
+**What it mutates.** Every project file the app imports, following relative imports (not path aliases like `@/`), minus tests. For a Next.js app, it also starts from every route file and the middleware. `--files <glob>` (repeatable) picks the files instead. It never mutates `@oodlc/oodle/adapter`, `/next` and `/workers` modules, which only wire the app in, or entry-point boilerplate no simulated run reaches: `listen(...)`, `process.argv`, `import.meta.main`, `require.main`, `process.env.PORT` and `console.*` lines.
 
 **The bugs.** Each has an operator name in the output:
 

@@ -305,15 +305,15 @@ test('doctor fails when Oodle runs the starter app instead of the service beside
 });
 
 test('init refuses a stack it cannot run instead of testing a placeholder, and doctor fails one already there', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oodle-worker-'));
+  const dir = mkdtempSync(join(tmpdir(), 'oodle-go-'));
   mkdirSync(join(dir, 'src'));
-  writeFileSync(join(dir, 'src', 'index.ts'), 'export default { async fetch() { return new Response("ok"); } };\n');
-  writeFileSync(join(dir, 'wrangler.jsonc'), '{ "main": "src/index.ts" }\n');
+  writeFileSync(join(dir, 'main.go'), 'package main\n');
+  writeFileSync(join(dir, 'go.mod'), 'module example.com/cards\n');
   const r = oodle(['init', dir, '--json']);
   assert.equal(r.code, 2);
   const err = json(r.stdout).error;
   assert.equal(err.code, 'unsupported-stack');
-  assert.match(err.message, /wrangler\.jsonc: a Cloudflare Worker/);
+  assert.match(err.message, /go\.mod: a Go service/);
   assert.ok(!existsSync(join(dir, 'src', 'app.ts')));
   assert.ok(!existsSync(join(dir, 'oodlc')));
 
@@ -324,7 +324,7 @@ test('init refuses a stack it cannot run instead of testing a placeholder, and d
   cpSync(join(starter, 'src', 'app.ts'), join(dir, 'src', 'app.ts'));
   const doc = json(oodle(['doctor', dir, '--json']).stdout);
   assert.equal(doc.ok, false);
-  assert.match(doc.checks.find((c: any) => c.name === 'app').detail, /not a Cloudflare Worker \(wrangler\.jsonc\)/);
+  assert.match(doc.checks.find((c: any) => c.name === 'app').detail, /not a Go service \(go\.mod\)/);
 
   // Code in src/ with no server Oodle recognises is refused too; --app is the way through.
   const lib = mkdtempSync(join(tmpdir(), 'oodle-lib-'));

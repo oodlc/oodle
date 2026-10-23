@@ -1,6 +1,6 @@
 {
   "name": "@oodlc/oodle",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Oodle, the CLI for OODLC (Open Outcome Delivery Lifecycle). CI that protects declared outcomes and watches observed behavior.",
   "homepage": "https://github.com/oodlc/oodle#readme",
   "repository": {
@@ -26,6 +26,10 @@
     "./next": {
       "types": "./dist/next.d.ts",
       "default": "./dist/next.js"
+    },
+    "./workers": {
+      "types": "./dist/workers.d.ts",
+      "default": "./dist/workers.js"
     },
     "./package.json": "./package.json"
   },
@@ -66,10 +70,14 @@
     "yaml": "^2.9.1"
   },
   "peerDependencies": {
-    "@electric-sql/pglite": ">=0.3.0"
+    "@electric-sql/pglite": ">=0.3.0",
+    "html-rewriter-wasm": ">=0.4.1"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
+      "optional": true
+    },
+    "html-rewriter-wasm": {
       "optional": true
     }
   },
@@ -82,6 +90,7 @@
     "axios": "^1.20.0",
     "express": "^5.2.1",
     "hono": "^4.13.13",
+    "html-rewriter-wasm": "^0.4.1",
     "koa": "^3.2.1",
     "next": "^16.3.8",
     "next15": "npm:next@^15.5.27",

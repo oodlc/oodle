@@ -1,6 +1,6 @@
 # Your first outcome in 5 minutes
 
-You have an HTTP service (Express, Fastify, Koa, Hono, `node:http` or Next.js). By the end of this page, one thing it does is written down, one promise about it is protected, and you know how to change that promise without a fight in code review. If a change breaks it, Oodle blocks the merge.
+You have an HTTP service (Express, Fastify, Koa, Hono, `node:http`, Next.js, or a Cloudflare Worker). By the end of this page, one thing it does is written down, one promise about it is protected, and you know how to change that promise without a fight in code review. If a change breaks it, Oodle blocks the merge.
 
 Three ideas carry the whole page:
 
@@ -35,7 +35,7 @@ On pnpm, yarn or bun, install with that tool (`pnpm add -D @oodlc/oodle`, then `
 
 - **It finds the app.** When `src/server.ts` only calls `app.listen()`, `init` follows the import to the module that builds the app.
 - **It names the outbound calls.** It looks for URLs in your code and SDKs like `stripe` in `package.json`, lists each host under `effects` in `oodle.app.ts`, and gives each one a placeholder stub in `oodlc/config.yaml`. Oodle runs your app in a sealed simulation, so these stubs answer instead of the real APIs.
-- **It finds your database.** If the service uses Postgres (`pg`, `postgres`, Prisma's pg adapter), `init` adds `database:` to `oodlc/config.yaml`, pointed at your migrations. Oodle runs a real Postgres in process for every run, so install it once: `npm i -D @electric-sql/pglite`. See [A real database](../README.md#a-real-database).
+- **It finds your database.** If the service uses Postgres (`pg`, `postgres`, Prisma's pg adapter), `init` adds `database:` to `oodlc/config.yaml`, pointed at your migrations. Oodle runs a real Postgres in process for every run, so install it once: `npm i -D @electric-sql/pglite`. See [A real database](../README.md#a-real-database). A Cloudflare Worker gets `oodle.app.mts` instead, and its D1 migrations become `database: { engine: sqlite }`, with nothing to install on Node 22.13 or later. See [Cloudflare Workers](../README.md#cloudflare-workers).
 - **It drafts outcomes.** It sends a request to each route in the simulation and saves what came back as a proposed outcome in `oodlc/proposed.yaml`. A proposal runs and is reported, but blocks nothing until you approve it.
 
 ## 2. Check the wiring (1 minute)
@@ -53,6 +53,8 @@ Each problem comes with its fix. The usual ones on day one, from `init` or `doct
 | `reaches the real network: api.example.com:443` | Add the host under `effects` in `oodle.app.ts`, then stub that effect. |
 | `reaches the real network: localhost:5432` | That's Postgres: add `database: { schema: db/migrations }` (your migrations folder) to `oodlc/config.yaml`. |
 | `given.db.ordrs: no such table; did you mean orders?` | Fix the table name in `given.db`. Each run starts from the rows it lists. |
+| `Found go.mod: a Go service, which Oodle can't run yet` | Oodle can describe it without running it: `npx oodle init --inventory`, then [describe the system](../README.md#systems-oodle-cant-run). For a Node service `init` didn't recognise, write an adapter and pass `--app`. |
+| `HTMLRewriter needs html-rewriter-wasm` | A Worker rewrites pages. Install the engine Cloudflare runs, compiled to WebAssembly: `npm i -D html-rewriter-wasm`. |
 
 When it ends with `✔ Ready`, Oodle is running your code.
 

@@ -19,9 +19,14 @@ import { OodleError } from './errors.ts';
 import type { Catalog, Unknown } from './types.ts';
 
 export interface Question {
-  /** `statement`: say what it does. `why`: which intent it serves. `confirm`: a person's yes. `open`: any other question. */
-  kind: 'statement' | 'why' | 'confirm' | 'open';
-  /** The capability or unknown it is about. */
+  /**
+   * `statement`: say what it does (or, for an experience, what someone is trying to get done).
+   * `broken`: what would make an experience feel broken. `why`: which intent it serves.
+   * `confirm`: a person's yes. `open`: any other question.
+   */
+  kind: 'statement' | 'broken' | 'why' | 'confirm' | 'open';
+  /** What the question is about: a capability, an experience, or an open question (unknown). */
+  about: 'capability' | 'experience' | 'unknown';
   target: string;
   ask: string;
   evidence: string[];
@@ -40,13 +45,23 @@ export function questions(catalog: Catalog): Question[] {
     const file = catalog.sources[`capabilities:${c.id}`];
     const evidence = [...(c.surfaces ?? []).map((s) => `reached by ${s}`), ...(c.evidence ?? [])];
     const where = c.surfaces?.length ? ` through ${c.surfaces.join(', ')}` : '';
-    if (saysNothing(c.statement)) out.push({ kind: 'statement', target: c.id, ask: `What can someone do${where}? Say it as "<actor> can <verb> <object>".`, evidence, file });
-    if (!c.intent) out.push({ kind: 'why', target: c.id, ask: `Why does ${c.id} exist? Which intent does it serve?`, evidence, file });
-    if (c.status === 'proposed') out.push({ kind: 'confirm', target: c.id, ask: `Is ${c.id} right as it stands? Confirming it lets it justify outcomes.`, evidence, file });
+    const q = (kind: Question['kind'], ask: string) => out.push({ kind, about: 'capability', target: c.id, ask, evidence, file });
+    if (saysNothing(c.statement)) q('statement', `What can someone do${where}? Say it as "<actor> can <verb> <object>".`);
+    if (!c.intent) q('why', `Why does ${c.id} exist? Which intent does it serve?`);
+    if (c.status === 'proposed') q('confirm', `Is ${c.id} right as it stands? Confirming it lets it justify outcomes.`);
+  }
+  for (const x of catalog.experiences) {
+    const file = catalog.sources[`experiences:${x.id}`];
+    const evidence = [...((x.steps ?? []).length ? [`steps: ${x.steps!.join(' then ')}`] : []), ...(x.evidence ?? [])];
+    const q = (kind: Question['kind'], ask: string) => out.push({ kind, about: 'experience', target: x.id, ask, evidence, file });
+    if (saysNothing(x.statement)) q('statement', `Who goes through ${(x.steps ?? []).join(' then ') || x.id}, and what are they trying to get done?`);
+    if (!(x.feels_broken_when ?? []).length) q('broken', 'What would make it feel broken to them? Separate several with ;');
+    if (!x.intent) q('why', `Why does ${x.id} matter? Which intent does it serve?`);
+    if (x.status === 'proposed') q('confirm', `Is ${x.id} right as it stands?`);
   }
   for (const u of catalog.unknowns) {
     if (u.answer || folded(u, catalog)) continue;
-    out.push({ kind: 'open', target: u.id, ask: u.question, evidence: (u.about ?? []).map((id) => `about ${id}`), file: catalog.sources[`unknowns:${u.id}`] });
+    out.push({ kind: 'open', about: 'unknown', target: u.id, ask: u.question, evidence: (u.about ?? []).map((id) => `about ${id}`), file: catalog.sources[`unknowns:${u.id}`] });
   }
   return out;
 }
@@ -58,7 +73,7 @@ export interface NewEntry {
 }
 
 export type Answer =
-  | { kind: 'capability'; id: string; statement?: string; actor?: string | NewEntry; intent?: string | NewEntry; confirm?: boolean }
+  | { kind: 'capability' | 'experience'; id: string; statement?: string; actor?: string | NewEntry; intent?: string | NewEntry; feels_broken_when?: string[]; confirm?: boolean }
   | { kind: 'unknown'; id: string; answer: string };
 
 export interface AnswerOptions {
@@ -134,24 +149,30 @@ export function applyAnswers(projectDir: string, answers: Answer[], opts: Answer
       changed.push(`question ${a.id}: answered`);
       continue;
     }
-    const rel = before.sources[`capabilities:${a.id}`];
-    const cap = before.capabilities.find((c) => c.id === a.id);
-    if (!rel || !cap) throw new OodleError('no-match', `No capability "${a.id}"`, { hint: 'The capabilities are listed by `oodle interview --json` and the catalog tool.' });
-    if (!opts.byPerson && cap.status !== 'proposed') throw new OodleError('approved', `${a.id} is confirmed; only a person changes it`, { hint: 'Say what you would change and why, and let the person edit it.' });
-    if (!opts.byPerson && a.confirm) throw new OodleError('approved', 'Confirming a capability is a person\'s call', { hint: `The person confirms it in \`oodle interview\`, or by deleting the "status: proposed" line of ${a.id} in ${rel}.` });
+    const section = a.kind === 'capability' ? 'capabilities' : 'experiences';
+    const rel = before.sources[`${section}:${a.id}`];
+    const entry = (before[section] as { id: string; status?: string }[]).find((c) => c.id === a.id);
+    if (!rel || !entry) throw new OodleError('no-match', `No ${a.kind} "${a.id}"`, { hint: 'They are listed by `oodle interview --json` and the catalog tool.' });
+    if (!opts.byPerson && entry.status !== 'proposed') throw new OodleError('approved', `${a.id} is confirmed; only a person changes it`, { hint: 'Say what you would change and why, and let the person edit it.' });
+    if (!opts.byPerson && a.confirm) throw new OodleError('approved', `Confirming a ${a.kind} is a person's call`, { hint: `The person confirms it in \`oodle interview\`, or by deleting the "status: proposed" line of ${a.id} in ${rel}.` });
     const doc = open(rel);
-    const item = itemIn(doc, 'capabilities', a.id)!;
+    const item = itemIn(doc, section, a.id)!;
     const what: string[] = [];
     if (a.statement?.trim()) {
       item.set('statement', doc.createNode(a.statement.trim()));
       what.push('statement');
+    }
+    const broken = (a.feels_broken_when ?? []).map((x) => x.trim()).filter(Boolean);
+    if (a.kind === 'experience' && broken.length) {
+      item.set('feels_broken_when', doc.createNode(broken));
+      what.push('feels broken when');
     }
     for (const [field, section] of [['actor', 'actors'], ['intent', 'intents']] as const) {
       const value = a[field];
       if (!value) continue;
       let id = typeof value === 'string' ? value : value.id;
       if (typeof value !== 'string') {
-        // A new actor or intent goes beside the capability that needed it.
+        // A new actor or intent goes beside the entry that needed it.
         if (!value.id) id = idFor(value.statement, taken(section));
         append(doc, section, { id, statement: value.statement.trim(), ...(opts.byPerson ? {} : { status: 'proposed' }) });
         what.push(`new ${field} ${id}`);
@@ -164,7 +185,7 @@ export function applyAnswers(projectDir: string, answers: Answer[], opts: Answer
     }
     // Saying why answers discovery's `why.<capability>` question.
     if (a.intent) for (const u of before.unknowns) if (folded(u, before) && u.about![0] === a.id) remove(open(before.sources[`unknowns:${u.id}`]), 'unknowns', u.id);
-    if (what.length) changed.push(`capability ${a.id}: ${what.join(', ')}`);
+    if (what.length) changed.push(`${a.kind} ${a.id}: ${what.join(', ')}`);
   }
 
   for (const [rel, { doc }] of docs) writeFileSync(join(projectDir, rel), doc.toString({ lineWidth: 0 }));
@@ -204,7 +225,7 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
   const changed: string[] = [];
   const load = () => loadCatalog(projectDir, loadConfig(projectDir));
   const queue = questions(load());
-  const targets = [...new Set(queue.map((q) => `${q.kind === 'open' ? 'unknown' : 'capability'}:${q.target}`))];
+  const targets = [...new Set(queue.map((q) => `${q.about}:${q.target}`))];
   const ask = async (prompt: string) => {
     const a = await io.ask(prompt);
     return a === null || a.trim().toLowerCase() === 'q' ? null : a.trim();
@@ -216,9 +237,9 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
 
   for (const [n, target] of targets.entries()) {
     const [kind, id] = target.split(/:(.*)/s);
-    const mine = queue.filter((q) => q.target === id && (kind === 'unknown') === (q.kind === 'open'));
+    const mine = queue.filter((q) => q.target === id && q.about === kind);
     io.say('');
-    io.say(`${n + 1}/${targets.length}  ${kind === 'capability' ? `capability ${id}` : `question ${id}`}`);
+    io.say(`${n + 1}/${targets.length}  ${kind === 'unknown' ? 'question' : kind} ${id}`);
     for (const e of mine[0].evidence) io.say(`    ${e}`);
 
     if (kind === 'unknown') {
@@ -229,9 +250,11 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
     }
 
     const catalog = load();
-    const cap = catalog.capabilities.find((c) => c.id === id)!;
+    const about = kind as 'capability' | 'experience';
+    const section = about === 'capability' ? 'capabilities' : 'experiences';
+    const cap = (catalog[section] as { id: string; statement: string; actor?: string; status?: string }[]).find((c) => c.id === id)!;
     io.say(`    now: ${cap.statement}`);
-    const answer: Extract<Answer, { kind: 'capability' }> = { kind: 'capability', id };
+    const answer: Extract<Answer, { kind: 'capability' | 'experience' }> = { kind: about, id };
     if (mine.some((q) => q.kind === 'statement')) {
       let statement = await ask(`${mine.find((q) => q.kind === 'statement')!.ask}\n  > `);
       if (statement === null) return { changed, remaining: questions(load()).length };
@@ -243,7 +266,7 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
         if (again) statement = again;
       }
       if (statement) answer.statement = statement;
-      if (statement && !cap.actor) {
+      if (statement && about === 'capability' && !cap.actor) {
         const known = catalog.actors.map((a) => a.id);
         const who = await ask(`Who is that actor?${known.length ? ` Known: ${known.join(', ')}.` : ''} A name is enough (enter to skip).\n  > `);
         if (who === null) return { changed, remaining: questions(load()).length };
@@ -256,6 +279,11 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
         }
       }
     }
+    if (mine.some((q) => q.kind === 'broken')) {
+      const broken = await ask(`${mine.find((q) => q.kind === 'broken')!.ask}\n  > `);
+      if (broken === null) return { changed, remaining: questions(load()).length };
+      if (broken) answer.feels_broken_when = broken.split(';');
+    }
     if (mine.some((q) => q.kind === 'why')) {
       const intents = catalog.intents;
       const menu = intents.map((i, k) => `    ${k + 1}) ${i.statement}`).join('\n');
@@ -265,15 +293,15 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
       if (pick) answer.intent = pick.id;
       else if (why) answer.intent = { id: '', statement: why };
     }
-    if (answer.statement || answer.actor || answer.intent) write(answer);
+    if (answer.statement || answer.actor || answer.intent || answer.feels_broken_when) write(answer);
 
-    const now = load().capabilities.find((c) => c.id === id)!;
+    const now = (load()[section] as { id: string; statement: string; status?: string }[]).find((c) => c.id === id)!;
     if (now.status === 'proposed' && !saysNothing(now.statement)) {
-      if (!opts.canConfirm) io.say(`    To confirm it, delete its "status: proposed" line in ${catalog.sources[`capabilities:${id}`]}.`);
+      if (!opts.canConfirm) io.say(`    To confirm it, delete its "status: proposed" line in ${catalog.sources[`${section}:${id}`]}.`);
       else {
-        const yes = await ask(`Confirm "${now.statement}"? It can then justify outcomes. [y/N]\n  > `);
+        const yes = await ask(`Confirm "${now.statement}"?${about === 'capability' ? ' It can then justify outcomes.' : ''} [y/N]\n  > `);
         if (yes === null) return { changed, remaining: questions(load()).length };
-        if (/^y(es)?$/i.test(yes)) write({ kind: 'capability', id, confirm: true });
+        if (/^y(es)?$/i.test(yes)) write({ kind: about, id, confirm: true });
       }
     }
   }
@@ -301,6 +329,7 @@ export function interviewPrompt(projectDir: string): string {
 - Ask one question at a time, in the order below. Show the evidence in a line or two so they know what you mean.
 - For a \`statement\` question, first read the code that handles the routes it lists, then offer your best draft as "<actor> can <verb> <object>" (for example "a shopper can pay for a cart and get one receipt") and ask whether it is right. Use their words if they change it. Avoid verbs that say nothing: handles, manages, processes, supports.
 - Never guess who a capability is for, or why it exists. Ask.
+- For an experience, ask who goes through those steps and what they are trying to get done, then what would make it feel broken to them (\`broken\`). Each of those is a failure worth an outcome, a condition or a constraint later.
 - For a \`why\` question, offer the intents below by their statements, or let them say a new reason in a sentence.
 - Record each answer straight away with the \`answer\` tool. Skip anything they don't know, and move on.
 - You can't confirm a capability (\`confirm\` questions). When they are happy with one, tell them how: run \`oodle interview\` in a terminal, or delete its \`status: proposed\` line.

@@ -4,6 +4,12 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## Unreleased: evidence from outside the code
+
+- `oodle discover --from <file>` reads an OpenAPI spec, a HAR capture or an OTLP JSON trace export. The spec's own words go into each capability's evidence and draft statement. Traffic counts each route's real use and puts the most used capabilities first, and journeys callers repeat become proposed experiences. Assets and other sites' requests are left out. Routes in the spec the app doesn't serve, traffic no route answers, and capabilities no request reached each become a question. Also `from` on the MCP `discover` tool.
+- `oodle interview` asks about experiences too: what people are trying to get done, and what would make it feel broken. The MCP `answer` tool takes `feels_broken_when`.
+- Experiences take `evidence`.
+
 ## 0.10.0 (2026-10-23): the system map
 
 - `oodle explain` prints the system map: each intent, its capabilities and experiences, who each capability is for, the routes that reach it, whether its outcomes hold, and the next rung it needs. `--only` shows capabilities in full; `--format md` writes a page. Also the `map` MCP tool.

@@ -238,12 +238,15 @@ const COMMANDS: Command[] = [
     name: 'discover',
     summary: 'Propose the capabilities your routes add up to, and the questions only a person can answer',
     description:
-      'Runs the project in the sealed simulation and groups its routes into capabilities by the resource each acts on and what it does to it (POST /orders/:id/refund is orders.refund). Each capability lists its routes and its evidence: the outcomes and behaviors that describe it, the calls and table writes seen, how a probe answered. An intent comes from its approved outcomes when they agree. What the code can\'t say becomes an open question: who a capability is for, and whether an intent nothing serves is still wanted. Everything lands in oodlc/proposed.yaml as a proposal that never blocks; confirm a capability by giving it a real statement and deleting its status line. Routes a capability already lists are left alone, so running it again only adds what is new. See docs/decisions/0010.',
+      'Runs the project in the sealed simulation and groups its routes into capabilities by the resource each acts on and what it does to it (POST /orders/:id/refund is orders.refund). Each capability lists its routes and its evidence: the outcomes and behaviors that describe it, the calls and table writes seen, how a probe answered. An intent comes from its approved outcomes when they agree. What the code can\'t say becomes an open question: who a capability is for, and whether an intent nothing serves is still wanted. Everything lands in oodlc/proposed.yaml as a proposal that never blocks; confirm a capability by giving it a real statement and deleting its status line. Routes a capability already lists are left alone, so running it again only adds what is new. With --from, evidence from outside the code joins in: an OpenAPI spec gives each route the words people wrote for it; a HAR capture or an OTLP JSON trace export says how often each route is used (most used come first), which journeys callers repeat (proposed as experiences), and which capabilities nothing used. Where the evidence and the app disagree, a question says so. Nothing is replayed. See docs/decisions/0010.',
     args: [PROJECT_ARG],
-    flags: [],
+    flags: [
+      { name: 'from', type: 'string', multiple: true, value: 'file', description: 'Evidence to read: an OpenAPI spec, a HAR capture or an OTLP JSON trace export (repeatable)' },
+    ],
     formats: ['text', 'json'],
     examples: [
       ['oodle discover', 'Propose capabilities and open questions for this project'],
+      ['oodle discover --from openapi.yaml --from session.har', 'Add the spec\'s words, real use and journeys'],
       ['oodle discover --json', 'The same, plus which outcomes could name their capability'],
     ],
     run: cmdDiscover,
@@ -729,11 +732,16 @@ async function cmdExplain(ctx: Ctx): Promise<number> {
 async function cmdDiscover(ctx: Ctx): Promise<number> {
   const dir = findProject(ctx.args[0], 'discover');
   const spin = ctx.format === 'text' ? spinner('Running and probing every route') : null;
-  const result = await discover(dir).finally(() => spin?.stop());
+  const files: string[] = (ctx.flags.from ?? []).map((f: string) => resolve(f));
+  for (const f of files) if (!existsSync(f)) throw usageError(`Evidence file ${f} does not exist`, 'Pass an OpenAPI spec, a HAR capture or an OTLP JSON trace export.');
+  const result = await discover(dir, files).finally(() => spin?.stop());
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
   heading('discover', dir);
-  const width = Math.max(0, ...result.capabilities.map((c) => c.id.length), ...result.unknowns.map((u) => u.id.length), ...result.links.map((l) => l.capability.length));
+  for (const ev of result.evidence) console.log(`  ${o.dim(`read ${display(ev.file)}: ${ev.kind === 'openapi' ? `OpenAPI, ${plural(ev.requests, 'operation')}` : `${ev.kind === 'har' ? 'HAR' : 'OTLP traces'}, ${plural(ev.requests, 'request')}`}`)}`);
+  if (result.evidence.length) console.log('');
+  const width = Math.max(0, ...result.capabilities.map((c) => c.id.length), ...result.experiences.map((x) => x.id.length), ...result.unknowns.map((u) => u.id.length), ...result.links.map((l) => l.capability.length));
   for (const c of result.capabilities) console.log(`  ${o.green('+')} ${'capability'.padEnd(10)} ${c.id.padEnd(width)}  ${o.dim([c.surfaces!.join(', '), c.intent].filter(Boolean).join(` ${sym.dot} `))}`);
+  for (const x of result.experiences) console.log(`  ${o.green('+')} ${'experience'.padEnd(10)} ${x.id.padEnd(width)}  ${o.dim([x.steps!.join(` ${sym.arrow} `), ...(x.evidence ?? [])].join(` ${sym.dot} `))}`);
   for (const u of result.unknowns) console.log(`  ${o.yellow('?')} ${'question'.padEnd(10)} ${u.id.padEnd(width)}  ${o.dim(u.question)}`);
   const byCapability = new Map<string, string[]>();
   for (const l of result.links) byCapability.set(l.capability, [...(byCapability.get(l.capability) ?? []), l.id]);
@@ -756,7 +764,7 @@ async function cmdDiscover(ctx: Ctx): Promise<number> {
   return EXIT.ok;
 }
 
-const QUESTION_TAG = { statement: 'say', why: 'why', confirm: 'confirm', open: 'question' } as const;
+const QUESTION_TAG = { statement: 'say', broken: 'broken', why: 'why', confirm: 'confirm', open: 'question' } as const;
 
 async function cmdInterview(ctx: Ctx): Promise<number> {
   const dir = findProject(ctx.args[0], 'interview');

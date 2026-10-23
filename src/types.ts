@@ -47,6 +47,8 @@ export interface Experience {
   steps?: string[];
   /** Failures the actor would notice. Each is a candidate condition or constraint. */
   feels_broken_when?: string[];
+  /** Where the journey was seen: a capture, a trace export. Free text for now. */
+  evidence?: string[];
   status?: ProposalStatus;
 }
 

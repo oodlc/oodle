@@ -4,6 +4,13 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## Unreleased: explain any system
+
+- **Changes:** `app` in `oodlc/config.yaml` is optional. A project without it explains a system Oodle can't run, in any language, and protects nothing. `oodle init --inventory` starts one. See [0011](docs/decisions/0011-explain-what-oodle-cannot-run.md).
+- With no app, `oodle discover --from` takes its routes from the evidence: the spec's operations, and traffic on the service's own host templated (`/orders/ord_1` becomes `/orders/:id`).
+- In a project with no app, `oodle run` says nothing runs, `oodle check` reports inventory changes, `oodle mutate` and `oodle propose --routes` refuse with `no-app`, and outcomes, behaviors, conditions and constraints are lint errors.
+- OpenAPI operations carry the spec's host, so traffic to other sites is told apart.
+
 ## 0.11.0 (2026-10-23): evidence from outside the code
 
 - `oodle discover --from <file>` reads an OpenAPI spec, a HAR capture or an OTLP JSON trace export. The spec's own words go into each capability's evidence and draft statement. Traffic counts each route's real use and puts the most used capabilities first, and journeys callers repeat become proposed experiences. Assets and other sites' requests are left out. Routes in the spec the app doesn't serve, traffic no route answers, and capabilities no request reached each become a question. Also `from` on the MCP `discover` tool.

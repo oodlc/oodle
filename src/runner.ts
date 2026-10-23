@@ -34,13 +34,14 @@ export function mergeGiven(...layers: (Given | undefined)[]): Given {
 }
 
 export async function loadApp(projectDir: string, config: Config): Promise<CreateApp> {
+  if (!config.app) throw new OodleError('no-app', 'There is no app to load: oodlc/config.yaml names none', { hint: 'Point app at the module that exports createApp(ctx), or at oodle.app.ts from `oodle init`.' });
   const url = pathToFileURL(resolve(projectDir, config.app)).href;
   let mod: any;
   try {
     mod = await import(url);
   } catch (err) {
     // The app file itself is missing, not something it imports (whose error also names the app, as "imported from").
-    const missing = !existsSync(resolve(projectDir, config.app));
+    const missing = !existsSync(resolve(projectDir, config.app!));
     throw new OodleError('app-load', missing ? `App not found at ${config.app}` : `Could not load the app at ${config.app}`, {
       // Compiler errors (esbuild via tsx) put the useful part, file:line:col and the message, after the first line.
       problems: missing ? [] : (err as Error).message.split('\n').filter((l) => l.trim()).slice(0, 8).map((l) => l.replaceAll(`${resolve(projectDir)}/`, `${relative(process.cwd(), resolve(projectDir)) || '.'}/`)),
@@ -307,6 +308,8 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
   const config = loadConfig(projectDir);
   const catalog = loadCatalog(projectDir, config);
   const lintResult = lint(catalog, config);
+  // A project with no app explains a system Oodle can't run: nothing runs, nothing is probed (0011).
+  if (!config.app) return { projectDir, config, catalog, lint: lintResult, routes: [], observations: [], gaps: [] };
   // The database comes up before the app loads, so DATABASE_URL is set for modules that read it on import.
   const db = config.database ? await SimDatabase.open(projectDir, config.database, FIXED_NOW) : null;
   const unseal = config.sealed === false ? () => {} : seal(typeof config.sealed === 'object' ? config.sealed.allow : []);

@@ -173,7 +173,8 @@ export interface Catalog {
 }
 
 export interface Config {
-  app: string;
+  /** What Oodle runs. Without it the project only explains a system: intents and the inventory. See docs/decisions/0011. */
+  app?: string;
   catalog: string;
   defaults?: { given?: Given };
   /** Extra conditions to probe every unknown route under, e.g. the security.* pack. Constraints are checked on each probe. */

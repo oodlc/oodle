@@ -500,6 +500,6 @@ export function renderSystem(map: SystemMap, view: { only?: string[] } = {}): st
     if (open.length) lines.push(`${s.bold('Open questions')}`, ...open.map((q) => `  ${s.yellow(sym.unknown)} ${q.id}  ${s.dim(q.question)}`), '');
   }
   const m = map.summary;
-  lines.push(`${s.bold(`${plural(m.capabilities, 'capability', 'capabilities')}`)}  ${s.dim([`${m.confirmed} confirmed`, `${m.protected} protected by an outcome that holds`, `${m.claimed} of ${plural(m.routes, 'route')} claimed`].join(` ${sym.dot} `))}`);
+  lines.push(`${s.bold(`${plural(m.capabilities, 'capability', 'capabilities')}`)}  ${s.dim([`${m.confirmed} confirmed`, `${m.protected} protected by an outcome that holds`, ...(m.routes ? [`${m.claimed} of ${plural(m.routes, 'route')} claimed`] : [])].join(` ${sym.dot} `))}`);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }

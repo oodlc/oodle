@@ -173,6 +173,7 @@ const COMMANDS: Command[] = [
       { name: 'force', short: 'f', type: 'boolean', description: 'Overwrite an existing oodlc/config.yaml and starter catalog' },
       { name: 'ci', type: 'boolean', description: 'Also write .github/workflows/oodle.yml: the outcome diff on every pull request, approvals from reviews. In an existing project, writes only the workflow' },
       { name: 'migrate', type: 'boolean', description: 'Move an old-layout project (oodle.yaml + catalog/) into oodlc/' },
+      { name: 'inventory', type: 'boolean', description: 'No app: a project that explains a system Oodle can\'t run (any language), from evidence and people\'s answers' },
     ],
     formats: ['text', 'json'],
     examples: [
@@ -597,6 +598,13 @@ async function cmdRun(ctx: Ctx): Promise<number> {
     return failing ? EXIT.blocking : EXIT.ok;
   }
 
+  if (!run.config.app) {
+    // An inventory project: nothing to run, so say what it is for instead of an empty report (0011).
+    if (run.lint.errors.length) console.log(renderLint(run.lint, run.catalog));
+    console.log(`${o.bold('Nothing runs here')}  ${o.dim('oodlc/config.yaml has no app: this project explains a system, it doesn\'t protect one')}`);
+    hints([`See the system: ${e.cyan('oodle explain')}`, `To protect a Node service, point app in ${e.cyan('oodlc/config.yaml')} at it`]);
+    return failing ? EXIT.blocking : EXIT.ok;
+  }
   console.log(renderRun(run, { verbose: ctx.flags.verbose, elapsed, only: ctx.flags.only }));
   const summary = runSummaryJson(run, elapsed);
   const notHolding = [...new Set(run.observations.filter(blocks).map((x) => x.id))];
@@ -852,7 +860,7 @@ async function cmdLint(ctx: Ctx): Promise<number> {
   });
   if (result.errors.length) await say('worried', `${result.errors.length} catalog error(s) to fix first.`);
   else await say('happy', 'Catalog looks tidy!');
-  if (!result.errors.length && !process.env.OODLE_WATCH_REPORT) hints([`Run every outcome: ${e.cyan('oodle run')}`]);
+  if (!result.errors.length && !process.env.OODLE_WATCH_REPORT) hints([!config.app && catalog.capabilities.length ? `See the system: ${e.cyan('oodle explain')}` : `Run every outcome: ${e.cyan('oodle run')}`]);
   return result.errors.length ? EXIT.blocking : EXIT.ok;
 }
 
@@ -1031,7 +1039,23 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     hints([`Check nothing changed: ${e.cyan(`oodle run${display(result.dir) === '.' ? '' : ` ${display(result.dir)}`}`)}`, 'Commit the move on its own, so the history stays easy to read.']);
     return EXIT.ok;
   }
-  const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force, ci: ctx.flags.ci });
+  if (ctx.flags.inventory && ctx.flags.app) throw usageError('--inventory and --app contradict each other', 'An inventory project has no app. Drop one of them.');
+  const result = init(ctx.args[0] ?? '.', { app: ctx.flags.app, force: ctx.flags.force, ci: ctx.flags.ci, inventory: ctx.flags.inventory });
+  if (result.inventory) {
+    if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
+    heading('init --inventory', result.dir);
+    for (const f of result.created) console.log(`  ${o.green('+')} ${f}`);
+    for (const f of result.kept) console.log(`  ${o.dim(`${sym.dot} ${f} (kept)`)}`);
+    console.log(`\n${o.green(o.bold(`${sym.ok} Ready to describe your system`))}  ${o.dim('no app: Oodle explains it and protects nothing')}`);
+    await say('hello', 'Show me what it does, and tell me who it is for.');
+    const where = display(result.dir) === '.' ? '' : ` ${display(result.dir)}`;
+    hints([
+      `Draft capabilities from evidence: ${e.cyan(`oodle discover${where} --from openapi.yaml --from session.har`)}`,
+      `Say what only you can say: ${e.cyan(`oodle interview${where}`)}`,
+      `See the whole system: ${e.cyan(`oodle explain${where}`)}`,
+    ]);
+    return EXIT.ok;
+  }
   const svc = result.service;
   // A first catalog to promote from, instead of an empty outcomes list: what each route does today, probed in the simulation.
   // Not when importing the app would open a port, or when there is no app export to import.
@@ -1059,7 +1083,7 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     return EXIT.ok;
   }
   if (svc) {
-    const app = loadConfig(result.dir).app;
+    const app = loadConfig(result.dir).app ?? '';
     const what = svc.framework === 'next' ? `Next.js route handlers in ${svc.entry}/` : `${svc.framework} app in ${svc.entry}`;
     console.log(`\n${o.green(o.bold(`${sym.ok} Wrapped your service`))}  ${o.dim(`${what}, run through ${app}`)}`);
     const calls = result.effects ?? [];

@@ -4,9 +4,8 @@
   "title": "oodlc/config.yaml project config (OODLC v0)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["app"],
   "properties": {
-    "app": { "type": "string", "description": "Path to the module whose default export is createApp(ctx), relative to the project root (the directory that holds oodlc/)" },
+    "app": { "type": "string", "description": "Path to the module whose default export is createApp(ctx), relative to the project root (the directory that holds oodlc/). Without it the project only explains a system: intents and the inventory, discovered from evidence. See docs/decisions/0011" },
     "catalog": { "type": "string", "description": "Directory of catalog YAML files. Default: oodlc/ itself. Only the legacy oodle.yaml layout needs it" },
     "defaults": {
       "type": "object",

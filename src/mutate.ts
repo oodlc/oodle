@@ -288,7 +288,7 @@ export function sourceFiles(projectDir: string, globs?: string[]): string[] {
     const res = globs.map(globRe);
     return walk(projectDir, projectDir).filter((f) => SOURCE.test(f) && res.some((r) => r.test(f)));
   }
-  const app = loadConfig(projectDir).app;
+  const app = loadConfig(projectDir).app!;
   // A Next.js app loads its route handlers at run time, so nothing imports them: start from each one too.
   const entries = /\bfrom\s*['"]@oodlc\/oodle\/next['"]/.test(readFileSync(join(projectDir, app), 'utf8'))
     ? [app, ...nextSourceFiles(dirname(resolve(projectDir, app))).map((f) => relative(projectDir, f))]
@@ -497,6 +497,9 @@ function tally(kills: Map<string, Set<number>>, others: (id: string) => Set<numb
 
 export async function mutate(projectDir: string, opts: MutateOptions = {}): Promise<MutateReport> {
   const t0 = performance.now();
+  if (!loadConfig(projectDir).app) {
+    throw new OodleError('no-app', 'Nothing to mutate: this project has no app', { hint: 'Mutation testing plants bugs in the app the catalog runs. Point app in oodlc/config.yaml at your service first.' });
+  }
   const files = sourceFiles(projectDir, opts.files);
   if (!files.length) {
     throw new OodleError('no-files', opts.files?.length ? `No source files match ${opts.files.map((f) => `"${f}"`).join(', ')}` : 'No source files to mutate next to the app', {

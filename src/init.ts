@@ -42,6 +42,19 @@ intents:
     statement: Callers can rely on the service being there when they need it.
 `;
 
+/** A project that explains a system Oodle can't run: no app, so nothing runs and nothing blocks. See docs/decisions/0011. */
+const INVENTORY_CONFIG = `${schemaLine('config')}# Oodle project config, for a project that explains a system rather than protecting it.
+# There is no app: Oodle reads evidence (an OpenAPI spec, a HAR capture, an OTLP trace export)
+# and asks people for the words. To protect a Node service too, add app: and its outcomes.
+# Docs: https://oodlc.com/docs/guide#describing-the-system
+`;
+
+const INVENTORY_INTENTS = `${schemaLine('catalog')}version: 0
+# Intents say why the product exists. Capabilities say what it lets people do, and trace to them.
+# Draft capabilities from evidence with \`oodle discover --from <file>\`, then \`oodle interview\`.
+intents: []
+`;
+
 const OUTCOMES = `${schemaLine('catalog')}version: 0
 # Outcomes are what someone outside the system must experience. They block a merge when they break.
 outcomes:
@@ -334,6 +347,8 @@ export interface InitResult {
   effects?: OutboundCall[];
   /** The Postgres the service uses, simulated in process when it is one Oodle can serve. */
   database?: DatabaseFound;
+  /** --inventory: a project with no app, that explains a system (0011). */
+  inventory?: true;
 }
 
 /** The GitHub workflow, at the repository root, pointing at the project. */
@@ -363,7 +378,7 @@ function writeFiles(dir: string, files: [string, string, boolean][], force: bool
   return { created, kept };
 }
 
-export function init(target: string, opts: { app?: string; force?: boolean; ci?: boolean }): InitResult {
+export function init(target: string, opts: { app?: string; force?: boolean; ci?: boolean; inventory?: boolean }): InitResult {
   const dir = resolve(target);
   const existing = configFile(dir);
   if (existing?.legacy) {
@@ -377,6 +392,11 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
     throw new OodleError('exists', `${display(existing.path)} already exists`, {
       hint: 'To add the GitHub workflow, use --ci. To start over, --force overwrites the scaffold files; your app is never overwritten.',
     });
+  }
+  if (opts.inventory) {
+    const files: [string, string, boolean][] = [[`${FOLDER}/${CONFIG_FILE}`, INVENTORY_CONFIG, true], [`${FOLDER}/intents.yaml`, INVENTORY_INTENTS, true]];
+    if (opts.ci) files.push(workflowFile(dir));
+    return { dir, ...writeFiles(dir, files, !!opts.force), inventory: true };
   }
   // An existing service gets an adapter around it, never a starter app beside it.
   const service = opts.app ? null : detectService(dir);

@@ -99,11 +99,13 @@ export async function doctor(arg?: string): Promise<Check[]> {
     const where = configFile(dir)!;
     checks.push(where.legacy
       ? { name: 'config', status: 'warn', detail: `oodle.yaml (old layout): app ${config.app}, catalog ${config.catalog}/`, hint: 'Move it into oodlc/ with `oodle init --migrate`.' }
-      : { name: 'config', status: 'ok', detail: `oodlc/config.yaml: app ${config.app}` });
+      : { name: 'config', status: 'ok', detail: config.app ? `oodlc/config.yaml: app ${config.app}` : 'oodlc/config.yaml: no app, so this project explains a system and protects nothing (0011)' });
     const catalog = loadCatalog(dir, config);
     const approved = catalog.outcomes.filter((o) => o.status !== 'proposed').length;
-    const counts = `${plural(catalog.outcomes.length, 'outcome')}, ${plural(catalog.behaviors.length, 'behavior')}, ${plural(catalog.intents.length, 'intent')}`;
-    checks.push(approved
+    const counts = config.app
+      ? `${plural(catalog.outcomes.length, 'outcome')}, ${plural(catalog.behaviors.length, 'behavior')}, ${plural(catalog.intents.length, 'intent')}`
+      : `${plural(catalog.capabilities.length, 'capability', 'capabilities')}, ${plural(catalog.intents.length, 'intent')}`;
+    checks.push(approved || !config.app
       ? { name: 'catalog', status: 'ok', detail: counts }
       : { name: 'catalog', status: 'warn', detail: `${counts}: no approved outcome, so nothing blocks a merge yet`, hint: 'Declare the promise that would hurt most to break in oodlc/, e.g. oodlc/outcomes.yaml.' });
     const result = lint(catalog, config);
@@ -119,6 +121,10 @@ export async function doctor(arg?: string): Promise<Check[]> {
 
   // A starter app passes every check while protecting none of your code.
   const config = loadConfig(dir);
+  if (!config.app) {
+    checks.push({ name: 'app', status: 'ok', detail: 'nothing to run: capabilities come from evidence', hint: 'Draft them with `oodle discover --from <openapi, har or otlp file>`. To protect a Node service too, point app at it.' });
+    return checks;
+  }
   const appPath = resolve(dir, config.app);
 
   // Read, not run: every effect the app module names needs a stub, or the first outcome that reaches it fails.

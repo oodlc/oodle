@@ -157,6 +157,7 @@ export function routeOutcomes(run: RunResult): { fragment: { intents?: unknown[]
 
 /** Probes every route nothing describes and adds a proposed outcome for each to oodlc/proposed.yaml. */
 export async function proposeRoutes(projectDir: string): Promise<ProposeResult & { skipped: string[] }> {
+  if (!loadConfig(projectDir).app) throw new OodleError('no-app', 'There are no routes to probe: this project has no app', { hint: 'Draft capabilities from evidence instead: `oodle discover --from <openapi, har or otlp file>`.' });
   const run = await runProject(projectDir);
   const { fragment, skipped } = routeOutcomes(run);
   if (!fragment.outcomes.length) return { file: join(run.config.catalog, PROPOSALS_FILE), added: [], warnings: [], skipped };

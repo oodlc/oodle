@@ -403,6 +403,19 @@ unknowns:
 
 See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).
 
+### Systems Oodle can't run
+
+Describing a system needs no runner. For a Python, Go or Java service, or anything Oodle can't load, start a project with no app:
+
+```bash
+npx oodle init --inventory
+npx oodle discover --from openapi.yaml --from session.har     # routes come from the evidence
+npx oodle interview
+npx oodle explain
+```
+
+Routes come from the spec as written, and from traffic on the service's own host, templated (`/orders/ord_1` becomes `/orders/:id`). Nothing runs: `oodle run` says so, and `oodle check` reports only what a change does to the inventory. Outcomes need something to run them, so in a project with no app they are a lint error. Point `app` at a Node service later and every capability and answer carries over. See [0011](docs/decisions/0011-explain-what-oodle-cannot-run.md).
+
 ## The app contract
 
 ```ts
@@ -488,9 +501,9 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 
 ## Not yet
 
-Oodle runs Node.js services (Node 20.11 or later) and simulates Postgres. Not yet:
+Oodle runs Node.js services (Node 20.11 or later) and simulates Postgres. Services in other languages can be [explained](#systems-oodle-cant-run), not yet protected. Not yet:
 
-- Services in other languages: Python, Go, Ruby, Java and the rest.
+- Running services in other languages: Python, Go, Ruby, Java and the rest.
 - Databases other than Postgres: MySQL, SQLite, MongoDB, Redis.
 - Triggers other than HTTP: events, queues, schedules, GraphQL subscriptions and gRPC.
 - UI outcomes, including Next.js pages and server actions.

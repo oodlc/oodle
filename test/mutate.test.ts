@@ -46,8 +46,7 @@ test('failing test names are read from TAP and spec output', () => {
 });
 
 /** A plain-JS project (so it runs on every Node in CI) with one outcome and two unit tests. */
-function pricingProject(): string {
-  const dir = join(mkdtempSync(join(tmpdir(), 'oodle-mutate-')), 'pricing');
+function pricingProject(dir = join(mkdtempSync(join(tmpdir(), 'oodle-mutate-')), 'pricing')): string {
   mkdirSync(join(dir, 'oodlc'), { recursive: true });
   mkdirSync(join(dir, 'src'));
   mkdirSync(join(dir, 'test'));
@@ -89,6 +88,13 @@ test('cli: oodle mutate scores the catalog and finds which unit tests it makes r
   const gated = spawnSync(process.execPath, [BIN, 'mutate', dir, '--json', '--min-score', '100'], { encoding: 'utf8', timeout: 300_000 });
   assert.equal(gated.status, 1);
   assert.equal(JSON.parse(gated.stdout).ok, false);
+});
+
+test('cli: oodle mutate runs a project that lives under .git, as oodle check\'s base worktree does', () => {
+  const dir = pricingProject(join(mkdtempSync(join(tmpdir(), 'oodle-mutate-')), '.git', 'oodle', 'worktrees', 'base'));
+  const res = spawnSync(process.execPath, [BIN, 'mutate', dir, '--json', '--max', '3'], { encoding: 'utf8', timeout: 300_000 });
+  assert.equal(res.status, 0, res.stderr + res.stdout);
+  assert.equal(JSON.parse(res.stdout).summary.mutants, 3);
 });
 
 test('cli: oodle mutate refuses a catalog that is not green first', () => {

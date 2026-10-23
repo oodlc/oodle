@@ -327,7 +327,8 @@ function mirror(root: string, projectDir: string, dest: string): string {
   for (const e of readdirSync(projectDir)) {
     if (e === '.git') continue;
     if (e === 'node_modules') symlinkSync(join(projectDir, e), join(dst, e));
-    else cpSync(join(projectDir, e), join(dst, e), { recursive: true, filter: (p) => !p.split(sep).includes('node_modules') && !p.split(sep).includes('.git') });
+    // Judge each path from inside the project: `oodle check` runs the base from a worktree under .git/oodle/.
+    else cpSync(join(projectDir, e), join(dst, e), { recursive: true, filter: (p) => !relative(projectDir, p).split(sep).some((s) => s === 'node_modules' || s === '.git') });
   }
   return dst;
 }

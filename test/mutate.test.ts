@@ -98,3 +98,14 @@ test('cli: oodle mutate refuses a catalog that is not green first', () => {
   assert.equal(res.status, 1);
   assert.equal(JSON.parse(res.stdout).error.code, 'not-holding');
 });
+
+test('cli: oodle mutate also counts the bugs each capability\'s outcomes catch', () => {
+  const dir = pricingProject();
+  writeFileSync(join(dir, 'oodlc', 'inventory.yaml'), 'version: 0\ncapabilities:\n  - { id: price.quote, statement: A customer can see what a basket costs, surfaces: [POST /price] }\n');
+  const res = spawnSync(process.execPath, [BIN, 'mutate', dir, '--json'], { encoding: 'utf8', timeout: 300_000 });
+  assert.equal(res.status, 0, res.stderr + res.stdout);
+  const r = JSON.parse(res.stdout);
+  const quote = r.capabilities.find((k: any) => k.id === 'price.quote');
+  // price.single names no capability; its trigger reaches the capability's surface, so its catches count there.
+  assert.equal(quote.kills, r.killers.find((k: any) => k.id === 'price.single').kills);
+});

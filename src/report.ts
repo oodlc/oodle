@@ -1,6 +1,7 @@
 import { stringify } from 'yaml';
 import type { DiffReport } from './diff.ts';
 import type { RunResult } from './types.ts';
+import type { CapabilityView, SystemMap } from './explain.ts';
 
 /**
  * Findings arrive one per condition as "[condition] message". The same message
@@ -27,6 +28,8 @@ export function approvalTokens(r: DiffReport): string[] {
 }
 
 const ICON: Record<string, string> = { held: '✅', changed: '🟡', broken: '❌', failing: '❌', new: '🆕', removed: '🗑️', redefined: '✏️', proposed: '📝' };
+
+const CAPABILITY_ICON = { new: '🆕', removed: '🗑️', confirmed: '✅', unconfirmed: '↩️', changed: '✏️' } as const;
 
 export function diffMarkdown(r: DiffReport): string {
   const count = (s: string) => r.outcomes.filter((o) => o.status === s).length;
@@ -80,6 +83,17 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push('');
     for (const o of inside) lines.push(`- under \`${o.id}\`: ${mdFindings(o.behavior).join('; ')}`);
     for (const b of behaviors) lines.push(`- \`${b.id}\` ${b.status}: ${mdFindings(b.details).join('; ')}`);
+    lines.push('');
+  }
+
+  const { changes, touched } = r.capabilities;
+  if (changes.length || touched.length) {
+    lines.push('### Capabilities (report only)');
+    lines.push('');
+    lines.push('What this change does to the inventory, and which capabilities it reaches. It never blocks.');
+    lines.push('');
+    for (const t of touched) lines.push(`- \`${t.id}\` reached by ${t.by.map((b) => b.replace(/^(\S+)/, '`$1`')).join(', ')}`);
+    for (const c of changes) lines.push(`- ${CAPABILITY_ICON[c.status]} \`${c.id}\` ${c.status}${c.details.length ? `: ${c.details.join('; ').replace(/\|/g, '\\|')}` : ''}${c.status === 'new' || c.status === 'removed' ? ` · ${c.statement}` : ''}`);
     lines.push('');
   }
 
@@ -153,4 +167,41 @@ export function runSummary(run: RunResult): string {
   for (const e of run.lint.errors) lines.push(`lint error: ${e}`);
   for (const w of run.lint.warnings) lines.push(`lint warning: ${w}`);
   return lines.join('\n');
+}
+
+/** The system map as markdown: a page a team can keep in the repository or paste into a doc. */
+export function systemMarkdown(map: SystemMap): string {
+  const lines: string[] = ['# What the system does', ''];
+  const m = map.summary;
+  lines.push(`${m.capabilities} capabilities · ${m.confirmed} confirmed · ${m.protected} protected by an outcome that holds · ${m.claimed} of ${m.routes} routes claimed`, '');
+  const cell = (s: string) => s.replace(/\|/g, '\\|');
+  const table = (caps: CapabilityView[]) => {
+    if (!caps.length) return;
+    lines.push('| Capability | What it does | Who | Reached by | Outcomes | Next |', '| --- | --- | --- | --- | --- | --- |');
+    for (const c of caps) {
+      const held = c.outcomes.filter((o) => o.state === 'holds').length;
+      const failing = c.outcomes.filter((o) => o.state === 'fails').length;
+      const outcomes = [held ? `${held} hold` : '', failing ? `${failing} failing` : ''].filter(Boolean).join(', ') || '—';
+      lines.push(`| \`${c.id}\`${c.status === 'proposed' ? ' (proposed)' : ''} | ${cell(c.statement)} | ${c.actor?.id ?? '—'} | ${c.surfaces.map((x) => `\`${x}\``).join(', ') || '—'} | ${outcomes} | ${c.next ? cell(c.next) : 'every rung'} |`);
+    }
+    lines.push('');
+  };
+  for (const i of map.intents) {
+    lines.push(`## ${cell(i.statement)}`, '', `\`${i.id}\`${i.proposed ? ' (proposed)' : ''}`, '');
+    table(map.capabilities.filter((c) => i.capabilities.includes(c.id)));
+    for (const e of map.experiences.filter((x) => i.experiences.includes(x.id))) {
+      lines.push(`- **${e.id}** (experience): ${e.statement}${e.steps.length ? ` Steps: ${e.steps.map((x) => `\`${x}\``).join(' → ')}.` : ''}${e.feels_broken_when.length ? ` Feels broken when: ${e.feels_broken_when.join('; ')}.` : ''}`);
+    }
+    lines.push('');
+    if (!i.capabilities.length && !i.experiences.length) lines.push('Nothing serves this yet.', '');
+  }
+  const loose = map.capabilities.filter((c) => !c.intent || !map.intents.some((i) => i.id === c.intent));
+  if (loose.length) {
+    lines.push('## No intent yet', '');
+    table(loose);
+  }
+  if (map.unclaimed.length) lines.push('## Routes no capability lists', '', ...map.unclaimed.map((r) => `- \`${r}\``), '');
+  const open = map.questions.filter((q) => !q.answer);
+  if (open.length) lines.push('## Open questions', '', ...open.map((q) => `- **${q.id}**: ${cell(q.question)}`), '');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
 }

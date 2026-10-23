@@ -7,10 +7,10 @@ import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { CatalogError, FOLDER, configFile, emptyCatalog, isProject, loadCatalog, loadConfig, singular, type Section } from './catalog.ts';
 import { lint } from './lint.ts';
-import { runProject } from './runner.ts';
+import { globMatcher, runProject } from './runner.ts';
 import { diffRuns, parseApproval, type Approval } from './diff.ts';
-import { approvalTokens, diffMarkdown } from './report.ts';
-import { renderDiff, renderLint, renderMutate, renderRun, wrap } from './render.ts';
+import { approvalTokens, diffMarkdown, systemMarkdown } from './report.ts';
+import { renderDiff, renderLint, renderMutate, renderRun, renderSystem, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
 import { init, migrate } from './init.ts';
 import { installOodle, oodleCommand, packageManager, runnable } from './invocation.ts';
@@ -19,6 +19,7 @@ import { hasPGlite } from './database.ts';
 import { mutate, type MutateReport } from './mutate.ts';
 import { propose, proposeRoutes } from './propose.ts';
 import { discover } from './discover.ts';
+import { systemMap } from './explain.ts';
 import { questions, runInterview } from './interview.ts';
 import { draftPrompt } from './draft.ts';
 import { serveMcp } from './mcp.ts';
@@ -215,6 +216,23 @@ const COMMANDS: Command[] = [
       ['oodle mutate --min-score 80 --json', 'Gate CI on mutation score'],
     ],
     run: cmdMutate,
+  },
+  {
+    name: 'explain',
+    summary: 'Map what the system does, for whom and why, and how much of it is protected',
+    description:
+      'Runs the project in the sealed simulation and prints the system map: each intent, the capabilities that serve it and the experiences that cross them. Each capability shows who it is for, the routes that reach it, whether its outcomes hold, which rungs it has (confirmed, an outcome, an intent, an experience) and the next one to add. Then the routes no capability lists, and the open questions. An outcome or behavior belongs to the capability it names, or else to the one whose routes reach its trigger. --only narrows to capabilities and shows each one in full: its outcomes, behaviors, calls, table writes, constraints and evidence. --format md writes the map as a page to keep in the repository. Never blocks. See docs/decisions/0010.',
+    args: [PROJECT_ARG],
+    flags: [
+      { name: 'only', short: 'o', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Show only capabilities whose id matches, in full (repeatable)' },
+    ],
+    formats: ['text', 'json', 'md'],
+    examples: [
+      ['oodle explain', 'The system map'],
+      ['oodle explain --only "orders.*"', 'Every detail of the order capabilities'],
+      ['oodle explain --format md > SYSTEM.md', 'A page to keep beside the code'],
+    ],
+    run: cmdExplain,
   },
   {
     name: 'discover',
@@ -679,6 +697,32 @@ async function cmdPropose(ctx: Ctx): Promise<number> {
   console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(result.added.length, 'entry', 'entries')} in ${result.file} · reported, not blocking`)}`);
   await say('curious', 'Proposals noted. A human gets the final say.');
   hints(approvalHints(result.file));
+  return EXIT.ok;
+}
+
+async function cmdExplain(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0], 'explain');
+  const spin = ctx.format === 'text' ? spinner('Running the catalog') : null;
+  const map = systemMap(await runProject(dir).finally(() => spin?.stop()));
+  const only: string[] = ctx.flags.only ?? [];
+  if (only.length && !map.capabilities.some((c) => globMatcher(only)(c.id))) {
+    throw new OodleError('no-match', `No capability matches ${only.map((p) => `"${p}"`).join(', ')}`, {
+      hint: map.capabilities.length ? `Capabilities: ${map.capabilities.slice(0, 6).map((c) => c.id).join(', ')}${map.capabilities.length > 6 ? ', …' : ''}. Use * as a wildcard.` : 'There are no capabilities yet. Draft them with `oodle discover`.',
+    });
+  }
+  if (ctx.format === 'json') {
+    const keep = only.length ? globMatcher(only) : () => true;
+    return printJson({ ok: true, ...map, capabilities: map.capabilities.filter((c) => keep(c.id)) }), EXIT.ok;
+  }
+  if (ctx.format === 'md') return console.log(systemMarkdown(map)), EXIT.ok;
+  heading('explain', dir);
+  console.log(renderSystem(map, { only }));
+  const next: string[] = [];
+  if (!map.capabilities.length) next.push(`Draft the capabilities from your routes: ${e.cyan('oodle discover')}`);
+  else if (map.unclaimed.length) next.push(`Draft capabilities for the routes none lists: ${e.cyan('oodle discover')}`);
+  if (map.capabilities.some((c) => !c.rungs.capability) || map.questions.some((q) => !q.answer)) next.push(`Say what only you can say: ${e.cyan('oodle interview')}`);
+  if (!only.length && map.capabilities.length) next.push(`One capability in full: ${e.cyan(`oodle explain --only ${map.capabilities[0].id}`)}`);
+  hints(next);
   return EXIT.ok;
 }
 

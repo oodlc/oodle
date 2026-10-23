@@ -8,6 +8,8 @@ import type { DiffReport, OutcomeStatus } from './diff.ts';
 import { groupByCondition } from './report.ts';
 import type { Catalog, LintResult, Observation, RunResult } from './types.ts';
 import type { MutantResult, MutateReport } from './mutate.ts';
+import type { CapabilityView, SystemMap } from './explain.ts';
+import { globMatcher } from './runner.ts';
 import { columns, ms, out as s, pad, plural, sym, visible } from './term.ts';
 
 const indent = (n: number) => ' '.repeat(n);
@@ -265,6 +267,13 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     lines.push('');
   }
 
+  if (r.capabilities.changes.length || r.capabilities.touched.length) {
+    lines.push(heading('Capabilities', 'the inventory · report only, never blocking'));
+    for (const t of r.capabilities.touched) lines.push(`  ${s.cyan(sym.pointer)} ${t.id}  ${s.dim(`reached by ${t.by.join(', ')}`)}`);
+    for (const c of r.capabilities.changes) lines.push(`  ${s.cyan(sym.drift)} ${c.id} ${s.dim(c.status)}${c.details.length ? `  ${s.dim(c.details.join('; '))}` : ''}`);
+    lines.push('');
+  }
+
   if (r.gaps.length) {
     lines.push(heading('Unknown routes', 'nothing describes these'));
     for (const g of r.gaps) lines.push(`  ${s.magenta(sym.unknown)} ${g.route}  ${s.dim(g.probe.status !== null ? `returned ${g.probe.status}` : `errored: ${g.probe.error}`)}`);
@@ -342,6 +351,12 @@ export function renderMutate(r: MutateReport, view: { verbose?: boolean; minScor
     for (const k of r.killers) lines.push(`  ${pad(k.id, w)}  ${s.dim(`${plural(k.kills, 'bug')} · ${k.unique} unique`)}`);
     lines.push('');
   }
+  if (r.capabilities?.length) {
+    lines.push(heading('By capability', 'bugs its outcomes catch · unique = nothing outside it catches'));
+    const w = Math.max(...r.capabilities.map((k) => k.id.length));
+    for (const k of r.capabilities) lines.push(`  ${pad(k.id, w)}  ${s.dim(`${plural(k.kills, 'bug')} · ${k.unique} unique`)}`);
+    lines.push('');
+  }
   if (r.redundant.length) {
     lines.push(heading('Redundant outcomes', 'every bug they catch, a smaller set catches too'));
     for (const id of r.redundant) lines.push(`  ${s.dim(sym.dot)} ${id}`);
@@ -399,4 +414,92 @@ export function wrap(text: string, width: number, hang = 0): string {
   }
   if (line) lines.push(line);
   return lines.join('\n');
+}
+
+// ── The system map (oodle explain) ──────────────────────────────────────────
+
+const RUNGS = ['capability', 'outcome', 'intent', 'experience'] as const;
+
+function rungLine(c: CapabilityView): string {
+  const marks = RUNGS.map((r) => `${r} ${c.rungs[r] ? s.green(sym.ok) : s.dim(sym.dot)}`).join('  ');
+  return `${marks}${c.next ? `   ${s.dim(`${sym.arrow} ${c.next}`)}` : ''}`;
+}
+
+function outcomeWords(c: CapabilityView): string[] {
+  const n = (state: string) => c.outcomes.filter((o) => o.state === state).length;
+  return [
+    ...(n('holds') ? [s.green(`${plural(n('holds'), 'outcome')} ${n('holds') === 1 ? 'holds' : 'hold'}`)] : []),
+    ...(n('fails') ? [s.red(`${plural(n('fails'), 'outcome')} failing`)] : []),
+    ...(n('proposed') ? [`${plural(n('proposed'), 'proposed outcome')}`] : []),
+    ...(c.behaviors.length ? [plural(c.behaviors.length, 'behavior')] : []),
+    ...(c.constraints.length ? [plural(c.constraints.length, 'constraint')] : []),
+  ];
+}
+
+function capabilityLines(c: CapabilityView, width: number, detailed: boolean): string[] {
+  const mark = c.status === 'confirmed' ? s.green(sym.watch) : s.yellow('○');
+  const lines = [`  ${mark} ${pad(s.bold(c.id), width)}  ${c.statement}`];
+  const facts = [c.actor?.id, c.surfaces.join(', '), ...outcomeWords(c)].filter(Boolean);
+  if (facts.length) lines.push(`      ${s.dim(facts.join(` ${sym.dot} `))}`);
+  lines.push(`      ${rungLine(c)}`);
+  if (detailed) {
+    const row = (label: string, value: string) => lines.push(detail(`${s.dim(label.padEnd(11))} ${value}`));
+    if (c.actor?.statement) row('actor', `${c.actor.id}: ${c.actor.statement}`);
+    for (const o of c.outcomes) row('outcome', `${o.id}  ${o.state === 'holds' ? s.green('holds') : o.state === 'fails' ? s.red('fails') : s.dim('proposed')}`);
+    for (const b of c.behaviors) row('behavior', b);
+    if (c.calls.length) row('calls', c.calls.join(', '));
+    if (c.writes.length) row('writes', c.writes.join(', '));
+    if (c.constraints.length) row('constraints', c.constraints.join(', '));
+    for (const e of c.experiences) row('experience', e);
+    for (const e of c.evidence) row('evidence', s.dim(e));
+  }
+  return lines;
+}
+
+export function renderSystem(map: SystemMap, view: { only?: string[] } = {}): string {
+  const lines: string[] = [];
+  const match = view.only?.length ? globMatcher(view.only) : null;
+  const shown = map.capabilities.filter((c) => !match || match(c.id));
+  const width = Math.max(0, ...shown.map((c) => c.id.length));
+  const caps = (ids: string[]) => shown.filter((c) => ids.includes(c.id));
+  const experience = (e: SystemMap['experiences'][number]) =>
+    `  ${s.cyan('◇')} ${pad(s.bold(e.id), width)}  ${e.statement}${e.steps.length ? `\n      ${s.dim(`experience ${sym.dot} ${[e.actor, e.steps.join(` ${sym.arrow} `)].filter(Boolean).join(` ${sym.dot} `)}`)}` : ''}`;
+
+  if (!map.capabilities.length && !match) {
+    lines.push(`${s.bold('No capabilities yet')}  ${s.dim('the catalog says what is promised, not yet what the system does')}`);
+    for (const i of map.intents) lines.push(`  ${s.bold(i.id)}  ${i.statement}${i.outcomes.length ? s.dim(`  ${plural(i.outcomes.length, 'outcome')}`) : ''}`);
+    if (map.unclaimed.length) lines.push('', `${s.bold('Routes')}  ${s.dim(map.unclaimed.join(', '))}`);
+    return lines.join('\n');
+  }
+
+  for (const i of map.intents) {
+    const mine = caps(i.capabilities);
+    const exps = map.experiences.filter((e) => i.experiences.includes(e.id) && (!match || e.steps.some((st) => match(st))));
+    if (match && !mine.length) continue;
+    lines.push(`${s.bold(i.id)}${i.proposed ? s.yellow(' (proposed)') : ''}  ${s.dim(i.statement)}`);
+    for (const c of mine) lines.push(...capabilityLines(c, width, !!match));
+    for (const e of exps) lines.push(experience(e));
+    if (!match && i.outcomes.length) lines.push(`  ${s.dim(`${plural(i.outcomes.length, 'outcome')} with no capability: ${i.outcomes.join(', ')}`)}`);
+    if (!match && !mine.length && !exps.length && !i.outcomes.length) {
+      const q = map.questions.find((x) => x.id === `unserved.${i.id}`);
+      lines.push(`  ${s.dim(`nothing serves this yet${q?.answer ? ` (${q.answer})` : ''}`)}`);
+    }
+    lines.push('');
+  }
+  const loose = shown.filter((c) => !c.intent || !map.intents.some((i) => i.id === c.intent));
+  if (loose.length) {
+    lines.push(`${s.bold('No intent yet')}  ${s.dim('what these are for is still unsaid')}`);
+    for (const c of loose) lines.push(...capabilityLines(c, width, !!match));
+    lines.push('');
+  }
+  if (!match) {
+    const orphans = map.experiences.filter((e) => !e.intent || !map.intents.some((i) => i.id === e.intent));
+    if (orphans.length) lines.push(`${s.bold('Experiences with no intent')}`, ...orphans.map(experience), '');
+    if (map.unclaimed.length) lines.push(`${s.bold('Routes no capability lists')}  ${s.dim(map.unclaimed.join(', '))}`, '');
+    const open = map.questions.filter((q) => !q.answer);
+    if (open.length) lines.push(`${s.bold('Open questions')}`, ...open.map((q) => `  ${s.yellow(sym.unknown)} ${q.id}  ${s.dim(q.question)}`), '');
+  }
+  const m = map.summary;
+  lines.push(`${s.bold(`${plural(m.capabilities, 'capability', 'capabilities')}`)}  ${s.dim([`${m.confirmed} confirmed`, `${m.protected} protected by an outcome that holds`, `${m.claimed} of ${plural(m.routes, 'route')} claimed`].join(` ${sym.dot} `))}`);
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }

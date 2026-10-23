@@ -16,7 +16,8 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, syml
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfig } from './catalog.ts';
+import { loadCatalog, loadConfig } from './catalog.ts';
+import { capabilityOf } from './explain.ts';
 import { nextSourceFiles } from './next-routes.ts';
 import { stableStringify } from './expect.ts';
 import { OodleError } from './errors.ts';
@@ -433,6 +434,11 @@ export interface MutateReport {
   summary: Record<MutantStatus, number> & { mutants: number; generated: number };
   mutants: MutantResult[];
   killers: Killer[];
+  /**
+   * The same, grouped by the capability each outcome belongs to (0010): how many planted bugs each
+   * capability's outcomes catch, and how many nothing outside that capability catches. Only with capabilities.
+   */
+  capabilities?: Killer[];
   /** Outcomes and constraints that ran and caught no mutant at all, or none that a smaller set doesn't catch too. */
   redundant: string[];
   tests?: {
@@ -606,6 +612,18 @@ export async function mutate(projectDir: string, opts: MutateOptions = {}): Prom
     for (const r of results) for (const k of r.killed_by) if (k !== 'timeout' && k !== 'app-crash') (kills.get(k) ?? kills.set(k, new Set()).get(k)!).add(r.id);
     const union = (except: string) => new Set([...kills].filter(([k]) => k !== except).flatMap(([, s]) => [...s]));
     const killersList = tally(kills, union);
+    // By capability: an outcome's kills count for the capability it belongs to.
+    const catalog = loadCatalog(projectDir, loadConfig(projectDir));
+    const ownerOf = (killer: string) => {
+      const outcome = catalog.outcomes.find((o) => o.id === killer);
+      return outcome ? capabilityOf(catalog, outcome)?.id : undefined;
+    };
+    const capKills = new Map<string, Set<number>>();
+    for (const [k, s] of kills) {
+      const cap = ownerOf(k);
+      if (cap) for (const m of s) (capKills.get(cap) ?? capKills.set(cap, new Set()).get(cap)!).add(m);
+    }
+    const outside = (cap: string) => new Set([...kills].filter(([k]) => ownerOf(k) !== cap).flatMap(([, s]) => [...s]));
     const ran = new Set((baseDoc.observations ?? []).filter((o) => o.kind === 'outcome' && !o.proposed).map((o) => o.id));
     const needed = cover(kills);
     const redundant = [...new Set([...ran].filter((id) => !needed.has(id)))].sort();
@@ -617,6 +635,7 @@ export async function mutate(projectDir: string, opts: MutateOptions = {}): Prom
       summary: { generated, mutants: results.length, killed: count('killed'), noticed: count('noticed'), internal: count('internal'), survived: count('survived'), timeout: count('timeout'), invalid: count('invalid') },
       mutants: results,
       killers: killersList,
+      ...(catalog.capabilities.length ? { capabilities: tally(capKills, outside) } : {}),
       redundant,
       elapsed_ms: Math.round(performance.now() - t0),
     };

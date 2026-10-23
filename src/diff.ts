@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Behavior, Boundary, Gap, LintResult, Observation, Outcome, RunResult } from './types.ts';
 import { jsonDiff, stableStringify } from './expect.ts';
+import { capabilityOf } from './explain.ts';
+import { reaches } from './runner.ts';
 
 /**
  * A human's approval of one blocking change to a promise, bound to exactly what changed.
@@ -75,6 +77,22 @@ export interface ConstraintDiff {
   approved_by?: string[];
 }
 
+/** A capability added, removed, confirmed or reworded. The inventory explains; it never blocks (0010). */
+export interface CapabilityDiff {
+  id: string;
+  statement: string;
+  status: 'new' | 'removed' | 'confirmed' | 'unconfirmed' | 'changed';
+  /** "statement: … → …" for each field that moved. */
+  details: string[];
+}
+
+/** A capability this change reaches: through an outcome or behavior that is no longer held, or a route nothing describes. */
+export interface TouchedCapability {
+  id: string;
+  statement: string;
+  by: string[];
+}
+
 export interface DiffReport {
   outcomes: OutcomeDiff[];
   /** Drift never blocks; a constraint violation seen on a behavior run does. */
@@ -82,6 +100,8 @@ export interface DiffReport {
   /** Only constraints whose definition changed. */
   constraints: ConstraintDiff[];
   gaps: Gap[];
+  /** Report only: what the change does to the inventory, and which capabilities it reaches. */
+  capabilities: { changes: CapabilityDiff[]; touched: TouchedCapability[] };
   lint: LintResult;
   blocking: number;
   approvals: {
@@ -295,6 +315,47 @@ function applyApprovals(outcomes: OutcomeDiff[], constraints: ConstraintDiff[], 
   return { applied, stale };
 }
 
+const CAPABILITY_FIELDS = ['statement', 'actor', 'intent', 'surfaces'] as const;
+
+function diffCapabilities(base: RunResult, head: RunResult, outcomes: OutcomeDiff[], behaviors: BehaviorDiff[]): DiffReport['capabilities'] {
+  const before = new Map(base.catalog.capabilities.map((c) => [c.id, c]));
+  const after = new Map(head.catalog.capabilities.map((c) => [c.id, c]));
+  const changes: CapabilityDiff[] = [];
+  const show = (v: unknown) => (Array.isArray(v) ? v.join(', ') : v === undefined ? '(none)' : String(v));
+  for (const [id, c] of after) {
+    const was = before.get(id);
+    if (!was) {
+      changes.push({ id, statement: c.statement, status: 'new', details: c.status === 'proposed' ? ['proposed'] : [] });
+      continue;
+    }
+    const details = CAPABILITY_FIELDS.filter((f) => stableStringify(was[f] ?? null) !== stableStringify(c[f] ?? null)).map((f) => `${f}: ${show(was[f])} → ${show(c[f])}`);
+    const confirmed = was.status === 'proposed' && c.status !== 'proposed';
+    const unconfirmed = was.status !== 'proposed' && c.status === 'proposed';
+    if (confirmed || unconfirmed || details.length) changes.push({ id, statement: c.statement, status: confirmed ? 'confirmed' : unconfirmed ? 'unconfirmed' : 'changed', details });
+  }
+  for (const [id, c] of before) if (!after.has(id)) changes.push({ id, statement: c.statement, status: 'removed', details: [] });
+
+  const touched = new Map<string, TouchedCapability>();
+  const touch = (capability: ReturnType<typeof capabilityOf>, by: string) => {
+    if (!capability) return;
+    const t = touched.get(capability.id) ?? { id: capability.id, statement: capability.statement, by: [] };
+    if (!t.by.includes(by)) t.by.push(by);
+    touched.set(capability.id, t);
+  };
+  // A removed outcome or behavior belonged to a capability in the base; everything else, in the head.
+  const owner = (kind: 'outcomes' | 'behaviors', id: string) => {
+    for (const run of [head, base]) {
+      const item = (run.catalog[kind] as (Outcome | Behavior)[]).find((x) => x.id === id);
+      if (item) return capabilityOf(run.catalog, item);
+    }
+    return undefined;
+  };
+  for (const o of outcomes) if (o.status !== 'held' || o.behavior.length) touch(owner('outcomes', o.id), `${o.id} (${o.status === 'held' ? 'behavior changed' : o.status})`);
+  for (const b of behaviors) if (b.status !== 'held') touch(owner('behaviors', b.id), `${b.id} (${b.status})`);
+  for (const g of head.gaps) touch(head.catalog.capabilities.find((c) => (c.surfaces ?? []).some((s) => reaches(s, g.route))), `${g.route} (described by nothing)`);
+  return { changes, touched: [...touched.values()] };
+}
+
 export function diffRuns(base: RunResult, head: RunResult, approvals: Approval[] = []): DiffReport {
   const outcomes = diffOutcomes(base, head);
   const behaviors = diffBehaviors(base, head);
@@ -307,5 +368,5 @@ export function diffRuns(base: RunResult, head: RunResult, approvals: Approval[]
     constraints.filter((d) => d.blocking).length +
     head.gaps.filter((g) => g.violations.length).length +
     head.lint.errors.length;
-  return { outcomes, behaviors, constraints, gaps: head.gaps, lint: head.lint, blocking, approvals: approved };
+  return { outcomes, behaviors, constraints, gaps: head.gaps, capabilities: diffCapabilities(base, head, outcomes, behaviors), lint: head.lint, blocking, approvals: approved };
 }

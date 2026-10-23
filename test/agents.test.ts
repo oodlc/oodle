@@ -111,7 +111,7 @@ test('mcp: lists propose-only tools and answers a run over stdio', () => {
   const replies = new Map(r.stdout.trim().split('\n').map((l) => JSON.parse(l)).map((m) => [m.id, m]));
   assert.equal(replies.get(1).result.protocolVersion, '2025-06-18');
   const tools = replies.get(2).result.tools.map((t: any) => t.name);
-  assert.deepEqual(tools, ['run', 'check', 'lint', 'catalog', 'explain', 'mutate', 'discover', 'answer', 'propose']);
+  assert.deepEqual(tools, ['run', 'check', 'lint', 'catalog', 'explain', 'mutate', 'map', 'discover', 'answer', 'propose']);
   assert.equal(JSON.parse(replies.get(3).result.content[0].text).ok, true);
   assert.equal(replies.get(4).result.isError, true, 'the propose tool cannot overwrite an outcome');
 });

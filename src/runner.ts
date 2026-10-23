@@ -14,6 +14,14 @@ export { reaches, routeRegex };
 import { allConditions, fuzzBody, takePollution } from './security.ts';
 import { recordEscapes, seal, sealViolations } from './seal.ts';
 import { SimDatabase, sqlInjectionViolations } from './database.ts';
+import { SqliteDatabase } from './sqlite.ts';
+
+/** The database a run starts from and records writes to: Postgres or SQLite, simulated in process. */
+export type SimulatedDatabase = Pick<SimDatabase, 'tableNames' | 'reset' | 'changes' | 'contents' | 'takeInjections' | 'close'>;
+
+/** Opens the database `database` in oodlc/config.yaml names, before the app loads. */
+export const openDatabase = (projectDir: string, config: NonNullable<Config['database']>): Promise<SimulatedDatabase> =>
+  config.engine === 'sqlite' ? SqliteDatabase.open(projectDir, config) : SimDatabase.open(projectDir, config, FIXED_NOW);
 
 /** The simulation's clock: ctx.now(), the adapter's frozen Date, and the simulated database all read it. */
 export const FIXED_NOW = '2026-01-01T00:00:00.000Z';
@@ -148,7 +156,7 @@ function checkConstraints(catalog: Catalog, effects: EffectRecord[], state: unkn
 }
 
 /** Built-in invariants every run holds to, whatever the catalog says: the simulation is sealed, the prototype stays clean, and request input never becomes SQL. */
-function builtinViolations(escapes: string[], db: SimDatabase | null): string[] {
+function builtinViolations(escapes: string[], db: SimulatedDatabase | null): string[] {
   const out = sealViolations(escapes);
   if (takePollution()) out.push('constraint oodle.prototype-pollution violated: a request body\'s __proto__ field reached Object.prototype');
   if (db) out.push(...sqlInjectionViolations(db.takeInjections()));
@@ -159,7 +167,7 @@ function builtinViolations(escapes: string[], db: SimDatabase | null): string[] 
 const readsDb = (catalog: Catalog) => catalog.constraints.some((c) => /\bdb\b/.test(c.check));
 
 /** After a run: what the app wrote joins its effects, and constraints get the tables. */
-async function afterRun(db: SimDatabase | null, catalog: Catalog, effects: EffectRecord[]): Promise<Record<string, unknown[]>> {
+async function afterRun(db: SimulatedDatabase | null, catalog: Catalog, effects: EffectRecord[]): Promise<Record<string, unknown[]>> {
   if (!db) return {};
   effects.push(...(await db.changes()));
   return readsDb(catalog) ? db.contents() : {};
@@ -186,7 +194,7 @@ export type Subject = { kind: 'outcome'; item: Outcome } | { kind: 'behavior'; i
  * Runs one outcome or behavior under one condition. Outcomes are checked against
  * `expect`, behaviors against their `observed` snapshot, and both against every constraint.
  */
-export async function runSubject(createApp: CreateApp, catalog: Catalog, config: Config, subject: Subject, condition: Condition | null, db: SimDatabase | null = null): Promise<Observation> {
+export async function runSubject(createApp: CreateApp, catalog: Catalog, config: Config, subject: Subject, condition: Condition | null, db: SimulatedDatabase | null = null): Promise<Observation> {
   const { item } = subject;
   const given = mergeGiven(config.defaults?.given, item.trigger.given, condition?.given);
   const sim = simulate(given);
@@ -234,7 +242,7 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   return obs;
 }
 
-async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>, db: SimDatabase | null, probeBody?: RunOptions['probeBody']): Promise<Gap[]> {
+async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>, db: SimulatedDatabase | null, probeBody?: RunOptions['probeBody']): Promise<Gap[]> {
   const gaps: Gap[] = [];
   const triggers = [...catalog.outcomes, ...catalog.behaviors].map((x) => x.trigger.http.split(' '));
   for (const route of app.routes) {
@@ -328,7 +336,7 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
   // A project with no app explains a system Oodle can't run: nothing runs, nothing is probed (0011).
   if (!config.app) return { projectDir, config, catalog, lint: lintResult, routes: [], observations: [], gaps: [], dependencies };
   // The database comes up before the app loads, so DATABASE_URL is set for modules that read it on import.
-  const db = config.database ? await SimDatabase.open(projectDir, config.database, FIXED_NOW) : null;
+  const db = config.database ? await openDatabase(projectDir, config.database) : null;
   const unseal = config.sealed === false ? () => {} : seal(typeof config.sealed === 'object' ? config.sealed.allow : []);
   try {
     return { ...(await runSealed(projectDir, config, catalog, lintResult, opts, db)), dependencies };
@@ -338,7 +346,7 @@ export async function runProject(projectDir: string, opts: RunOptions = {}): Pro
   }
 }
 
-async function runSealed(projectDir: string, config: Config, catalog: Catalog, lintResult: RunResult['lint'], opts: RunOptions, db: SimDatabase | null): Promise<RunResult> {
+async function runSealed(projectDir: string, config: Config, catalog: Catalog, lintResult: RunResult['lint'], opts: RunOptions, db: SimulatedDatabase | null): Promise<RunResult> {
   const { value: createApp, escapes } = await recordEscapes(() => loadApp(projectDir, config));
   if (escapes.length) {
     throw new OodleError('sealed', `${config.app} reached the real network while loading`, {

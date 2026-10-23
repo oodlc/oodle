@@ -4,6 +4,14 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.18.0 (2026-10-23): Cloudflare Workers, in process
+
+- **Changes:** `@oodlc/oodle/workers` runs a Cloudflare Worker's own fetch handler in process, in the sealed simulation, with `env` built from `wrangler.jsonc`, `.json` or `.toml`. D1 is SQLite with the migrations applied. KV lives in `given.state`. Static assets are served before the Worker. Every other binding (`send_email`, queues, services, R2, …) records each call as the effect `<BINDING>.<method>`. `ctx.waitUntil` work counts. `cloudflare:workers`, `cloudflare:email`, HTMLRewriter (lol-html, through the optional peer `html-rewriter-wasm`), `caches`, `crypto.subtle.timingSafeEqual`, and Text, Data and Wasm modules all work. See [0017](docs/decisions/0017-workers-in-process.md) and `examples/worker-cards`.
+- **Changes:** `database` takes `engine: sqlite`: a real SQLite in process (`node:sqlite`, Node 22.13 or later), with the same reset, `given.db`, recorded writes, `db` in constraints and `oodle.sql-injection` as Postgres.
+- `oodle init` wraps a Worker from a Wrangler config that names `main`. It writes `oodle.app.mts` with the paths the code compares against as routes, and the D1 migrations as the database. A Wrangler config with no `main` is still `unsupported-stack`.
+- `oodle doctor` checks the SQLite database as it does Postgres.
+- `oodle mutate` never mutates `@oodlc/oodle/workers` adapters.
+
 ## 0.17.0 (2026-10-23): headers, text and the host
 
 - **Changes:** `expect` takes `headers` (response headers by name, any case, each a value or a matcher) and `text` (the whole body as text, for HTML pages). Matchers gain `not_contains` and `not`, and `contains` takes a list. Outcomes, behaviors and constraints take `refs`, the ids of an outside spec they restate, shown in the run output and the outcome diff and never part of a promise. See [0016](docs/decisions/0016-outcomes-check-headers-text-and-host.md).

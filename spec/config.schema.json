@@ -23,10 +23,14 @@
       }
     },
     "database": {
-      "description": "A real Postgres for the app, simulated in process with PGlite (npm i -D @electric-sql/pglite). The app connects through DATABASE_URL with its own driver; every run starts from the schema plus given.db, and each row the app writes is recorded as an internal effect (db.<table>.inserted, .updated, .deleted). See docs/decisions/0009",
+      "description": "A real database for the app, simulated in process: Postgres with PGlite (npm i -D @electric-sql/pglite), which the app reaches through DATABASE_URL with its own driver, or SQLite (engine: sqlite), which a Worker reaches as D1; every run starts from the schema plus given.db, and each row the app writes is recorded as an internal effect (db.<table>.inserted, .updated, .deleted). See docs/decisions/0009",
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "engine": {
+          "description": "postgres (the default) runs PGlite and serves DATABASE_URL. sqlite runs SQLite in process with node:sqlite (Node 22.13 or later, nothing to install), which a Cloudflare Worker sees as its D1 binding. See docs/decisions/0017",
+          "enum": ["postgres", "sqlite"]
+        },
         "schema": {
           "description": "SQL applied once before the runs: a .sql file, or a folder whose .sql files are applied in name order (prisma/migrations, drizzle, supabase/migrations, db/migrations). Down migrations are skipped. Relative to the project root",
           "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }]

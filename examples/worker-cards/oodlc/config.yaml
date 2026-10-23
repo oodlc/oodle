@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/config.json
+# A Cloudflare Worker on D1, run in process through @oodlc/oodle/workers. See ../oodle.app.mts.
+app: oodle.app.mts
+database:
+  engine: sqlite                 # D1 is SQLite: node:sqlite, nothing to install
+  schema: migrations             # the same migrations wrangler d1 migrations apply

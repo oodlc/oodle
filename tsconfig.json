@@ -19,6 +19,9 @@
       ],
       "@oodlc/oodle/next": [
         "./src/next.ts"
+      ],
+      "@oodlc/oodle/workers": [
+        "./src/workers.ts"
       ]
     }
   },

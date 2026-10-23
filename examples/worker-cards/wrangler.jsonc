@@ -1,0 +1,13 @@
+// A Cloudflare Worker with D1, KV, email and static assets. Oodle reads this file to build env.
+{
+  "name": "cards",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "vars": { "SITE_NAME": "Cards" },
+  "d1_databases": [{ "binding": "DB", "database_name": "cards", "database_id": "local", "migrations_dir": "migrations" }],
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "local" }],
+  "send_email": [{ "name": "EMAIL" }],
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  // Markdown is bundled as text, as the footer import below expects.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"] }],
+}

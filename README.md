@@ -42,6 +42,7 @@ npm install
 npx oodle hello                          # meet Oodle
 npx oodle run examples/checkout          # a service built for OODLC
 npx oodle run examples/express-orders    # an ordinary Express service, run through the adapter
+npx oodle run examples/worker-cards      # a Cloudflare Worker on D1, KV and email, in process (Node 22.13+)
 npm test                                 # the seeded scenarios
 ```
 
@@ -63,7 +64,7 @@ When you need them:
 
 ## Adopting an existing service
 
-`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono, `node:http`, or [Next.js](#nextjs)) and writes `oodle.app.ts`, which runs it through `@oodlc/oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
+`oodle init` finds the HTTP service already in the repository (Express, Fastify, Koa, Hono, `node:http`, [Next.js](#nextjs), or a [Cloudflare Worker](#cloudflare-workers)) and writes `oodle.app.ts`, which runs it through `@oodlc/oodle/adapter`. Your code doesn't change, except that the module that builds the app must export it without calling `listen()` on import. [`examples/express-orders`](examples/express-orders) is a complete example.
 
 `init` does the wiring it can see:
 
@@ -139,6 +140,42 @@ export default nextApp({
 - **Pages, server components and server actions aren't run.** Outcomes describe what a caller gets from your routes.
 - **Name every host your routes call, Supabase included,** under `effects`. Until you do, each call is refused, and clients that retry on network errors (supabase-js does) make the run slow before it reports the escape. `oodle doctor` lists the hosts.
 - `oodle mutate` starts from every route file and the middleware, and follows relative imports, not path aliases like `@/`.
+
+### Cloudflare Workers
+
+For a Worker, `oodle init` reads `wrangler.jsonc` (or `.json`, or `.toml`) and writes `oodle.app.mts` around `@oodlc/oodle/workers`. Oodle runs the Worker's own `fetch` handler in process, in the same sealed simulation as every other app: no `workerd`, no Miniflare, no port. [`examples/worker-cards`](examples/worker-cards) is a complete example.
+
+```ts
+// oodle.app.mts
+import { workerApp } from '@oodlc/oodle/workers';
+
+export default await workerApp(() => import('./src/index.ts'), {
+  wrangler: new URL('./wrangler.jsonc', import.meta.url),
+  routes: ['GET /library', 'GET /admin', 'POST /signup', 'POST /mcp'],   // a Worker has no route table
+  env: { MCP_TOKEN: 'test-token' },                                      // secrets, with test values
+});
+```
+
+```yaml
+# oodlc/config.yaml
+app: oodle.app.mts
+database:
+  engine: sqlite          # D1 is SQLite: node:sqlite, nothing to install (Node 22.13+)
+  schema: migrations      # the folder wrangler d1 migrations apply
+```
+
+Each binding in the Wrangler config gets a simulated one:
+
+- **D1** is a real SQLite database, in process, with the migrations applied. Every run starts from them plus `given.db`, every row the Worker writes is recorded (`db.signups.inserted`), constraints see every table as `db`, and request input pasted into SQL is refused as `oodle.sql-injection`, just as for [Postgres](#a-real-database).
+- **KV** lives in `given.state.<BINDING>`, so a run seeds it (`state: { FLAGS: { beta: 'on' } }`) and constraints see what the Worker wrote.
+- **Static assets** are served from the assets directory before the Worker runs, as Cloudflare serves them (`/about` finds `about.html`), and through the `ASSETS` binding.
+- **Every other binding** (`send_email`, queues, service bindings, R2, Analytics Engine, Workers AI, …) records each method call as an effect named `<BINDING>.<method>`. Sends (`EMAIL.send`, `QUEUE.send`, `put`, `writeDataPoint`) are recorded and need no stub. Calls that answer (`AUTH.fetch`, `AI.run`) take a stub in `oodlc/config.yaml`.
+- **`ctx.waitUntil`** work finishes before the run is judged, so an email sent after the response still counts.
+- **`cloudflare:workers`** (`env`, `WorkerEntrypoint`, `DurableObject`), **`cloudflare:email`** (`EmailMessage`), **`HTMLRewriter`**, `caches` and `crypto.subtle.timingSafeEqual` are there. HTMLRewriter is lol-html, the engine Cloudflare runs, compiled to WebAssembly: `npm i -D html-rewriter-wasm`.
+- **Text, Data and Wasm modules** load as Wrangler bundles them: `.txt`, `.html`, `.sql` and `.bin` by default, plus what the config's `rules` add (`**/*.md`, `**/*.yaml`).
+- **The host** is the request's `host` header, so `given: { headers: { host: engine.example.com } }` tests a Worker that answers several hostnames.
+
+Not simulated yet: Durable Object storage and alarms, scheduled (`cron`) and queue consumer handlers, and `wrangler.toml` environments (`[env.production]`). See [0017](docs/decisions/0017-workers-in-process.md).
 
 ### A real database
 
@@ -586,11 +623,12 @@ Oodle only talks on stderr and only in a terminal, so `--json`, `--md` and piped
 
 ## Not yet
 
-Oodle runs Node.js services (Node 20.11 or later) and simulates Postgres. Services in other languages can be [explained](#systems-oodle-cant-run), not yet protected. Not yet:
+Oodle runs Node.js services (Node 20.11 or later) and Cloudflare Workers, and simulates Postgres and SQLite (D1). Services in other languages can be [explained](#systems-oodle-cant-run), not yet protected. Not yet:
 
 - Running services in other languages: Python, Go, Ruby, Java and the rest.
-- Databases other than Postgres: MySQL, SQLite, MongoDB, Redis.
-- Triggers other than HTTP: events, queues, schedules, GraphQL subscriptions and gRPC.
+- Databases other than Postgres and SQLite: MySQL, MongoDB, Redis.
+- Triggers other than HTTP: events, queues, schedules (a Worker's `scheduled` handler), GraphQL subscriptions and gRPC.
+- Durable Object storage and alarms.
 - UI outcomes, including Next.js pages and server actions.
 - Systems of several services checked together, probes against real environments, learned simulation models, and an OS-level sandbox for child processes.
 

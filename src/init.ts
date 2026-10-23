@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'yaml';
@@ -7,6 +8,7 @@ import { OodleError } from './errors.ts';
 import { packageManager } from './invocation.ts';
 import { display } from './project.ts';
 import { type DatabaseFound, type OutboundCall, declaredEffects, scanDatabase, scanOutbound } from './scan.ts';
+import { readWrangler } from './workers.ts';
 
 /** The effects block of a generated adapter: the calls init found, or examples to fill in. */
 function effectLines(calls: OutboundCall[], examples: string[]): string {
@@ -16,7 +18,12 @@ function effectLines(calls: OutboundCall[], examples: string[]): string {
 }
 
 /** The database block of a generated config: the schema init found, or a TODO pointing at one. */
-const DATABASE = (db: DatabaseFound) => `# A real Postgres for your app, simulated in process (PGlite): no Docker, no port, nothing to clean up.
+const DATABASE = (db: DatabaseFound) => db.engine === 'sqlite' ? `# D1 is SQLite: Oodle runs it in process (node:sqlite, Node 22.13 or later), with the migrations applied.
+# Every run starts from them plus given.db, and every row the Worker writes is recorded as an effect.
+database:
+  engine: sqlite
+${db.schema ? `  schema: ${db.schema}` : '  # schema: migrations          # TODO: the folder wrangler d1 migrations apply'}
+` : `# A real Postgres for your app, simulated in process (PGlite): no Docker, no port, nothing to clean up.
 # Oodle applies the schema once; every run starts from it plus given.db. Your app connects through
 # ${db.env.join(', ')} with its own driver (${db.driver}), and every row it writes is recorded as an effect.
 database:
@@ -121,7 +128,10 @@ const SERVER_CODE = /\bexpress\(|new Koa\b|new Hono\b|\bfastify\(|Fastify\(|crea
 export interface Service {
   /** The module that builds the app, relative to the project. */
   entry: string;
-  framework: (typeof FRAMEWORKS)[number] | 'node' | 'next';
+  framework: (typeof FRAMEWORKS)[number] | 'node' | 'next' | 'worker';
+  /** A Worker: the Wrangler config it was found from, and the paths its code compares a URL against. */
+  wrangler?: string;
+  routes?: string[];
   /** How the entry exports the app: a named export, 'default', or null if it doesn't seem to. */
   exportName: string | null;
   /** The entry calls listen() itself, so importing it would open a port. */
@@ -190,8 +200,59 @@ function followListen(dir: string, entry: string, src: string, framework: Servic
   return null;
 }
 
+/** Paths a Worker compares its URL against (`pathname === '/admin'`, `case '/mcp':`), as routes to start from: GET unless the line says otherwise. */
+function workerRoutes(dir: string, main: string): string[] {
+  const root = dirname(join(dir, main));
+  const files = [join(dir, main), ...(existsSync(root) ? readdirSync(root, { recursive: true }).map((f) => join(root, String(f))) : [])].filter((f) => /\.[cm]?[jt]s$/.test(f) && !/node_modules|\.test\./.test(f) && existsSync(f) && statSync(f).isFile());
+  const routes = new Set<string>();
+  for (const f of new Set(files)) {
+    for (const line of readFileSync(f, 'utf8').split('\n')) {
+      // A method compared on the same line (`pathname === '/signup' && req.method === 'POST'`) is the route's.
+      const method = /\.method\s*===?\s*['"`]([A-Z]+)['"`]/.exec(line)?.[1] ?? 'GET';
+      for (const m of line.matchAll(/(?:pathname\s*===?\s*|case\s+)['"`](\/[\w\-./]*)['"`]/g)) routes.add(`${method} ${m[1]}`);
+    }
+  }
+  return [...routes].sort((a, b) => a.split(' ')[1].localeCompare(b.split(' ')[1]));
+}
+
+/** Whether a Worker's own code uses HTMLRewriter, which needs html-rewriter-wasm under Oodle. */
+export function usesHtmlRewriter(dir: string, main: string): boolean {
+  const root = dirname(join(dir, main));
+  return readdirSync(root, { recursive: true }).some((f) => /\.[cm]?[jt]s$/.test(String(f)) && /\bnew HTMLRewriter\b/.test(readFileSync(join(root, String(f)), 'utf8')));
+}
+
+/** Whether the project can load a package. */
+export function canResolve(dir: string, spec: string): boolean {
+  try {
+    createRequire(join(dir, 'package.json')).resolve(spec);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A Cloudflare Worker: a Wrangler config that names its entry module. */
+function detectWorker(dir: string): Service | null {
+  const file = ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml'].find((f) => existsSync(join(dir, f)));
+  if (!file) return null;
+  let main: unknown;
+  try { main = readWrangler(join(dir, file)).config.main; } catch { return null; }
+  if (typeof main !== 'string' || !existsSync(join(dir, main))) return null;
+  return { entry: main.replace(/^\.\//, ''), framework: 'worker', exportName: 'default', listensOnImport: false, wrangler: file, routes: workerRoutes(dir, main) };
+}
+
+/** A Worker's D1 database, from its Wrangler config: Oodle runs it as SQLite (0017). */
+function workerDatabase(dir: string, svc: Service): DatabaseFound | undefined {
+  const d1 = readWrangler(join(dir, svc.wrangler!)).config.d1_databases?.[0];
+  if (!d1) return undefined;
+  const schema = d1.migrations_dir ?? 'migrations';
+  return { driver: 'd1', engine: 'sqlite', env: [], ...(existsSync(join(dir, schema)) ? { schema } : {}) };
+}
+
 /** Finds an existing HTTP service in `dir`, so `oodle init` can wrap it instead of writing a starter app. */
 export function detectService(dir: string): Service | null {
+  const worker = detectWorker(dir);
+  if (worker) return worker;
   const pkg = readJson(join(dir, 'package.json'));
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
   // A Next.js app: Oodle runs its App Router route handlers (see src/next.ts).
@@ -222,7 +283,7 @@ export function detectService(dir: string): Service | null {
 
 /** Files that mark a stack Oodle can't run, and what to call it. */
 const STACKS: [string[], string][] = [
-  [['wrangler.toml', 'wrangler.json', 'wrangler.jsonc'], 'a Cloudflare Worker'],
+  [['wrangler.toml', 'wrangler.json', 'wrangler.jsonc'], 'a Cloudflare Worker whose Wrangler config names no main module'],
   [['deno.json', 'deno.jsonc'], 'a Deno app'],
   [['pyproject.toml', 'requirements.txt', 'Pipfile'], 'a Python app'],
   [['go.mod'], 'a Go service'],
@@ -315,6 +376,30 @@ ${db ? DB_NOTE(db) : `  // Runs before each simulated run. Point module-level st
 `}});
 `;
 };
+
+const WORKER_ADAPTER = (svc: Service, calls: OutboundCall[]) => `/**
+ * How Oodle runs your Cloudflare Worker: its own fetch handler from ${svc.entry}, in process, in a sealed
+ * simulation, with env built from ${svc.wrangler}. No workerd, no port. D1 is SQLite in process,
+ * KV lives in given.state, static assets are served as Cloudflare serves them, and every other binding
+ * (send_email, queues, services, R2, …) records each call as an effect named <binding>.<method>.
+ * Outbound fetch calls must be named under \`effects\`, and each effect kind gets a stub in oodlc/config.yaml.
+ *
+ * Then: \`oodle doctor\`. Docs: https://oodlc.com/docs/guide#cloudflare-workers
+ */
+import { workerApp } from '@oodlc/oodle/workers';
+
+export default await workerApp(() => import('./${svc.entry}'), {
+  wrangler: new URL('./${svc.wrangler}', import.meta.url),
+  // A Worker has no route table. These are the paths its code compares against, GET unless the same
+  // line checks the method: check them, and add what's missing, so Oodle can probe the routes nothing describes.
+  routes: [${(svc.routes ?? []).map((r) => `'${r}'`).join(', ')}],
+  // Secrets the Worker reads, with test values. Never real ones: they'd be in your repository.
+  env: {},
+  // Outbound fetch calls, by "METHOD host/path-prefix" or "host". The most specific match wins.
+  effects: {
+${effectLines(calls, ["'POST api.stripe.com/v1/charges': 'payment.charge',", "'api.resend.com': 'email.sent',"])}  },
+});
+`;
 
 /** Workflow steps that set up the package manager and install the repository's dependencies. */
 function installSteps(root: string): string {
@@ -438,10 +523,10 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
       hint: `Write an adapter that runs it (see https://oodlc.com/docs/guide#the-app-contract) and point init at it with --app <file>, or explain it from evidence with \`oodle init --inventory\`.`,
     });
   }
-  const app =opts.app ?? (service ? 'oodle.app.ts' : 'src/app.ts');
+  const app = opts.app ?? (service ? (service.framework === 'worker' ? 'oodle.app.mts' : 'oodle.app.ts') : 'src/app.ts');
   const hasHealth = !service || (service.framework !== 'next' && /['"`]\/health['"`]/.test(readFileSync(join(dir, service.entry), 'utf8')));
   const calls = service ? scanOutbound(dir) : [];
-  const found = service ? scanDatabase(dir) : null;
+  const found = service ? (service.framework === 'worker' ? workerDatabase(dir, service) ?? null : scanDatabase(dir)) : null;
   const db = found && !found.unsupported ? found : undefined;
   // The starter app or adapter only fills a gap; an existing file is always left alone, and its effects get the stubs.
   const appExists = existsSync(join(dir, app));
@@ -450,7 +535,7 @@ export function init(target: string, opts: { app?: string; force?: boolean; ci?:
     [`${FOLDER}/${CONFIG_FILE}`, CONFIG(app, kinds, db), true],
     [`${FOLDER}/intents.yaml`, INTENTS, true],
     [`${FOLDER}/outcomes.yaml`, hasHealth ? OUTCOMES : OUTCOMES_TODO, true],
-    [app, service ? (service.framework === 'next' ? NEXT_ADAPTER(service, calls, db) : ADAPTER(service, calls, db)) : APP, false],
+    [app, service ? (service.framework === 'next' ? NEXT_ADAPTER(service, calls, db) : service.framework === 'worker' ? WORKER_ADAPTER(service, calls) : ADAPTER(service, calls, db)) : APP, false],
   ];
   if (opts.ci) files.push(workflowFile(dir));
   const { created, kept } = writeFiles(dir, files, !!opts.force, opts.app ? app : undefined);

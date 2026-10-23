@@ -8,10 +8,9 @@ import { STARTER_MARK, detectService, detectStack } from './init.ts';
 import { installOodle, packageManager } from './invocation.ts';
 import { SEALED_ID } from './seal.ts';
 import { declaredEffects, scanDatabase } from './scan.ts';
-import { SimDatabase } from './database.ts';
 import type { Observation } from './types.ts';
 import { lint } from './lint.ts';
-import { FIXED_NOW, runProject } from './runner.ts';
+import { openDatabase, runProject } from './runner.ts';
 import { findProject, display } from './project.ts';
 import { OodleError } from './errors.ts';
 import { plural } from './term.ts';
@@ -150,12 +149,12 @@ export async function doctor(arg?: string): Promise<Check[]> {
   // The simulated database on its own, before any run needs it: PGlite loads and the schema applies.
   if (config.database) {
     try {
-      const db = await SimDatabase.open(dir, config.database, FIXED_NOW);
+      const db = await openDatabase(dir, config.database);
       const tables = db.tableNames;
       await db.close();
       const from = [config.database.schema ?? []].flat().join(', ');
       checks.push(tables.length
-        ? { name: 'database', status: 'ok', detail: `Postgres in process, ${plural(tables.length, 'table')} from ${from}: ${tables.slice(0, 5).join(', ')}${tables.length > 5 ? ', …' : ''}` }
+        ? { name: 'database', status: 'ok', detail: `${config.database.engine === 'sqlite' ? 'SQLite' : 'Postgres'} in process, ${plural(tables.length, 'table')} from ${from}: ${tables.slice(0, 5).join(', ')}${tables.length > 5 ? ', …' : ''}` }
         : { name: 'database', status: 'warn', detail: from ? `the schema in ${from} creates no tables` : 'no schema, so the database has no tables', hint: 'Point database.schema in oodlc/config.yaml at the .sql file or migrations folder that creates your tables.' });
     } catch (err) {
       checks.push({ name: 'database', status: 'fail', ...problemText(err, dir) });

@@ -12,7 +12,7 @@ import { diffRuns, parseApproval, type Approval } from './diff.ts';
 import { approvalTokens, diffMarkdown, systemMarkdown } from './report.ts';
 import { renderDiff, renderLint, renderMutate, renderRun, renderSystem, wrap } from './render.ts';
 import { annotateDiff, annotateLint, annotateRun } from './ci.ts';
-import { init, migrate } from './init.ts';
+import { canResolve, init, migrate, usesHtmlRewriter } from './init.ts';
 import { installOodle, oodleCommand, packageManager, runnable } from './invocation.ts';
 import { doctor } from './doctor.ts';
 import { hasPGlite } from './database.ts';
@@ -169,7 +169,7 @@ const COMMANDS: Command[] = [
   {
     name: 'init',
     summary: 'Start a project: an oodlc/ folder with config, a starter catalog and app',
-    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Next.js, Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through @oodlc/oodle/adapter (or /next), instead of a starter app. Otherwise it writes a starter app that passes `oodle run` straight away. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
+    description: 'Creates oodlc/ with config.yaml and a starter catalog. In a repository that already has an HTTP service (Next.js, Express, Fastify, Koa, Hono or node:http), it writes oodle.app.ts, which runs that service through @oodlc/oodle/adapter (or /next), instead of a starter app; for a Cloudflare Worker (a wrangler.jsonc, .json or .toml that names main), oodle.app.mts through @oodlc/oodle/workers, with D1 as SQLite. In an empty project it writes a starter app that passes `oodle run` straight away. In a project with code it cannot run (Python, Go, a src/ with no server it recognises), it stops with unsupported-stack and writes nothing: use --app or --inventory. Your own files are never overwritten. With --ci, also writes a GitHub workflow that posts the outcome diff and takes approvals from reviews. With --migrate, moves a project from the old layout (oodle.yaml plus a catalog directory) into oodlc/, keeping git history.',
     args: [{ name: 'dir', description: 'Where to create the project. Default: the current directory' }],
     flags: [
       { name: 'app', type: 'string', value: 'path', description: 'Use an existing app module instead of the starter (relative to dir)' },
@@ -1175,7 +1175,7 @@ async function cmdInit(ctx: Ctx): Promise<number> {
   }
   if (svc) {
     const app = loadConfig(result.dir).app ?? '';
-    const what = svc.framework === 'next' ? `Next.js route handlers in ${svc.entry}/` : `${svc.framework} app in ${svc.entry}`;
+    const what = svc.framework === 'next' ? `Next.js route handlers in ${svc.entry}/` : svc.framework === 'worker' ? `Cloudflare Worker in ${svc.entry}, env from ${svc.wrangler}` : `${svc.framework} app in ${svc.entry}`;
     console.log(`\n${o.green(o.bold(`${sym.ok} Wrapped your service`))}  ${o.dim(`${what}, run through ${app}`)}`);
     const calls = result.effects ?? [];
     if (calls.length) {
@@ -1185,11 +1185,17 @@ async function cmdInit(ctx: Ctx): Promise<number> {
     const db = result.database;
     if (db?.unsupported) {
       console.log(`\n  ${o.yellow(sym.warn)} ${db.driver} talks to a hosted Postgres over HTTP, which Oodle can't run in process. Name its host under effects, or use pg in tests.`);
+    } else if (db?.engine === 'sqlite') {
+      console.log(`\n  D1 as SQLite, simulated in process, under database in oodlc/config.yaml:`);
+      console.log(`  ${o.cyan(sym.arrow)} migrations ${o.dim(db.schema ?? 'not found yet')}`);
     } else if (db) {
       console.log(`\n  A real Postgres, simulated in process, under database in oodlc/config.yaml:`);
       console.log(`  ${o.cyan(sym.arrow)} ${db.driver} ${o.dim(`through ${db.env.join(', ')} · schema ${db.schema ?? 'not found yet'}`)}`);
     }
-    const needsPGlite = db && !db.unsupported && !hasPGlite(result.dir);
+    const needsPGlite = db && !db.unsupported && db.engine !== 'sqlite' && !hasPGlite(result.dir);
+    const [major, minor] = process.versions.node.split('.').map(Number);
+    const oldNode = db?.engine === 'sqlite' && (major < 22 || (major === 22 && minor < 13));
+    const rewrites = svc.framework === 'worker' && usesHtmlRewriter(result.dir, svc.entry) && !canResolve(result.dir, 'html-rewriter-wasm');
     if (proposals?.added.length || proposals?.skipped.length) {
       console.log(`\n  A first catalog, from probing each route:`);
       printProposals(proposals.added, proposals.file, proposals.skipped);
@@ -1200,7 +1206,10 @@ async function cmdInit(ctx: Ctx): Promise<number> {
       ...(svc.exportName ? [] : [`Export the app from ${svc.entry}, then fix the import in ${app}`]),
       ...(existsSync(join(result.dir, 'node_modules', '@oodlc', 'oodle')) ? [] : [`Install Oodle so ${app} can import it: ${e.cyan(installOodle(packageManager(result.dir)))}`]),
       ...(needsPGlite ? [`Install PGlite, the Postgres Oodle runs in process: ${e.cyan(installOodle(packageManager(result.dir), '@electric-sql/pglite'))}`] : []),
-      ...(db && !db.unsupported && !db.schema ? [`Point database.schema in ${e.cyan('oodlc/config.yaml')} at the .sql file or migrations folder that creates your tables`] : []),
+      ...(oldNode ? [`D1 runs on node:sqlite, which needs Node 22.13 or later; this is ${process.versions.node}`] : []),
+      ...(rewrites ? [`The Worker uses HTMLRewriter. Install the engine Cloudflare runs, compiled to WebAssembly: ${e.cyan(installOodle(packageManager(result.dir), 'html-rewriter-wasm'))}`] : []),
+      ...(svc.framework === 'worker' ? [`Check the routes in ${e.cyan(app)}: a Worker has no route table, so they are the paths its code compares against`] : []),
+      ...(db && !db.unsupported && !db.schema && db.engine !== 'sqlite' ? [`Point database.schema in ${e.cyan('oodlc/config.yaml')} at the .sql file or migrations folder that creates your tables`] : []),
       ...(db && !db.unsupported ? [`Seed the rows each outcome starts from under ${e.cyan('given.db')}, e.g. users: [{ id: u1, email: ada@example.com }]`] : []),
       ...(svc.framework === 'next' && !['.env.test', '.env'].some((f) => existsSync(join(result.dir, f))) ? [`Commit a ${e.cyan('.env.test')} with placeholder values your modules need to load. Oodle never reads .env.local`] : []),
       calls.length

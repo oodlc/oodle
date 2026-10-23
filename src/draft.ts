@@ -27,7 +27,8 @@ export function draftPrompt(projectDir: string, brief: string): string {
 
 # The rules
 
-- **Intents** say why the product exists. **Outcomes** say what someone outside the system must experience: a customer, an external caller, owned data, an obligation. Every outcome traces to an intent.
+- **Intents** say why the product exists. **Outcomes** say what someone outside the system must experience: a customer, an external caller, owned data, an obligation. Every outcome traces to an intent, a capability, or both.
+- **Capabilities** say what the system lets an actor do, as \`<actor> can <verb> <object>\` ("a shopper can pay for a cart"), with the \`surfaces\` ("POST /checkout") that reach it. Avoid verbs that name no checkable action: handles, manages, processes, supports. Give each outcome the \`capability\` it protects. **Experiences** say what an actor goes through across capabilities (\`steps\`) and list what would make it feel broken (\`feels_broken_when\`); each of those is a condition or constraint worth drafting.
 - Describe what can be observed at the boundary: the HTTP status, response body fields, and effects (\`email.sent\`, \`payment.capture\`, ...). Never describe internals: function names, internal effects (\`internal.*\`), log lines.
 - One outcome per promise. Prefer a few sharp outcomes over many vague ones. Use \`conditions\` for variants of the same promise (a slow provider, a returning customer), and \`when\` to say what a condition should change, e.g. \`when: { security.no-credentials: { status: 401 } }\`.
 - Add **constraints** for invariants that must hold on every run, written as a JS expression over \`effects\`, \`state\`, \`response\` and \`request\`, e.g. \`effects.filter(e => e.kind === 'payment.capture').length <= 1\`.
@@ -45,6 +46,12 @@ ${list(catalog.intents)}
 Outcomes:
 ${list(catalog.outcomes)}
 
+Capabilities:
+${list(catalog.capabilities)}
+
+Experiences:
+${list(catalog.experiences)}
+
 Behaviors (observed, not promised):
 ${list(catalog.behaviors)}
 
@@ -60,7 +67,7 @@ ${list(catalog.constraints)}
 Triggers already described: ${triggers.length ? triggers.map((t) => `\`${t}\``).join(', ') : '(none)'}
 External calls the app makes (stubbed in simulation): ${stubs.length ? stubs.map((s) => `\`${s}\``).join(', ') : '(none declared)'}
 ${example ? `\nAn existing outcome, for the shape:\n\n\`\`\`yaml\n${stringify({ outcomes: [example] }).trimEnd()}\n\`\`\`\n` : ''}
-Field reference: outcome = { id, intent, statement, boundary: customer|external|data|obligation|internal, trigger: { http: "METHOD /path", given: { body, headers, state, stubs } }, conditions?, expect: { status, body: { field: value | { exists, type, matches, contains, gte, lte } }, effects: [{ kind, match?, count }], latency_ms_max? }, when?, constraints? }. Ids are lowercase with dots or dashes.
+Field reference: capability = { id, statement, actor?, intent?, surfaces?: ["METHOD /path"] }, experience = { id, statement, actor?, intent?, steps?: [capability ids], feels_broken_when?: [text] }, actor = { id, statement }, outcome = { id, intent?, capability?, statement, boundary: customer|external|data|obligation|internal, trigger: { http: "METHOD /path", given: { body, headers, state, stubs } }, conditions?, expect: { status, body: { field: value | { exists, type, matches, contains, gte, lte } }, effects: [{ kind, match?, count }], latency_ms_max? }, when?, constraints? }. Ids are lowercase with dots or dashes.
 
 # The brief
 
@@ -68,6 +75,6 @@ ${brief.trim()}
 
 # Your answer
 
-Reply with one YAML document and nothing else: a mapping with any of \`intents\`, \`outcomes\`, \`conditions\`, \`constraints\`. No prose, no code fences.
+Reply with one YAML document and nothing else: a mapping with any of \`intents\`, \`actors\`, \`capabilities\`, \`experiences\`, \`outcomes\`, \`conditions\`, \`constraints\`. No prose, no code fences.
 `;
 }

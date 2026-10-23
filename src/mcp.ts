@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { loadCatalog, loadConfig } from './catalog.ts';
 import { draftPrompt } from './draft.ts';
 import { propose } from './propose.ts';
+import { applyAnswers, interviewPrompt, type Answer } from './interview.ts';
 import { OodleError } from './errors.ts';
 import { BUILTIN_CONDITIONS } from './security.ts';
 import type { Gap, Observation } from './types.ts';
@@ -112,7 +113,7 @@ const TOOLS = [
   { name: 'lint', description: 'Validate the catalog: schema, traceability, references.', inputSchema: { type: 'object', properties: {} } },
   {
     name: 'catalog',
-    description: 'Every intent, outcome, behavior, condition (including the built-in security.* pack) and constraint, with statements and status. Read this before writing code or proposals.',
+    description: 'Every intent, outcome, behavior, condition (including the built-in security.* pack) and constraint, and the inventory (actors, capabilities, experiences, open questions), with statements and status. Read this before writing code or proposals.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -126,17 +127,44 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { files: strs('Globs relative to the project'), only: strs('Outcome ids or globs to run'), max: { type: 'number', description: 'At most this many mutants. Default 60' } } },
   },
   {
-    name: 'propose',
-    description: 'Add catalog entries as proposals in oodlc/proposed.yaml. Intents, outcomes and constraints are marked status: proposed: they run and are reported but never block until a human approves them. Can only add: existing ids are refused. This is the only way to write to the catalog.',
+    name: 'discover',
+    description: 'Run the app and propose the capabilities its routes add up to, with their evidence (describing outcomes, calls, table writes, probes), plus open questions only a person can answer. Writes proposals only; returns them, and the outcomes that could name their capability. Next, rewrite each TODO statement as "<actor> can <verb> <object>" by proposing a sharper capability, or ask the person.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'answer',
+    description: 'Record what the person said in an interview: a capability\'s statement, actor or intent, or the answer to an open question. Only for proposed capabilities; it never confirms one, and a new actor or intent arrives as a proposal. Use the interview prompt for the questions.',
     inputSchema: {
       type: 'object',
-      properties: { yaml: str('A YAML mapping with any of intents, outcomes, behaviors, conditions, constraints, in the oodlc catalog format') },
+      properties: {
+        id: str('The capability or question id'),
+        statement: str('What the capability lets its actor do, in the person\'s words: "<actor> can <verb> <object>"'),
+        actor: str('An existing actor id, or a new one with actor_statement'),
+        actor_statement: str('Who the new actor is, in a few words'),
+        intent: str('An existing intent id, or omit and give intent_statement for a new one'),
+        intent_statement: str('A new intent, in the person\'s words'),
+        answer: str('The answer to an open question'),
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'propose',
+    description: 'Add catalog entries as proposals in oodlc/proposed.yaml. Intents, outcomes, constraints, actors, capabilities and experiences are marked status: proposed: they run and are reported but never block until a human approves them. Can only add: existing ids are refused. This is the only way to write to the catalog.',
+    inputSchema: {
+      type: 'object',
+      properties: { yaml: str('A YAML mapping with any of intents, outcomes, behaviors, conditions, constraints, actors, capabilities, experiences, unknowns, in the oodlc catalog format') },
       required: ['yaml'],
     },
   },
 ];
 
 const PROMPTS = [
+  {
+    name: 'interview',
+    description: 'Interview the person about their system: what each capability does, for whom, and why. Shows the questions with their evidence; record answers with the answer tool.',
+    arguments: [],
+  },
   {
     name: 'draft',
     description: 'Turn a brief (PRD, ticket, a few sentences) into proposed intents, outcomes, conditions and constraints for this project.',
@@ -148,7 +176,8 @@ const INSTRUCTIONS = `Oodle protects declared outcomes. The catalog in oodlc/ is
 - Read the catalog tool first. Build against outcomes with run (use only to stay fast). Before finishing, call check and follow what_to_do.
 - Never edit or delete an outcome, constraint or intent to make something pass. Use propose to add new ones; a human approves them.
 - Prefer conditions over new outcomes for variants, and when to say what a condition changes. Use the security.* conditions for hostile inputs.
-- Use mutate to find outcomes too loose to catch real bugs.`;
+- Use mutate to find outcomes too loose to catch real bugs.
+- To describe a system, call discover, then interview the person with the interview prompt and record their words with answer. Never confirm a capability yourself.`;
 
 async function callTool(projectDir: string, name: string, args: any): Promise<unknown> {
   switch (name) {
@@ -165,10 +194,14 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
       return {
         app: config.app,
         intents: c.intents.map(brief),
-        outcomes: c.outcomes.map((o) => ({ ...brief(o), intent: o.intent, boundary: o.boundary, trigger: o.trigger.http, conditions: o.conditions ?? [] })),
+        outcomes: c.outcomes.map((o) => ({ ...brief(o), intent: o.intent, capability: o.capability, boundary: o.boundary, trigger: o.trigger.http, conditions: o.conditions ?? [] })),
         behaviors: c.behaviors.map((b) => ({ ...brief(b), boundary: b.boundary, trigger: b.trigger.http })),
         conditions: [...c.conditions.map(brief), ...BUILTIN_CONDITIONS.filter((b) => !c.conditions.some((x) => x.id === b.id)).map((b) => ({ ...brief(b), builtin: true }))],
         constraints: c.constraints.map((x) => ({ ...brief(x), check: x.check })),
+        actors: c.actors.map(brief),
+        capabilities: c.capabilities.map((x) => ({ ...brief(x), actor: x.actor, intent: x.intent, surfaces: x.surfaces ?? [] })),
+        experiences: c.experiences.map((x) => ({ ...brief(x), actor: x.actor, intent: x.intent, steps: x.steps ?? [] })),
+        unknowns: c.unknowns.map((u) => ({ id: u.id, question: u.question, ...(u.ask ? { ask: u.ask } : {}) })),
         stubs: Object.keys(config.defaults?.given?.stubs ?? {}),
         files: c.sources,
       };
@@ -199,6 +232,21 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
         killers: doc.killers,
         redundant: doc.redundant,
       };
+    }
+    case 'discover':
+      return (await oodleJson(['discover', projectDir], projectDir)).doc;
+    case 'answer': {
+      const a = args ?? {};
+      const answer: Answer = a.answer
+        ? { kind: 'unknown', id: String(a.id), answer: String(a.answer) }
+        : {
+            kind: 'capability',
+            id: String(a.id),
+            ...(a.statement ? { statement: String(a.statement) } : {}),
+            ...(a.actor || a.actor_statement ? { actor: a.actor_statement ? { id: String(a.actor ?? ''), statement: String(a.actor_statement) } : String(a.actor) } : {}),
+            ...(a.intent || a.intent_statement ? { intent: a.intent_statement ? { id: String(a.intent ?? ''), statement: String(a.intent_statement) } : String(a.intent) } : {}),
+          };
+      return applyAnswers(projectDir, [answer], { byPerson: false });
     }
     case 'propose':
       return propose(projectDir, String(args?.yaml ?? ''));
@@ -244,9 +292,10 @@ export function serveMcp(projectDir: string, version: string): Promise<void> {
       case 'prompts/list':
         return reply(id, { prompts: PROMPTS });
       case 'prompts/get': {
-        if (params?.name !== 'draft') return fail(id, -32602, `Unknown prompt "${params?.name}"`);
-        const text = `${draftPrompt(projectDir, String(params?.arguments?.brief ?? ''))}\nWhen you have the YAML, call the propose tool with it instead of replying with it.`;
-        return reply(id, { description: PROMPTS[0].description, messages: [{ role: 'user', content: { type: 'text', text } }] });
+        const prompt = PROMPTS.find((p) => p.name === params?.name);
+        if (!prompt) return fail(id, -32602, `Unknown prompt "${params?.name}"`);
+        const text = prompt.name === 'interview' ? interviewPrompt(projectDir) : `${draftPrompt(projectDir, String(params?.arguments?.brief ?? ''))}\nWhen you have the YAML, call the propose tool with it instead of replying with it.`;
+        return reply(id, { description: prompt.description, messages: [{ role: 'user', content: { type: 'text', text } }] });
       }
       case 'resources/list':
         return reply(id, { resources: [] });

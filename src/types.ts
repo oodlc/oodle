@@ -10,6 +10,58 @@ export interface Intent {
   status?: ProposalStatus;
 }
 
+/**
+ * Who uses the system: a shopper, an operator, a partner's server. Part of the
+ * inventory, which explains the system and never blocks. See docs/decisions/0010.
+ */
+export interface Actor {
+  id: string;
+  statement: string;
+  status?: ProposalStatus;
+}
+
+/**
+ * What the system lets an actor do, and the surfaces that serve it. Discovered
+ * or drafted as a proposal; a person confirms it by deleting `status: proposed`.
+ * A confirmed capability can justify an outcome on its own. See docs/decisions/0010.
+ */
+export interface Capability {
+  id: string;
+  statement: string;
+  actor?: string;
+  intent?: string;
+  /** Triggers that reach it, "METHOD /path" like an outcome's trigger. */
+  surfaces?: string[];
+  /** Where the claim comes from: a file, a probe, a record. Free text for now. */
+  evidence?: string[];
+  status?: ProposalStatus;
+}
+
+/** What an actor goes through across capabilities, and when it feels broken. See docs/decisions/0010. */
+export interface Experience {
+  id: string;
+  statement: string;
+  actor?: string;
+  intent?: string;
+  /** Capability ids, in the order the actor meets them. */
+  steps?: string[];
+  /** Failures the actor would notice. Each is a candidate condition or constraint. */
+  feels_broken_when?: string[];
+  status?: ProposalStatus;
+}
+
+/** A question the system can't answer about itself, and who can. See docs/decisions/0010. */
+export interface Unknown {
+  id: string;
+  question: string;
+  /** The role that can answer it: product owner, platform team. */
+  ask?: string;
+  /** Ids of the entries it is about. */
+  about?: string[];
+  /** What a person said. An answered question is no longer open; fold the answer into the catalog when you can. */
+  answer?: string;
+}
+
 export interface Stub {
   result?: unknown;
   error?: string;
@@ -60,7 +112,9 @@ export interface Expect {
  */
 export interface Outcome {
   id: string;
+  /** An outcome traces to an intent, a confirmed capability, or both. See docs/decisions/0010. */
   intent?: string;
+  capability?: string;
   statement: string;
   boundary: Boundary;
   trigger: Trigger;
@@ -79,6 +133,7 @@ export interface Outcome {
 export interface Behavior {
   id: string;
   statement: string;
+  capability?: string;
   boundary: Boundary;
   trigger: Trigger;
   conditions?: string[];
@@ -106,6 +161,11 @@ export interface Catalog {
   behaviors: Behavior[];
   conditions: Condition[];
   constraints: Constraint[];
+  /** The inventory: explains the system, never blocks. See docs/decisions/0010. */
+  actors: Actor[];
+  capabilities: Capability[];
+  experiences: Experience[];
+  unknowns: Unknown[];
   /** id -> file it was declared in, for error messages */
   sources: Record<string, string>;
 }

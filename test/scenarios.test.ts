@@ -197,11 +197,83 @@ test('approval: a private org member, labelled CONTRIBUTOR, counts when their pe
   assert.deepEqual(by({}), ['member']);
 });
 
-test('lint: outcome without an intent is an error', () => {
+test('lint: outcome tracing to neither an intent nor a capability is an error', () => {
   const dir = copyExample();
   edit(dir, 'oodlc/checkout.yaml', 'intent: buy-without-surprises\n    statement: After', 'statement: After');
   const result = lint(loadCatalog(dir, loadConfig(dir)));
-  assert.ok(result.errors.some((e) => e.includes('checkout.payment-confirmed: outcome has no intent')));
+  assert.ok(result.errors.some((e) => e.includes('checkout.payment-confirmed: outcome traces to nothing')));
+});
+
+// ── The inventory (docs/decisions/0010) ──
+
+const BUY_ITEMS = `version: 0
+actors:
+  - { id: shopper, statement: Someone buying from the store }
+capabilities:
+  - id: buy-items
+    statement: A shopper can pay for a cart and get one receipt
+    actor: shopper
+    surfaces: [POST /checkout]
+experiences:
+  - id: first-purchase
+    statement: A first-time shopper pays once and knows it worked
+    actor: shopper
+    intent: buy-without-surprises
+    steps: [buy-items]
+    feels_broken_when: [charged twice]
+unknowns:
+  - { id: health-caller, question: Who calls GET /health?, ask: platform team, about: [ops.health] }
+`;
+
+test('inventory: a confirmed capability justifies an outcome without an intent', () => {
+  const dir = copyExample();
+  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS);
+  edit(dir, 'oodlc/checkout.yaml', 'intent: buy-without-surprises\n    statement: After', 'capability: buy-items\n    statement: After');
+  const result = lint(loadCatalog(dir, loadConfig(dir)));
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.warnings.some((w) => w.includes('health-caller: open question for the platform team: Who calls GET /health?')));
+});
+
+test('inventory: a proposed capability justifies only proposed outcomes, until a person confirms it', () => {
+  const dir = copyExample();
+  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS.replace('actor: shopper\n    surfaces', 'actor: shopper\n    status: proposed\n    surfaces'));
+  edit(dir, 'oodlc/checkout.yaml', 'intent: buy-without-surprises\n    statement: After', 'capability: buy-items\n    statement: After');
+  const errors = lint(loadCatalog(dir, loadConfig(dir))).errors;
+  assert.ok(errors.some((e) => e.includes('checkout.payment-confirmed: traces only to the proposed capability "buy-items"')));
+  edit(dir, 'oodlc/checkout.yaml', 'capability: buy-items\n    statement: After', 'capability: buy-items\n    status: proposed\n    statement: After');
+  assert.deepEqual(lint(loadCatalog(dir, loadConfig(dir))).errors, []);
+  edit(dir, 'oodlc/inventory.yaml', 'actor: shopper\n    status: proposed\n    surfaces', 'actor: shopper\n    surfaces');
+  // The capability is confirmed, but a proposed outcome doesn't protect it yet.
+  assert.ok(lint(loadCatalog(dir, loadConfig(dir))).warnings.some((w) => w.includes('buy-items: capability has no outcomes yet')));
+});
+
+test('inventory: capabilities alone are a valid catalog that explains and never blocks', async () => {
+  const dir = copyExample();
+  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS.replace('A shopper can pay for a cart and get one receipt', 'Handles checkout'));
+  const result = lint(loadCatalog(dir, loadConfig(dir)));
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.warnings.some((w) => w.includes('buy-items: capability has no outcomes yet')));
+  assert.ok(result.warnings.some((w) => w.includes(`buy-items: "Handles" doesn't say what the actor can do`)));
+  const report = diffRuns(await runProject(EXAMPLE), await runProject(dir));
+  assert.equal(report.blocking, 0);
+});
+
+test('inventory: references to unknown actors, intents and capabilities are errors', () => {
+  const dir = copyExample();
+  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS.replace('actor: shopper\n    surfaces', 'actor: buyer\n    surfaces').replace('steps: [buy-items]', 'steps: [buy-items, pay-later]').replace('about: [ops.health]', 'about: [ops.healthz]'));
+  edit(dir, 'oodlc/ops.yaml', 'boundary: internal', 'capability: run-the-store\n    boundary: internal');
+  const errors = lint(loadCatalog(dir, loadConfig(dir))).errors;
+  assert.ok(errors.some((e) => e.includes('buy-items: unknown actor "buyer"')));
+  assert.ok(errors.some((e) => e.includes('first-purchase: unknown capability "pay-later" in steps')));
+  assert.ok(errors.some((e) => e.includes('health-caller: "about" names "ops.healthz"')));
+  assert.ok(errors.some((e) => e.includes('ops.health: unknown capability "run-the-store"')));
+});
+
+test('inventory: a capability id is unique across files, and named in the singular', () => {
+  const dir = copyExample();
+  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS);
+  writeFileSync(join(dir, 'oodlc/more.yaml'), 'version: 0\ncapabilities:\n  - { id: buy-items, statement: A shopper can pay }\n');
+  assert.throws(() => loadCatalog(dir, loadConfig(dir)), /duplicate capability id "buy-items"/);
 });
 
 test('schema: unknown fields are rejected', () => {

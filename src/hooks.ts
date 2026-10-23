@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
-import { CONFIG_FILE, configFile, isProject, loadCatalog, loadConfig } from './catalog.ts';
+import { CONFIG_FILE, configFile, isProject, loadCatalog, loadConfig, singular } from './catalog.ts';
 import { stableStringify } from './expect.ts';
 import { EXIT } from './errors.ts';
 import { agentDiff, agentRun, oodleJson } from './mcp.ts';
@@ -77,7 +77,7 @@ function sessionStart(cwd: string, version: string) {
   const config = loadConfig(dir);
   const c = loadCatalog(dir, config);
   const where = relative(cwd, dir) || '.';
-  const proposed = [...c.intents, ...c.outcomes, ...c.constraints].filter((x) => x.status === 'proposed').length;
+  const proposed = [...c.intents, ...c.outcomes, ...c.constraints, ...c.capabilities].filter((x) => x.status === 'proposed').length;
   const context = `This project is guarded by Oodle ${version} (OODLC). The catalog in ${join(where, config.catalog)}/ is the spec: ${c.outcomes.length} outcomes, ${c.constraints.length} constraints, ${c.behaviors.length} behaviors${proposed ? `, ${proposed} proposals waiting for a human` : ''}.
 - Outcomes and constraints are human-approved and block merges. Behaviors are observed and never block. Internals (anything not visible at the boundary) are yours to change.
 - Work against the outcomes: \`npx --no-install oodle run --only "<id or glob>" --json\` while iterating, \`npx --no-install oodle check --json\` before you finish. A Stop hook runs the check too.
@@ -89,7 +89,8 @@ function sessionStart(cwd: string, version: string) {
 
 // ── pre-tool-use ────────────────────────────────────────────────────────────
 
-const GUARDED = ['intents', 'outcomes', 'constraints'] as const;
+/** A confirmed capability can justify an outcome on its own (0010), so confirming one is a person's call too. */
+const GUARDED = ['intents', 'outcomes', 'constraints', 'capabilities'] as const;
 
 function entries(text: string): Map<string, any> | null {
   let doc: any;
@@ -100,7 +101,7 @@ function entries(text: string): Map<string, any> | null {
   }
   const out = new Map<string, any>();
   if (!doc || typeof doc !== 'object') return out;
-  for (const s of GUARDED) for (const item of Array.isArray(doc[s]) ? doc[s] : []) if (item?.id) out.set(`${s.slice(0, -1)} ${item.id}`, item);
+  for (const s of GUARDED) for (const item of Array.isArray(doc[s]) ? doc[s] : []) if (item?.id) out.set(`${singular(s)} ${item.id}`, item);
   return out;
 }
 

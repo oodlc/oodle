@@ -9,17 +9,18 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parse, stringify } from 'yaml';
-import { CatalogError, loadCatalog, loadConfig, schemaLine, validateCatalogDoc } from './catalog.ts';
+import { CatalogError, SECTIONS, type Section, loadCatalog, loadConfig, schemaLine, singular, validateCatalogDoc } from './catalog.ts';
 import { lint } from './lint.ts';
 import { OodleError } from './errors.ts';
-import { runProject } from './runner.ts';
+import { reaches, runProject } from './runner.ts';
 import type { RunResult } from './types.ts';
 
 export const PROPOSALS_FILE = 'proposed.yaml';
-const SECTIONS = ['intents', 'outcomes', 'behaviors', 'conditions', 'constraints'] as const;
-type Section = (typeof SECTIONS)[number];
-/** Sections a human approves. Behaviors are observed and conditions only add runs, so they need no approval. */
-const APPROVED: Section[] = ['intents', 'outcomes', 'constraints'];
+/**
+ * Sections a human approves. Behaviors are observed and conditions only add runs, so they need no approval.
+ * Unknowns are questions, so there is nothing to confirm. See docs/decisions/0006 and 0010.
+ */
+const APPROVED: Section[] = ['intents', 'outcomes', 'constraints', 'actors', 'capabilities', 'experiences'];
 
 const HEADER = `${schemaLine('catalog')}# Proposed by \`oodle init\`, an agent or \`oodle draft\`, waiting for a human.
 # Proposed entries run and are reported, but never block. To approve one, delete
@@ -33,7 +34,7 @@ export interface ProposeResult {
   warnings: string[];
 }
 
-/** Accepts a parsed fragment or YAML text with any of the five catalog sections. */
+/** Accepts a parsed fragment or YAML text with any of the catalog sections. */
 export function propose(projectDir: string, input: unknown): ProposeResult {
   let fragment: any = input;
   if (typeof input === 'string') {
@@ -41,7 +42,7 @@ export function propose(projectDir: string, input: unknown): ProposeResult {
       // Models like to fence YAML even when asked not to.
       fragment = parse(input.replace(/^\s*```[a-z]*\n([\s\S]*?)\n```\s*$/, '$1'));
     } catch (err) {
-      throw new OodleError('proposal', 'The proposal is not valid YAML', { problems: [(err as Error).message], hint: 'Send a mapping with any of: intents, outcomes, behaviors, conditions, constraints.' });
+      throw new OodleError('proposal', 'The proposal is not valid YAML', { problems: [(err as Error).message], hint: `Send a mapping with any of: ${SECTIONS.join(', ')}.` });
     }
   }
   if (!fragment || typeof fragment !== 'object' || Array.isArray(fragment)) {
@@ -64,7 +65,7 @@ export function propose(projectDir: string, input: unknown): ProposeResult {
     for (const item of incoming[s]) {
       const twin = s === 'outcomes' ? 'behaviors' : s === 'behaviors' ? 'outcomes' : null;
       const where = before.sources[`${s}:${item.id}`] ?? (twin && before.sources[`${twin}:${item.id}`]);
-      if (where) taken.push(`${s.slice(0, -1)} ${item.id} already exists in ${where}`);
+      if (where) taken.push(`${singular(s)} ${item.id} already exists in ${where}`);
     }
   }
   if (taken.length) {
@@ -118,12 +119,14 @@ function expectedBody(body: unknown): Record<string, unknown> | undefined {
  * A proposed outcome for each route nothing describes, from what probing it in
  * the simulation showed: the status, the top-level body fields, and the external
  * calls it made. A starting point for a human to sharpen, never a promise on its own.
+ * A route a capability lists gets that capability, and its intent if it has one (0010).
  */
 export function routeOutcomes(run: RunResult): { fragment: { intents?: unknown[]; outcomes: unknown[] }; skipped: string[] } {
   const intent = run.catalog.intents.find((i) => i.status !== 'proposed') ?? run.catalog.intents[0];
   const taken = new Set([...run.catalog.outcomes, ...run.catalog.behaviors].map((x) => x.id));
   const outcomes: unknown[] = [];
   const skipped: string[] = [];
+  let generic = false;
   for (const g of run.gaps) {
     if (g.probe.status === null) {
       skipped.push(`${g.route}: ${g.probe.error ?? 'no response'}`);
@@ -136,16 +139,19 @@ export function routeOutcomes(run: RunResult): { fragment: { intents?: unknown[]
     for (const e of g.probe.effects ?? []) if (e.boundary !== 'internal' && !e.error) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
     const effects = [...counts].map(([kind, count]) => ({ kind, count }));
     const body = expectedBody(g.probe.body);
+    const capability = run.catalog.capabilities.find((c) => (c.surfaces ?? []).some((s) => reaches(s, g.route)));
+    const said = capability && !/\bTODO\b/.test(capability.statement) ? ` about "${capability.statement}"` : '';
+    if (!capability) generic = true;
     outcomes.push({
       id,
-      intent: intent?.id ?? 'service-available',
-      statement: `TODO: say what a caller can count on. Observed: ${g.route} answered ${g.probe.status}`,
+      ...(capability ? { ...(capability.intent ? { intent: capability.intent } : {}), capability: capability.id } : { intent: intent?.id ?? 'service-available' }),
+      statement: `TODO: say what a caller can count on${said}. Observed: ${g.route} answered ${g.probe.status}`,
       boundary: 'external',
       trigger: { http: g.proposal.trigger.http, ...(method === 'GET' ? {} : { given: { body: {} } }) },
       expect: { status: g.probe.status, ...(body ? { body } : {}), ...(effects.length ? { effects } : {}) },
     });
   }
-  const intents = intent ? undefined : [{ id: 'service-available', statement: 'Callers can rely on the service being there when they need it.' }];
+  const intents = intent || !generic ? undefined : [{ id: 'service-available', statement: 'Callers can rely on the service being there when they need it.' }];
   return { fragment: { ...(intents ? { intents } : {}), outcomes }, skipped };
 }
 

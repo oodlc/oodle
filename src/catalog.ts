@@ -24,6 +24,13 @@ function formatAjv(file: string, errors: any[] | null | undefined): string[] {
   return (errors ?? []).map((e) => `${file}: ${e.instancePath || '/'} ${e.message}${e.params?.additionalProperty ? ` (${e.params.additionalProperty})` : ''}`);
 }
 
+/** Every section a catalog file may hold. The last four are the inventory, which never blocks. See docs/decisions/0010. */
+export const SECTIONS = ['intents', 'outcomes', 'behaviors', 'conditions', 'constraints', 'actors', 'capabilities', 'experiences', 'unknowns'] as const;
+export type Section = (typeof SECTIONS)[number];
+/** "capabilities" -> "capability", "outcomes" -> "outcome". */
+export const singular = (section: Section) => section.replace(/ies$/, 'y').replace(/s$/, '');
+export const emptyCatalog = (): Catalog => ({ ...(Object.fromEntries(SECTIONS.map((s) => [s, []])) as Record<Section, []>), sources: {} });
+
 /** Everything Oodle needs lives in one visible folder at the project root. See docs/decisions/0003. */
 export const FOLDER = 'oodlc';
 export const CONFIG_FILE = 'config.yaml';
@@ -66,7 +73,7 @@ export function loadCatalog(projectDir: string, config: Config): Catalog {
   // In oodlc/, config.yaml sits beside the catalog files; it is not one of them.
   const configPath = configFile(projectDir)?.path;
 
-  const catalog: Catalog = { intents: [], outcomes: [], behaviors: [], conditions: [], constraints: [], sources: {} };
+  const catalog = emptyCatalog();
   const problems: string[] = [];
   const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && join(dir, f) !== configPath).sort();
 
@@ -83,10 +90,10 @@ export function loadCatalog(projectDir: string, config: Config): Catalog {
       problems.push(...formatAjv(rel, validateCatalogFile.errors));
       continue;
     }
-    for (const section of ['intents', 'outcomes', 'behaviors', 'conditions', 'constraints'] as const) {
+    for (const section of SECTIONS) {
       for (const item of doc[section] ?? []) {
         const key = `${section}:${item.id}`;
-        if (catalog.sources[key]) problems.push(`${rel}: duplicate ${section.slice(0, -1)} id "${item.id}" (also in ${catalog.sources[key]})`);
+        if (catalog.sources[key]) problems.push(`${rel}: duplicate ${singular(section)} id "${item.id}" (also in ${catalog.sources[key]})`);
         // Outcomes and behaviors share one id space: promoting a behavior means moving it, not copying it.
         const twin = section === 'outcomes' ? `behaviors:${item.id}` : section === 'behaviors' ? `outcomes:${item.id}` : null;
         if (twin && catalog.sources[twin]) problems.push(`${rel}: "${item.id}" is both an outcome and a behavior (also in ${catalog.sources[twin]}). Promoting a behavior moves it.`);

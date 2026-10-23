@@ -164,7 +164,7 @@ Clients that talk HTTP to a hosted Postgres (supabase-js, `@neondatabase/serverl
 
 ## Writing a catalog
 
-Everything Oodle needs lives in one visible folder, `oodlc/`, at the project root ([0003](docs/decisions/0003-one-visible-oodlc-folder.md)). `oodlc/config.yaml` says how to run the app. Every other YAML file in the folder is catalog, and any file can hold any of the five sections: `intents`, `outcomes`, `behaviors`, `conditions`, `constraints`.
+Everything Oodle needs lives in one visible folder, `oodlc/`, at the project root ([0003](docs/decisions/0003-one-visible-oodlc-folder.md)). `oodlc/config.yaml` says how to run the app. Every other YAML file in the folder is catalog, and any file can hold any of the sections: `intents`, `outcomes`, `behaviors`, `conditions`, `constraints`, and the [inventory](#describing-the-system) (`actors`, `capabilities`, `experiences`, `unknowns`).
 
 ```
 my-service/
@@ -318,6 +318,8 @@ oodle lint [project]           Validate the catalog and its traceability
 oodle init [dir]               Start a project: wraps the service already here, or a starter app
 oodle doctor [project]         Check your environment and project setup
 oodle mutate [project]         Plant small bugs and see which ones the catalog catches
+oodle discover [project]       Propose the capabilities your routes add up to, and open questions
+oodle interview [project]      Answer what only a person can say: what each capability does, for whom, why
 oodle propose <file>           Add drafted entries as proposals, never changing an existing one
 oodle draft <brief>            Print the prompt that drafts catalog entries from a brief
 oodle mcp [project]            Serve Oodle to coding agents over MCP
@@ -362,6 +364,39 @@ Oodle checks itself, too. The root [`oodlc/`](oodlc/) folder declares Oodle's ow
 6. **Constraints** hold on every run: outcomes, behaviors and probes of unknown routes. A violation always blocks, and so does changing or removing a constraint.
 
 The rule underneath all of it: **only what a human declared can block** (outcomes and constraints). The reasoning is in [`docs/decisions/`](docs/decisions/).
+
+## Describing the system
+
+Before you can promise anything about a system, you have to be able to say what it does. The **inventory** is where that goes. It explains the system and never blocks.
+
+```yaml
+# oodlc/inventory.yaml
+actors:
+  - { id: shopper, statement: Someone buying from the store }
+capabilities:
+  - id: buy-items
+    statement: A shopper can pay for a cart and get one receipt     # <actor> can <verb> <object>
+    actor: shopper
+    intent: buy-without-surprises
+    surfaces: [POST /checkout]
+experiences:
+  - id: first-purchase
+    statement: A first-time shopper pays once and knows straight away that it worked
+    actor: shopper
+    steps: [buy-items]
+    feels_broken_when: [charged twice, no receipt]                  # each one is a condition or constraint to write
+unknowns:
+  - { id: health-caller, question: Who calls GET /health?, ask: platform team, about: [ops.health] }
+```
+
+- **Every rung is optional.** A catalog of capabilities alone is valid: Oodle explains it, and nothing blocks. Add outcomes to protect a capability (`capability: buy-items` on the outcome), intents to say why, experiences for journeys.
+- **An outcome traces to an intent, a confirmed capability, or both.** A person still vouches for every promise that can block.
+- **Inferred means proposed.** Actors, capabilities and experiences take `status: proposed` like any proposal. A person confirms one by deleting that line. Agents write them through `oodle propose`.
+- **Oodle drafts it for you.** `oodle discover` runs the app and groups its routes into proposed capabilities by what they act on and what they do (`POST /orders/:id/refund` is `orders.refund`). Each one lists its evidence: the outcomes that describe it, the calls and table writes seen, how a probe answered. The intent comes from its approved outcomes when they agree. What the code can't tell, such as who a capability is for, becomes an open question. You write the real statement and confirm it. `oodle propose --routes` then links the outcomes it drafts to their capability.
+- **Oodle asks you.** `oodle interview` walks you through each capability that still says `TODO`, with its evidence: what can someone do there, who are they, and why does it exist. It writes your answers into the catalog as you go and offers to confirm each capability. Agents can run the same interview with you through the `interview` MCP prompt.
+- **Lint helps you say it.** It flags a capability statement that says nothing (`TODO`, or "handles", "manages", "processes", "supports"), a confirmed capability with no outcome yet, and every open question with who can answer it.
+
+See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).
 
 ## The app contract
 

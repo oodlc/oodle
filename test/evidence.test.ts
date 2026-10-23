@@ -78,7 +78,8 @@ test('discover --from: the spec\'s words, real use first, a repeated journey, an
   assert.ok(ids.includes('spec-only.openapi-yaml'));
   const unrouted = result.unknowns.find((u) => u.id === 'unrouted.session-har')!;
   // Assets and other sites' requests are not this service's business.
-  assert.match(unrouted.question, /GET \/orders\/ord_1 \(1\)\./);
+  // Captured paths are scrubbed as they are read: a record id becomes a parameter (0015).
+  assert.match(unrouted.question, /GET \/orders\/:id \(1\)\./);
   assert.doesNotMatch(unrouted.question, /app\.js|collect/);
   assert.deepEqual(parse(readFileSync(join(dir, 'oodlc', 'proposed.yaml'), 'utf8')).experiences[0].status, 'proposed');
 });

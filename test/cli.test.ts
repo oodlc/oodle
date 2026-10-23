@@ -215,6 +215,9 @@ test('discover: proposes capabilities and questions, prints one JSON document, a
   assert.equal(text.code, 0);
   assert.match(text.stdout, /Nothing new/);
   assert.match(text.stdout, /checkout\.create\s+checkout\.payment-confirmed/);
+  const missing = oodle(['discover', dir, '--from', 'nope.har', '--json']);
+  assert.equal(missing.code, 2);
+  assert.match(json(missing.stdout).error.message, /Evidence file .*nope\.har does not exist/);
 });
 
 test('init on a service that listens on import writes no proposals, and says how to get them later', () => {

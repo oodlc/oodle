@@ -193,6 +193,7 @@
         "intent": { "$ref": "#/definitions/id" },
         "steps": { "description": "Capability ids, in the order the actor meets them", "type": "array", "items": { "$ref": "#/definitions/id" } },
         "feels_broken_when": { "description": "Failures the actor would notice. Each is a candidate condition or constraint.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "evidence": { "description": "Where the journey was seen: a capture, a trace export", "type": "array", "items": { "type": "string", "minLength": 1 } },
         "status": { "$ref": "#/definitions/status" }
       }
     },

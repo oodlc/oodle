@@ -133,21 +133,22 @@ const TOOLS = [
   },
   {
     name: 'discover',
-    description: 'Run the app and propose the capabilities its routes add up to, with their evidence (describing outcomes, calls, table writes, probes), plus open questions only a person can answer. Writes proposals only; returns them, and the outcomes that could name their capability. Next, rewrite each TODO statement as "<actor> can <verb> <object>" by proposing a sharper capability, or ask the person.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Run the app and propose the capabilities its routes add up to, with their evidence (describing outcomes, calls, table writes, probes), plus open questions only a person can answer. With from: an OpenAPI spec adds the words people wrote; a HAR capture or OTLP JSON trace export adds real use, ordering and repeated journeys (proposed as experiences). Writes proposals only; returns them, and the outcomes that could name their capability. Next, interview the person.',
+    inputSchema: { type: 'object', properties: { from: strs('Evidence files, absolute or relative to the project: OpenAPI, HAR, OTLP JSON') } },
   },
   {
     name: 'answer',
-    description: 'Record what the person said in an interview: a capability\'s statement, actor or intent, or the answer to an open question. Only for proposed capabilities; it never confirms one, and a new actor or intent arrives as a proposal. Use the interview prompt for the questions.',
+    description: 'Record what the person said in an interview: a capability\'s or experience\'s statement, actor or intent, what would make an experience feel broken, or the answer to an open question. Only for proposed entries; it never confirms one, and a new actor or intent arrives as a proposal. Use the interview prompt for the questions.',
     inputSchema: {
       type: 'object',
       properties: {
-        id: str('The capability or question id'),
+        id: str('The capability, experience or question id'),
         statement: str('What the capability lets its actor do, in the person\'s words: "<actor> can <verb> <object>"'),
         actor: str('An existing actor id, or a new one with actor_statement'),
         actor_statement: str('Who the new actor is, in a few words'),
         intent: str('An existing intent id, or omit and give intent_statement for a new one'),
         intent_statement: str('A new intent, in the person\'s words'),
+        feels_broken_when: strs('For an experience: what would make it feel broken to them, one item each'),
         answer: str('The answer to an open question'),
       },
       required: ['id'],
@@ -241,14 +242,15 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
     case 'map':
       return (await oodleJson(['explain', projectDir, ...(args?.only ?? []).flatMap((g: string) => ['--only', g])], projectDir)).doc;
     case 'discover':
-      return (await oodleJson(['discover', projectDir], projectDir)).doc;
+      return (await oodleJson(['discover', projectDir, ...(args?.from ?? []).flatMap((f: string) => ['--from', f])], projectDir)).doc;
     case 'answer': {
       const a = args ?? {};
       const answer: Answer = a.answer
         ? { kind: 'unknown', id: String(a.id), answer: String(a.answer) }
         : {
-            kind: 'capability',
+            kind: loadCatalog(projectDir, loadConfig(projectDir)).experiences.some((x) => x.id === a.id) ? 'experience' : 'capability',
             id: String(a.id),
+            ...(Array.isArray(a.feels_broken_when) ? { feels_broken_when: a.feels_broken_when.map(String) } : {}),
             ...(a.statement ? { statement: String(a.statement) } : {}),
             ...(a.actor || a.actor_statement ? { actor: a.actor_statement ? { id: String(a.actor ?? ''), statement: String(a.actor_statement) } : String(a.actor) } : {}),
             ...(a.intent || a.intent_statement ? { intent: a.intent_statement ? { id: String(a.intent ?? ''), statement: String(a.intent_statement) } : String(a.intent) } : {}),

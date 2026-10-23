@@ -13,7 +13,8 @@
  */
 import { propose, type ProposeResult } from './propose.ts';
 import { reaches, runProject } from './runner.ts';
-import type { Capability, EffectRecord, RunResult, Unknown } from './types.ts';
+import { readEvidence, type Evidence } from './evidence.ts';
+import type { Capability, EffectRecord, Experience, RunResult, Unknown } from './types.ts';
 
 /** Path segments that say where an API lives, not what it acts on. */
 const PREFIX = /^(api|v\d+)$/;
@@ -60,6 +61,8 @@ export interface Link {
 
 export interface Inventory {
   capabilities: Capability[];
+  /** Journeys seen in traffic: capabilities callers went through in that order, more than once. */
+  experiences: Experience[];
   unknowns: Unknown[];
   /** Existing outcomes and behaviors with no `capability`, and the one their trigger reaches. A person adds it. */
   links: Link[];
@@ -67,15 +70,37 @@ export interface Inventory {
   known: string[];
 }
 
-/** The inventory a run implies, minus what the catalog already has. */
-export function inventoryFrom(run: RunResult): Inventory {
+/** File types a browser fetches that are no API: a capture is full of them. */
+const ASSET = /\.(js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|html?|txt|json)$/i;
+const MAX_STEPS = 6;
+const MAX_JOURNEYS = 3;
+
+/**
+ * The inventory a run implies, minus what the catalog already has. Evidence from
+ * outside the code (src/evidence.ts) adds people's own words from a spec, real
+ * use from traffic (which also orders the capabilities, most used first), the
+ * journeys callers take, and questions about what the code and the evidence disagree on.
+ */
+export function inventoryFrom(run: RunResult, evidence: Evidence[] = []): Inventory {
   const { catalog } = run;
   const subjects = [...catalog.outcomes.map((item) => ({ kind: 'outcome' as const, item })), ...catalog.behaviors.map((item) => ({ kind: 'behavior' as const, item }))];
   const existing = new Map(catalog.capabilities.map((c) => [c.id, c]));
   const owner = (route: string) => catalog.capabilities.find((c) => (c.surfaces ?? []).some((s) => reaches(s, route)));
+  const routeFor = (method: string, path: string) => run.routes.find((r) => reaches(`${method} ${path}`, r));
+
+  // Traffic to other sites, and to the files a page loads, says nothing about this service.
+  const hosts = new Set(evidence.flatMap((e) => e.seen.filter((s) => s.host && routeFor(s.method, s.path)).map((s) => s.host!)));
+  const relevant = (s: { host?: string; path: string }) => !ASSET.test(s.path) && (!s.host || !hosts.size || hosts.has(s.host));
+  const traffic = evidence.filter((e) => e.kind !== 'openapi');
+  const usage = new Map<string, number>();
+  for (const e of traffic) for (const s of e.seen) {
+    const r = relevant(s) ? routeFor(s.method, s.path) : undefined;
+    if (r) usage.set(r, (usage.get(r) ?? 0) + (s.count ?? 0));
+  }
 
   const known: string[] = [];
   const drafts = new Map<string, Capability>();
+  const said = new Map<string, string>();
   const routeOf = new Map<string, string>();
   for (const route of run.routes) {
     const listed = owner(route);
@@ -95,23 +120,34 @@ export function inventoryFrom(run: RunResult): Inventory {
     const seen = run.observations.filter((o) => describing.some((s) => s.item.id === o.id)).flatMap((o) => o.effects);
     const gap = run.gaps.find((g) => g.route === route);
     const named = (kind: string) => describing.filter((s) => s.kind === kind).map((s) => s.item.id);
-    const evidence = [
+    const specs = evidence.filter((e) => e.kind === 'openapi').flatMap((e) => e.seen.filter((s) => routeFor(s.method, s.path) === route).map((s) => ({ e, s })));
+    for (const { s } of specs) if (s.summary && !said.has(id)) said.set(id, s.summary);
+    const evidenceLines = [
       ...(['outcome', 'behavior'] as const).filter((k) => named(k).length).map((k) => `${route}: described by ${k}${named(k).length > 1 ? 's' : ''} ${named(k).join(', ')}`),
+      ...specs.map(({ e, s }) => `${route}: ${e.name} says ${s.summary ? `"${s.summary}"` : 'nothing about it'}${s.operationId ? ` (${s.operationId})` : ''}${s.tags?.length ? `, tagged ${s.tags.join(', ')}` : ''}`),
+      ...traffic.map((e) => {
+        const n = e.seen.filter((s) => relevant(s) && routeFor(s.method, s.path) === route).reduce((sum, s) => sum + (s.count ?? 0), 0);
+        return `${route}: ${n ? `${n} request${n === 1 ? '' : 's'}` : 'no requests'} in ${e.name}`;
+      }),
       ...(gap && gap.probe.status !== null ? [`${route}: answered ${gap.probe.status} when probed`] : []),
       ...effectWords([...seen, ...(gap?.probe.effects ?? [])]).map((w) => `${route}: ${w}`),
     ];
     const draft = drafts.get(id) ?? { id, statement: '', surfaces: [], evidence: [], status: 'proposed' as const };
     draft.surfaces!.push(route);
-    draft.evidence!.push(...evidence);
+    draft.evidence!.push(...evidenceLines);
     drafts.set(id, draft);
   }
 
   // A capability serves an intent when every approved outcome on its routes says so.
-  for (const [id, d] of drafts) {
+  const used = (surfaces: string[]) => surfaces.reduce((n, r) => n + (usage.get(r) ?? 0), 0);
+  const ordered = [...drafts.values()].sort((a, b) => used(b.surfaces!) - used(a.surfaces!));
+  drafts.clear();
+  for (const d of ordered) {
     const intents = new Set(catalog.outcomes.filter((o) => o.status !== 'proposed' && d.surfaces!.some((r) => reaches(o.trigger.http, r))).map((o) => o.intent).filter(Boolean));
-    drafts.set(id, {
-      id,
-      statement: `TODO: who can do what through ${d.surfaces!.join(', ')}? Say it as "<actor> can <verb> <object>".`,
+    const words = said.get(d.id);
+    drafts.set(d.id, {
+      id: d.id,
+      statement: `TODO: who can do what through ${d.surfaces!.join(', ')}? ${words ? `The spec says "${words}". ` : ''}Say it as "<actor> can <verb> <object>".`,
       ...(intents.size === 1 ? { intent: [...intents][0] } : {}),
       surfaces: d.surfaces,
       ...(d.evidence!.length ? { evidence: d.evidence } : {}),
@@ -126,6 +162,36 @@ export function inventoryFrom(run: RunResult): Inventory {
     const capability = route && routeOf.get(route);
     if (capability) links.push({ id: s.item.id, kind: s.kind, capability });
   }
+
+  // Journeys: the capabilities one caller went through, in order. A sequence seen more than once is worth naming.
+  const journeys = new Map<string, { steps: string[]; count: number; from: Set<string> }>();
+  for (const e of traffic) for (const seq of e.sequences) {
+    const steps: string[] = [];
+    for (const r of seq) {
+      const route = relevant(r) ? routeFor(r.method, r.path) : undefined;
+      const cap = route && routeOf.get(route);
+      if (cap && steps.at(-1) !== cap) steps.push(cap);
+    }
+    if (steps.length < 2) continue;
+    const key = steps.slice(0, MAX_STEPS).join(' ');
+    const j = journeys.get(key) ?? { steps: steps.slice(0, MAX_STEPS), count: 0, from: new Set<string>() };
+    j.count++;
+    j.from.add(e.name);
+    journeys.set(key, j);
+  }
+  const knownJourneys = new Set(catalog.experiences.map((x) => (x.steps ?? []).join(' ')));
+  const experiences: Experience[] = [...journeys.values()]
+    .filter((j) => j.count > 1 && !knownJourneys.has(j.steps.join(' ')))
+    .sort((a, b) => b.count - a.count || b.steps.length - a.steps.length)
+    .slice(0, MAX_JOURNEYS)
+    .map((j) => ({
+      id: `journey.${slugOf(j.steps[0])}-then-${slugOf(j.steps.at(-1)!)}`,
+      statement: `TODO: who goes through ${j.steps.join(' then ')}, and what are they trying to get done?`,
+      steps: j.steps,
+      evidence: [`seen ${j.count} times in ${[...j.from].join(', ')}`],
+      status: 'proposed' as const,
+    }))
+    .filter((x, i, all) => all.findIndex((y) => y.id === x.id) === i && !catalog.experiences.some((y) => y.id === x.id));
 
   // What the code can't answer: why a capability exists, and whether an intent nothing serves is still wanted.
   const asked = new Set(catalog.unknowns.flatMap((u) => u.about ?? []));
@@ -143,25 +209,59 @@ export function inventoryFrom(run: RunResult): Inventory {
   for (const i of catalog.intents) {
     if (!served.has(i.id)) ask({ id: `unserved.${i.id}`, question: `No outcome or capability traces to "${i.statement}" yet. Is it built somewhere the catalog doesn't describe, planned, or no longer wanted?`, ask: 'product owner', about: [i.id] });
   }
+  // Where the evidence and the code disagree.
+  for (const e of evidence) {
+    const missing = e.seen.filter((s) => relevant(s) && !routeFor(s.method, s.path)).map((s) => `${s.method} ${s.path}${s.count ? ` (${s.count})` : ''}`);
+    if (missing.length) {
+      const list = `${missing.slice(0, 5).join(', ')}${missing.length > 5 ? `, and ${missing.length - 5} more` : ''}`;
+      ask(e.kind === 'openapi'
+        ? { id: `spec-only.${slugOf(e.name)}`, question: `${e.name} lists ${list}, which the app doesn't serve. Is the spec ahead of the code, or out of date?`, ask: 'API owner' }
+        : { id: `unrouted.${slugOf(e.name)}`, question: `${e.name} has requests no route serves: ${list}. Another service, an old client, or a missing route?`, ask: 'API owner' });
+    }
+  }
+  if (traffic.length) {
+    for (const d of drafts.values()) {
+      if (!used(d.surfaces!)) ask({ id: `unused.${d.id}`, question: `No request in ${traffic.map((e) => e.name).join(', ')} reached ${d.surfaces!.join(', ')}. Is it still used, or just not in these captures?`, ask: 'product owner', about: [d.id] });
+    }
+  }
 
-  return { capabilities: [...drafts.values()], unknowns, links, known };
+  return { capabilities: [...drafts.values()], experiences, unknowns, links, known };
 }
+
+const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 export interface DiscoverResult extends ProposeResult {
   /** What was proposed, in full, so a caller can show it without reading the file. */
   capabilities: Capability[];
+  experiences: Experience[];
   unknowns: Unknown[];
   links: Link[];
   known: string[];
   /** Routes no outcome or behavior describes: `oodle propose --routes` drafts outcomes for them. */
   undescribed: number;
+  /** The evidence files read, and what each held. */
+  evidence: { file: string; kind: Evidence['kind']; requests: number }[];
 }
 
 /** Runs the project and proposes the inventory it implies. Adds, never changes: see src/propose.ts. */
-export async function discover(projectDir: string): Promise<DiscoverResult> {
+export async function discover(projectDir: string, files: string[] = []): Promise<DiscoverResult> {
+  const evidence = files.map(readEvidence);
   const run = await runProject(projectDir);
-  const inv = inventoryFrom(run);
-  const fragment = { ...(inv.capabilities.length ? { capabilities: inv.capabilities } : {}), ...(inv.unknowns.length ? { unknowns: inv.unknowns } : {}) };
+  const inv = inventoryFrom(run, evidence);
+  const fragment = {
+    ...(inv.capabilities.length ? { capabilities: inv.capabilities } : {}),
+    ...(inv.experiences.length ? { experiences: inv.experiences } : {}),
+    ...(inv.unknowns.length ? { unknowns: inv.unknowns } : {}),
+  };
   const result = Object.keys(fragment).length ? propose(projectDir, fragment) : { file: '', added: [], warnings: [] };
-  return { ...result, capabilities: inv.capabilities, unknowns: inv.unknowns, links: inv.links, known: inv.known, undescribed: run.gaps.length };
+  return {
+    ...result,
+    capabilities: inv.capabilities,
+    experiences: inv.experiences,
+    unknowns: inv.unknowns,
+    links: inv.links,
+    known: inv.known,
+    undescribed: run.gaps.length,
+    evidence: evidence.map((e, i) => ({ file: files[i], kind: e.kind, requests: e.seen.reduce((n, s) => n + (s.count ?? 1), 0) })),
+  };
 }

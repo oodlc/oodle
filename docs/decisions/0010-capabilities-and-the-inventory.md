@@ -21,7 +21,7 @@ Teams also want different depths. Some only want to describe their system; other
 1. **The catalog gains an inventory: four optional sections that explain the system and never block.** Any catalog file may hold them, as with the existing five (0003).
    - `actors`: who uses the system (`id`, `statement`).
    - `capabilities`: what the system lets an actor do, said as "<actor> can <verb> <object>", with the `surfaces` (`METHOD /path`) that reach it, an optional `actor`, `intent` and free-text `evidence`.
-   - `experiences`: what an actor goes through across capabilities (`steps`), and what would make it feel broken (`feels_broken_when`). Each of those is a candidate condition or constraint.
+   - `experiences`: what an actor goes through across capabilities (`steps`), what would make it feel broken (`feels_broken_when`), and where it was seen (`evidence`). Each "feels broken" item is a candidate condition or constraint.
    - `unknowns`: a `question` the system can't answer about itself, who can (`ask`), what it is `about`, and once someone has said, their `answer`. An answered question is no longer open.
 2. **Inferred means proposed.** Actors, capabilities and experiences take `status: proposed` exactly as in 0006. Discovery and agents write them as proposals; a person confirms one by deleting the line. Unknowns have no status: they are questions. A person answers one by recording an `answer`, or by folding it into the catalog and deleting it.
 3. **An outcome traces to something a person confirmed: an intent, a confirmed capability, or both.** This revises 0001, which required an intent. The reason in 0001 stands: a promise that blocks merges must be justified by something a person vouched for. A confirmed capability is that. An approved outcome that traces only to a proposed capability is a lint error, as tracing to a proposed intent already is.
@@ -59,7 +59,7 @@ Teams also want different depths. Some only want to describe their system; other
 - `spec/catalog.schema.json` gains four sections and a `capability` field on outcomes and behaviors. oodlc.com serves the schema from the repository, so editors see the new sections once this merges.
 - `oodle propose` and the MCP `propose` tool accept the new sections and force `status: proposed` on actors, capabilities and experiences. The MCP `catalog` tool lists them, and the drafter asks for capabilities and experiences.
 - Nothing in the inventory changes what blocks: the outcome diff ignores it. Linking an existing outcome to a capability doesn't redefine it, just as changing its intent doesn't.
-- Discovery (`oodle discover`), the interview, `explain --system` and per-capability coverage build on this. Evidence is free text until discovery gives it a shape.
+- Discovery (`oodle discover`, with evidence from specs and traffic), the interview, `oodle explain` and per-capability coverage build on this. Evidence is free text in the catalog; the files it came from are read, never stored or replayed.
 
 ## Revisit if
 

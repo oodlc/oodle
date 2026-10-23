@@ -4,6 +4,13 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.17.0 (2026-10-23): headers, text and the host
+
+- **Changes:** `expect` takes `headers` (response headers by name, any case, each a value or a matcher) and `text` (the whole body as text, for HTML pages). Matchers gain `not_contains` and `not`, and `contains` takes a list. Outcomes, behaviors and constraints take `refs`, the ids of an outside spec they restate, shown in the run output and the outcome diff and never part of a promise. See [0016](docs/decisions/0016-outcomes-check-headers-text-and-host.md).
+- Constraints see `response.headers`.
+- A fetch-style app (Hono, Next.js, a Worker) gets its request URL from `given.headers.host`, and `https` with `x-forwarded-proto: https`. Before, it was always `http://localhost`.
+- Change files (0012) amend `headers` by name and replace `text`.
+
 ## 0.16.1 (2026-10-23): no green checks on a placeholder
 
 - **Fix:** `oodle init` in a project it can't run (a `wrangler.toml`/`.jsonc` Cloudflare Worker, Deno, Python, Go, Ruby, Rust, the JVM, PHP, Elixir, or a `src/` with no server it recognises) no longer drops a starter app into `src/` and says "Project ready". It stops with `unsupported-stack`, names the file that gave the stack away, and points at `--app` and `--inventory`. Before, every check went green while testing the placeholder.

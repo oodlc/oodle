@@ -1,6 +1,6 @@
 import type { EffectRecord, Expect } from './types.ts';
 
-const MATCHER_KEYS = new Set(['exists', 'type', 'matches', 'gte', 'lte', 'contains']);
+export const MATCHER_KEYS = new Set(['exists', 'type', 'matches', 'gte', 'lte', 'contains', 'not_contains', 'not']);
 
 export function getPath(obj: unknown, path: string): unknown {
   let cur: any = obj;
@@ -39,13 +39,30 @@ export function matchValue(actual: unknown, expected: unknown): string | null {
     }
     if ('gte' in expected && !(typeof actual === 'number' && actual >= (expected.gte as number))) return `expected >= ${expected.gte}, got ${JSON.stringify(actual)}`;
     if ('lte' in expected && !(typeof actual === 'number' && actual <= (expected.lte as number))) return `expected <= ${expected.lte}, got ${JSON.stringify(actual)}`;
-    if ('contains' in expected && !(typeof actual === 'string' && actual.includes(String(expected.contains)))) {
-      return `expected to contain "${expected.contains}", got ${JSON.stringify(actual)}`;
+    if ('contains' in expected) {
+      const missing = [expected.contains].flat().map(String).filter((x) => !(typeof actual === 'string' && actual.includes(x)));
+      if (missing.length) return `expected to contain ${missing.map((x) => `"${x}"`).join(', ')}, got ${clip(actual)}`;
     }
+    if ('not_contains' in expected) {
+      const found = [expected.not_contains].flat().map(String).filter((x) => typeof actual === 'string' && actual.includes(x));
+      if (found.length) return `expected not to contain ${found.map((x) => `"${x}"`).join(', ')}, got ${clip(actual, found[0])}`;
+    }
+    if ('not' in expected && matchValue(actual, expected.not) === null) return `expected not ${JSON.stringify(expected.not)}, got ${clip(actual)}`;
     return null;
   }
   return stableStringify(actual) === stableStringify(expected) ? null : `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`;
 }
+
+/** A value for a failure message: short, and for long text the part around what matters. */
+function clip(actual: unknown, around?: string): string {
+  const text = JSON.stringify(actual) ?? 'undefined';
+  if (text.length <= 120) return text;
+  const at = around && typeof actual === 'string' ? Math.max(0, actual.indexOf(around) - 40) : 0;
+  return `${at ? '…' : ''}${JSON.stringify(String(actual).slice(at, at + 100)).slice(0, -1)}…" (${String(actual).length} chars)`;
+}
+
+/** The whole body as text: a string as sent, anything else as JSON. */
+export const textOf = (body: unknown): string => (body === undefined ? '' : typeof body === 'string' ? body : JSON.stringify(body));
 
 function effectMatches(e: EffectRecord, match: Record<string, unknown> | undefined): boolean {
   if (!match) return true;
@@ -58,6 +75,8 @@ function effectMatches(e: EffectRecord, match: Record<string, unknown> | undefin
 export interface Observed {
   status: number | null;
   body: unknown;
+  /** Response headers, lower-cased. */
+  headers?: Record<string, string>;
   effects: EffectRecord[];
   latency_ms: number;
 }
@@ -72,6 +91,14 @@ export function evaluate(expect: Expect, obs: Observed): string[] {
   for (const [path, want] of Object.entries(expect.body ?? {})) {
     const reason = matchValue(getPath(obs.body, path), want);
     if (reason) failures.push(`body.${path}: ${reason}`);
+  }
+  for (const [name, want] of Object.entries(expect.headers ?? {})) {
+    const reason = matchValue(obs.headers?.[name.toLowerCase()], want);
+    if (reason) failures.push(`headers.${name.toLowerCase()}: ${reason}`);
+  }
+  if (expect.text !== undefined) {
+    const reason = matchValue(textOf(obs.body), expect.text);
+    if (reason) failures.push(`text: ${reason}`);
   }
   for (const e of expect.effects ?? []) {
     const n = obs.effects.filter((r) => r.kind === e.kind && !r.error && effectMatches(r, e.match)).length;

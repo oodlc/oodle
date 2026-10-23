@@ -49,7 +49,7 @@ export function diffMarkdown(r: DiffReport): string {
     for (const o of notable) {
       const what = mdFindings(o.details).map((d) => d.replace(/\|/g, '\\|')).join('<br>');
       const tag = o.covered_by ? ` ✅ covered by \`${o.covered_by}\`` : o.approved_by ? ` ✅ approved${approvedBy(o.approved_by)}` : o.blocking ? ' **(blocking)**' : '';
-      lines.push(`| ${ICON[o.status]} ${o.status}${tag} | \`${o.id}\`<br>${o.statement} | ${o.boundary} | ${what} |`);
+      lines.push(`| ${ICON[o.status]} ${o.status}${tag} | \`${o.id}\`${o.refs?.length ? ` (${o.refs.join(', ')})` : ''}<br>${o.statement} | ${o.boundary} | ${what} |`);
     }
     lines.push('');
   }

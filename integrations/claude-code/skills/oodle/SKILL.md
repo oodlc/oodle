@@ -18,7 +18,7 @@ The `oodlc/` folder is the spec. **Outcomes** and **constraints** are approved b
 
 ## Write fewer, better tests
 
-- **Prefer an outcome to a unit test.** Outcomes test the boundary (status, body, effects), so refactors don't break them. Write unit tests only for pure logic with a large input space, and make those property tests.
+- **Prefer an outcome to a unit test.** Outcomes test the boundary (status, body, headers, text, effects), so refactors don't break them. For pages and redirects, use `headers` (`location: /login`) and `text` (`{ contains: Library, not_contains: [draft] }`). When the person keeps a spec elsewhere, put its ids in `refs`, not in the statement. Write unit tests only for pure logic with a large input space, and make those property tests.
 - **Variants are conditions, not new tests.** A slow provider, a returning customer and a declined card belong in `conditions`, with `when` saying what that condition changes:
   ```yaml
   conditions: [first_purchase, payment_provider_slow, security.no-credentials]

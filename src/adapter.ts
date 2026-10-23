@@ -131,7 +131,9 @@ function fetchDispatch(handler: FetchHandler): Dispatch {
     const headers = new Headers(req.headers ?? {});
     const hasBody = req.body !== undefined && req.method !== 'GET' && req.method !== 'HEAD';
     if (hasBody && !headers.has('content-type')) headers.set('content-type', 'application/json');
-    const res = await handler(new globalThis.Request(`http://localhost${req.path}`, {
+    // The URL is what a Worker or a route handler reads its host from, so given.headers.host (and x-forwarded-proto) set it.
+    const url = `${headers.get('x-forwarded-proto') === 'https' ? 'https' : 'http'}://${headers.get('host') ?? 'localhost'}${req.path}`;
+    const res = await handler(new globalThis.Request(url, {
       method: req.method,
       headers,
       body: hasBody ? (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)) : undefined,

@@ -62,7 +62,7 @@ export function renderRun(run: RunResult, view: RunView): string {
       const ok = obs.every((x) => !x.failures.length && !x.violations.length);
       if (!ok) broken++;
       lines.push(row(ok ? s.green(sym.ok) : s.red(sym.fail), ok ? o.id : s.bold(o.id), o.boundary, obs));
-      if (view.verbose || !ok) lines.push(`      ${s.dim(s.italic(o.statement))}`);
+      if (view.verbose || !ok) lines.push(`      ${s.dim(s.italic(o.statement))}${o.refs?.length ? s.dim(`  (${o.refs.join(', ')})`) : ''}`);
       if (view.verbose && obs.length > 1) lines.push(`      ${s.dim(obs.map((x) => `${x.condition} ${ms(x.latency_ms)}`).join(` ${sym.dot} `))}`);
       lines.push(...grouped(obs.flatMap((x) => [...x.failures, ...x.violations].map((f) => `[${x.condition}] ${f}`)), s.red));
       lines.push(...notices(obs));
@@ -223,7 +223,7 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
       const paint = STATUS[o.status];
       const tag = o.covered_by ? `  ${s.green(`covered by ${o.covered_by}`)}` : o.approved_by ? `  ${s.green(`approved${o.approved_by.length ? ` by ${o.approved_by.join(', ')}` : ''}`)}` : o.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
       lines.push(`  ${paint(MARK[o.status])} ${paint(pad(o.status, 9))} ${pad(o.blocking ? s.bold(o.id) : o.id, idWidth)}  ${s.dim(o.boundary)}${tag}`);
-      if (o.status !== 'held') lines.push(`      ${s.dim(s.italic(o.statement))}`);
+      if (o.status !== 'held') lines.push(`      ${s.dim(s.italic(o.statement))}${o.refs?.length ? s.dim(`  (${o.refs.join(', ')})`) : ''}`);
       if (o.status !== 'new' || o.blocking) lines.push(...grouped(o.details));
     }
     lines.push('');

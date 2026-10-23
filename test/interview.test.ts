@@ -100,7 +100,9 @@ test('runInterview: asks, writes as it goes, offers to confirm, and keeps what w
   assert.match(asked[3], /Confirm "A shopper can pay for a cart and get one receipt"\?/);
   const checkout = parse(file(dir)).capabilities.find((c: any) => c.id === 'checkout.create');
   assert.equal(checkout.status, undefined);
-  assert.equal(summary.remaining, 4);
+  // What "shopper" means is now asked too: the person's own statement used the word.
+  assert.equal(summary.remaining, 5);
+  assert.ok(questions(catalogOf(dir)).some((q) => q.kind === 'define' && q.target === 'shopper'));
 });
 
 test('runInterview: a vague statement is pushed back once; without someone there, nothing is confirmed', async () => {

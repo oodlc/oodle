@@ -4,11 +4,12 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
-## Unreleased: agree the change before the code
+## Unreleased: agree the change before the code, and say what the words mean
 
 - **Changes** in `oodlc/changes/`: why, the capabilities a change may reach, how it amends outcomes and constraints, and what it rules out (new effects, hosts, routes, dependencies). Once merged, `oodle check` covers a code pull request that does exactly that: the item names the change it is covered by and doesn't block, and the comment cites the commit that agreed it. What moves outside the change blocks as outside intent. Only changes on the base count. See [0012](docs/decisions/0012-changes-merge-intent-before-code.md).
 - `oodle changes` lists them, `oodle changes brief <id>` (and the MCP `change` prompt) briefs a coding agent, and `oodle changes fold <id>` writes a shipped change into the catalog and archives it.
 - The Stop hook sends outside-intent findings and unmet amendments back to the agent.
+- **Terms**: what words like "order" or "customer" mean here, with `aka` for the other words people use. The vocabulary comes from what the routes act on and the actors. Once a catalog defines one term, lint flags the vocabulary's other words its statements use undefined, and a word defined twice is an error. `oodle interview` asks what each means and writes `oodlc/terms.yaml`; `oodle explain` prints the glossary; the drafter uses it. See [0013](docs/decisions/0013-terms.md).
 - Lint counts an outcome toward the capability whose surfaces reach its trigger, as `oodle explain` does, so a capability those outcomes protect is no longer reported as having none.
 
 ## 0.12.0 (2026-10-23): explain any system

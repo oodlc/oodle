@@ -10,10 +10,14 @@
  *   but never confirms, never edits a confirmed capability, and anything new it
  *   adds (an actor, an intent) arrives as a proposal.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseDocument, isMap, isSeq, type Document, type YAMLMap, type YAMLSeq } from 'yaml';
-import { CatalogError, loadCatalog, loadConfig } from './catalog.ts';
+import { CatalogError, FOLDER, loadCatalog, loadConfig, schemaLine } from './catalog.ts';
+import { undefinedWords } from './terms.ts';
+
+/** Where terms go when the catalog has none yet. */
+export const TERMS_FILE = 'terms.yaml';
 import { lint, saysNothing } from './lint.ts';
 import { OodleError } from './errors.ts';
 import type { Catalog, Unknown } from './types.ts';
@@ -22,11 +26,11 @@ export interface Question {
   /**
    * `statement`: say what it does (or, for an experience, what someone is trying to get done).
    * `broken`: what would make an experience feel broken. `why`: which intent it serves.
-   * `confirm`: a person's yes. `open`: any other question.
+   * `confirm`: a person's yes. `define`: what a word means here. `open`: any other question.
    */
-  kind: 'statement' | 'broken' | 'why' | 'confirm' | 'open';
-  /** What the question is about: a capability, an experience, or an open question (unknown). */
-  about: 'capability' | 'experience' | 'unknown';
+  kind: 'statement' | 'broken' | 'why' | 'confirm' | 'define' | 'open';
+  /** What the question is about: a capability, an experience, a term, or an open question (unknown). */
+  about: 'capability' | 'experience' | 'term' | 'unknown';
   target: string;
   ask: string;
   evidence: string[];
@@ -59,6 +63,14 @@ export function questions(catalog: Catalog): Question[] {
     if (!x.intent) q('why', `Why does ${x.id} matter? Which intent does it serve?`);
     if (x.status === 'proposed') q('confirm', `Is ${x.id} right as it stands?`);
   }
+  // The words the system is built around, before the questions that use them.
+  const termsFile = catalog.terms.length ? catalog.sources[`terms:${catalog.terms[0].id}`] : `${FOLDER}/${TERMS_FILE}`;
+  for (const u of undefinedWords(catalog)) {
+    out.push({ kind: 'define', about: 'term', target: u.word, ask: `What does "${u.word}" mean here, in a sentence?`, evidence: u.usedIn.map((w) => `used in ${w}`), file: termsFile });
+  }
+  for (const t of catalog.terms) {
+    if (t.status === 'proposed') out.push({ kind: 'confirm', about: 'term', target: t.id, ask: `Is "${t.id}: ${t.statement}" right?`, evidence: [], file: catalog.sources[`terms:${t.id}`] });
+  }
   for (const u of catalog.unknowns) {
     if (u.answer || folded(u, catalog)) continue;
     out.push({ kind: 'open', about: 'unknown', target: u.id, ask: u.question, evidence: (u.about ?? []).map((id) => `about ${id}`), file: catalog.sources[`unknowns:${u.id}`] });
@@ -74,6 +86,7 @@ export interface NewEntry {
 
 export type Answer =
   | { kind: 'capability' | 'experience'; id: string; statement?: string; actor?: string | NewEntry; intent?: string | NewEntry; feels_broken_when?: string[]; confirm?: boolean }
+  | { kind: 'term'; id: string; statement?: string; aka?: string[]; confirm?: boolean }
   | { kind: 'unknown'; id: string; answer: string };
 
 export interface AnswerOptions {
@@ -129,11 +142,13 @@ export function applyAnswers(projectDir: string, answers: Answer[], opts: Answer
   const config = loadConfig(projectDir);
   const before = loadCatalog(projectDir, config);
   const lintBefore = new Set(lint(before, config).errors);
-  const docs = new Map<string, { text: string; doc: Document }>();
+  // `text: null` is a file these answers create, removed again if they fail.
+  const docs = new Map<string, { text: string | null; doc: Document }>();
   const open = (rel: string) => {
     if (!docs.has(rel)) {
-      const text = readFileSync(join(projectDir, rel), 'utf8');
-      docs.set(rel, { text, doc: parseDocument(text) });
+      const path = join(projectDir, rel);
+      const text = existsSync(path) ? readFileSync(path, 'utf8') : null;
+      docs.set(rel, { text, doc: parseDocument(text ?? `${schemaLine('catalog')}version: 0\n`) });
     }
     return docs.get(rel)!.doc;
   };
@@ -141,6 +156,28 @@ export function applyAnswers(projectDir: string, answers: Answer[], opts: Answer
   const changed: string[] = [];
 
   for (const a of answers) {
+    if (a.kind === 'term') {
+      const word = a.id.trim().toLowerCase();
+      const existing = before.terms.find((t) => t.id === word);
+      const rel = existing ? before.sources[`terms:${word}`] : before.terms.length ? before.sources[`terms:${before.terms[0].id}`] : join(config.catalog, TERMS_FILE);
+      if (existing && !opts.byPerson && existing.status !== 'proposed') throw new OodleError('approved', `The term "${word}" is confirmed; only a person changes it`, { hint: 'Say what you would change and why, and let the person edit it.' });
+      if (!opts.byPerson && a.confirm) throw new OodleError('approved', 'Confirming a term is a person\'s call', { hint: `The person confirms it in \`oodle interview\`, or by deleting its "status: proposed" line in ${rel}.` });
+      const doc = open(rel);
+      const aka = (a.aka ?? []).map((x) => x.trim()).filter(Boolean);
+      if (!existing) {
+        if (!a.statement?.trim()) continue;
+        append(doc, 'terms', { id: word, statement: a.statement.trim(), ...(aka.length ? { aka } : {}), ...(opts.byPerson ? {} : { status: 'proposed' }) });
+        changed.push(`term ${word}: defined`);
+        continue;
+      }
+      const item = itemIn(doc, 'terms', word)!;
+      const what: string[] = [];
+      if (a.statement?.trim()) (item.set('statement', doc.createNode(a.statement.trim())), what.push('statement'));
+      if (aka.length) (item.set('aka', doc.createNode(aka)), what.push('aka'));
+      if (a.confirm) (item.delete('status'), what.push('confirmed'));
+      if (what.length) changed.push(`term ${word}: ${what.join(', ')}`);
+      continue;
+    }
     if (a.kind === 'unknown') {
       const rel = before.sources[`unknowns:${a.id}`];
       if (!rel) throw new OodleError('no-match', `No open question "${a.id}"`, { hint: 'The questions are listed by `oodle interview --json`.' });
@@ -194,7 +231,7 @@ export function applyAnswers(projectDir: string, answers: Answer[], opts: Answer
     const fresh = lint(after, config).errors.filter((e) => !lintBefore.has(e));
     if (fresh.length) throw new OodleError('answer', 'Those answers leave the catalog with errors', { problems: fresh, hint: 'Use an id the catalog has, or describe a new one.' });
   } catch (err) {
-    for (const [rel, { text }] of docs) writeFileSync(join(projectDir, rel), text);
+    for (const [rel, { text }] of docs) text === null ? rmSync(join(projectDir, rel), { force: true }) : writeFileSync(join(projectDir, rel), text);
     if (err instanceof CatalogError) throw new OodleError('answer', 'Those answers would break the catalog', { problems: err.problems });
     throw err;
   }
@@ -242,6 +279,21 @@ export async function runInterview(projectDir: string, io: InterviewIO, opts: { 
     io.say(`${n + 1}/${targets.length}  ${kind === 'unknown' ? 'question' : kind} ${id}`);
     for (const e of mine[0].evidence) io.say(`    ${e}`);
 
+    if (kind === 'term') {
+      if (mine.some((q) => q.kind === 'define')) {
+        const meaning = await ask(`${mine[0].ask}\n  > `);
+        if (meaning === null) return { changed, remaining: questions(load()).length };
+        if (!meaning) continue;
+        const aka = await ask('Other words people use for it? Separate them with commas (enter to skip).\n  > ');
+        if (aka === null) return { changed, remaining: questions(load()).length };
+        write({ kind: 'term', id, statement: meaning, aka: aka ? aka.split(',') : [] });
+      } else if (opts.canConfirm) {
+        const yes = await ask(`${mine[0].ask} [y/N]\n  > `);
+        if (yes === null) return { changed, remaining: questions(load()).length };
+        if (/^y(es)?$/i.test(yes)) write({ kind: 'term', id, confirm: true });
+      }
+      continue;
+    }
     if (kind === 'unknown') {
       const answer = await ask(`${mine[0].ask}\n  Your answer (enter to skip, q to stop): `);
       if (answer === null) return { changed, remaining: questions(load()).length };
@@ -328,8 +380,9 @@ export function interviewPrompt(projectDir: string): string {
 
 - Ask one question at a time, in the order below. Show the evidence in a line or two so they know what you mean.
 - For a \`statement\` question, first read the code that handles the routes it lists, then offer your best draft as "<actor> can <verb> <object>" (for example "a shopper can pay for a cart and get one receipt") and ask whether it is right. Use their words if they change it. Avoid verbs that say nothing: handles, manages, processes, supports.
-- Never guess who a capability is for, or why it exists. Ask.
+- Never guess who a capability is for, or why it exists. Ask. The same goes for what a word means.
 - For an experience, ask who goes through those steps and what they are trying to get done, then what would make it feel broken to them (\`broken\`). Each of those is a failure worth an outcome, a condition or a constraint later.
+- For a \`define\` question, ask what the word means in this system, in a sentence, and which other words people use for it. Don't define it from the dictionary: the point is what *they* mean, which an agent can't know.
 - For a \`why\` question, offer the intents below by their statements, or let them say a new reason in a sentence.
 - Record each answer straight away with the \`answer\` tool. Skip anything they don't know, and move on.
 - You can't confirm a capability (\`confirm\` questions). When they are happy with one, tell them how: run \`oodle interview\` in a terminal, or delete its \`status: proposed\` line.

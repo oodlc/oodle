@@ -52,6 +52,19 @@ export interface Experience {
   status?: ProposalStatus;
 }
 
+/**
+ * A word the system's people and agents must mean the same thing by: "order", "paid",
+ * "customer". The id is the word itself. See docs/decisions/0013.
+ */
+export interface Term {
+  id: string;
+  /** What it means here, in a sentence. */
+  statement: string;
+  /** Other words people use for the same thing. */
+  aka?: string[];
+  status?: ProposalStatus;
+}
+
 /** What a change does to one outcome or constraint, once its code lands. See docs/decisions/0012. */
 export interface Amendment {
   outcome?: string;
@@ -196,6 +209,8 @@ export interface Catalog {
   constraints: Constraint[];
   /** The inventory: explains the system, never blocks. See docs/decisions/0010. */
   actors: Actor[];
+  /** The vocabulary. See docs/decisions/0013. */
+  terms: Term[];
   capabilities: Capability[];
   experiences: Experience[];
   unknowns: Unknown[];

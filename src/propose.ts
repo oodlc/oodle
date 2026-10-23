@@ -20,7 +20,7 @@ export const PROPOSALS_FILE = 'proposed.yaml';
  * Sections a human approves. Behaviors are observed and conditions only add runs, so they need no approval.
  * Unknowns are questions, so there is nothing to confirm. See docs/decisions/0006 and 0010.
  */
-const APPROVED: Section[] = ['intents', 'outcomes', 'constraints', 'actors', 'capabilities', 'experiences'];
+const APPROVED: Section[] = ['intents', 'outcomes', 'constraints', 'actors', 'capabilities', 'experiences', 'terms'];
 
 const HEADER = `${schemaLine('catalog')}# Proposed by \`oodle init\`, an agent or \`oodle draft\`, waiting for a human.
 # Proposed entries run and are reported, but never block. To approve one, delete

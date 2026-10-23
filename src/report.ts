@@ -220,6 +220,12 @@ export function systemMarkdown(map: SystemMap): string {
     lines.push('## No intent yet', '');
     table(loose);
   }
+  if (map.terms.length || map.undefined_words.length) {
+    lines.push('## Terms', '');
+    for (const t of map.terms) lines.push(`- **${t.id}**${t.aka.length ? ` (also ${t.aka.join(', ')})` : ''}${t.proposed ? ' (proposed)' : ''}: ${cell(t.statement)}`);
+    if (map.undefined_words.length) lines.push(`- Not defined yet: ${map.undefined_words.join(', ')}`);
+    lines.push('');
+  }
   if (map.unclaimed.length) lines.push('## Routes no capability lists', '', ...map.unclaimed.map((r) => `- \`${r}\``), '');
   const open = map.questions.filter((q) => !q.answer);
   if (open.length) lines.push('## Open questions', '', ...open.map((q) => `- **${q.id}**: ${cell(q.question)}`), '');

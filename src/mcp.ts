@@ -148,16 +148,18 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: str('The capability, experience or question id'),
+        id: str('The capability, experience or question id (for a term, use term)'),
         statement: str('What the capability lets its actor do, in the person\'s words: "<actor> can <verb> <object>"'),
         actor: str('An existing actor id, or a new one with actor_statement'),
         actor_statement: str('Who the new actor is, in a few words'),
         intent: str('An existing intent id, or omit and give intent_statement for a new one'),
         intent_statement: str('A new intent, in the person\'s words'),
         feels_broken_when: strs('For an experience: what would make it feel broken to them, one item each'),
+        term: str('Define a word instead: the word (id is then ignored), with its meaning in statement'),
+        aka: strs('For a term: other words people use for it'),
         answer: str('The answer to an open question'),
       },
-      required: ['id'],
+      required: [],
     },
   },
   {
@@ -257,7 +259,9 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
       return (await oodleJson(['discover', projectDir, ...(args?.from ?? []).flatMap((f: string) => ['--from', f])], projectDir)).doc;
     case 'answer': {
       const a = args ?? {};
-      const answer: Answer = a.answer
+      const answer: Answer = a.term
+        ? { kind: 'term', id: String(a.term), ...(a.statement ? { statement: String(a.statement) } : {}), ...(Array.isArray(a.aka) ? { aka: a.aka.map(String) } : {}) }
+        : a.answer
         ? { kind: 'unknown', id: String(a.id), answer: String(a.answer) }
         : {
             kind: loadCatalog(projectDir, loadConfig(projectDir)).experiences.some((x) => x.id === a.id) ? 'experience' : 'capability',

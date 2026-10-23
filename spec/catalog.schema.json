@@ -16,6 +16,7 @@
     "capabilities": { "type": "array", "items": { "$ref": "#/definitions/capability" } },
     "experiences": { "type": "array", "items": { "$ref": "#/definitions/experience" } },
     "unknowns": { "type": "array", "items": { "$ref": "#/definitions/unknown" } },
+    "terms": { "description": "The vocabulary: what words like order, paid or customer mean in this system. See docs/decisions/0013.", "type": "array", "items": { "$ref": "#/definitions/term" } },
     "changes": { "description": "Only in oodlc/changes/: intents to change the system, agreed before the code. See docs/decisions/0012.", "type": "array", "items": { "$ref": "#/definitions/change" } }
   },
   "definitions": {
@@ -209,6 +210,18 @@
         "ask": { "description": "The role that can answer it, e.g. product owner", "type": "string", "minLength": 1 },
         "about": { "description": "Ids of the entries it is about", "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
         "answer": { "description": "What a person said. An answered question is no longer open.", "type": "string", "minLength": 1 }
+      }
+    },
+    "term": {
+      "description": "A word people and agents must mean the same thing by. The id is the word, singular and lowercase.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9 -]*$", "maxLength": 64 },
+        "statement": { "description": "What it means here, in a sentence", "type": "string", "minLength": 1 },
+        "aka": { "description": "Other words people use for the same thing", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "status": { "$ref": "#/definitions/status" }
       }
     },
     "change": {

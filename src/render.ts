@@ -507,6 +507,12 @@ export function renderSystem(map: SystemMap, view: { only?: string[] } = {}): st
     const orphans = map.experiences.filter((e) => !e.intent || !map.intents.some((i) => i.id === e.intent));
     if (orphans.length) lines.push(`${s.bold('Experiences with no intent')}`, ...orphans.map(experience), '');
     if (map.unclaimed.length) lines.push(`${s.bold('Routes no capability lists')}  ${s.dim(map.unclaimed.join(', '))}`, '');
+    if (map.terms.length || map.undefined_words.length) {
+      lines.push(`${s.bold('Terms')}  ${s.dim('what the words mean here')}`);
+      for (const t of map.terms) lines.push(`  ${s.bold(t.id)}${t.aka.length ? s.dim(` (also ${t.aka.join(', ')})`) : ''}${t.proposed ? s.yellow(' proposed') : ''}  ${t.statement}`);
+      if (map.undefined_words.length) lines.push(`  ${s.dim(`not defined yet: ${map.undefined_words.join(', ')}`)}`);
+      lines.push('');
+    }
     const open = map.questions.filter((q) => !q.answer);
     if (open.length) lines.push(`${s.bold('Open questions')}`, ...open.map((q) => `  ${s.yellow(sym.unknown)} ${q.id}  ${s.dim(q.question)}`), '');
   }

@@ -831,7 +831,7 @@ async function cmdDiscover(ctx: Ctx): Promise<number> {
   return EXIT.ok;
 }
 
-const QUESTION_TAG = { statement: 'say', broken: 'broken', why: 'why', confirm: 'confirm', open: 'question' } as const;
+const QUESTION_TAG = { statement: 'say', broken: 'broken', why: 'why', confirm: 'confirm', define: 'define', open: 'question' } as const;
 
 async function cmdInterview(ctx: Ctx): Promise<number> {
   const dir = findProject(ctx.args[0], 'interview');

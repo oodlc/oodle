@@ -25,7 +25,7 @@ function formatAjv(file: string, errors: any[] | null | undefined): string[] {
 }
 
 /** Every section a catalog file may hold. The last four are the inventory, which never blocks. See docs/decisions/0010. */
-export const SECTIONS = ['intents', 'outcomes', 'behaviors', 'conditions', 'constraints', 'actors', 'capabilities', 'experiences', 'unknowns'] as const;
+export const SECTIONS = ['intents', 'outcomes', 'behaviors', 'conditions', 'constraints', 'actors', 'capabilities', 'experiences', 'unknowns', 'terms'] as const;
 export type Section = (typeof SECTIONS)[number];
 /** "capabilities" -> "capability", "outcomes" -> "outcome". */
 export const singular = (section: Section) => section.replace(/ies$/, 'y').replace(/s$/, '');

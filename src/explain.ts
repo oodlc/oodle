@@ -9,6 +9,7 @@
  */
 import { reaches } from './runner.ts';
 import { saysNothing } from './lint.ts';
+import { undefinedWords } from './terms.ts';
 import type { Behavior, Capability, Catalog, Outcome, RunResult } from './types.ts';
 
 /** The capability an outcome or behavior belongs to: the one it names, or else the one whose surfaces reach its trigger. */
@@ -46,6 +47,9 @@ export interface SystemMap {
   /** Routes no capability's surfaces reach. */
   unclaimed: string[];
   questions: { id: string; question: string; answer?: string }[];
+  /** The vocabulary, and the system's own words no term defines yet (0013). */
+  terms: { id: string; statement: string; aka: string[]; proposed: boolean }[];
+  undefined_words: string[];
   summary: { capabilities: number; confirmed: number; protected: number; routes: number; claimed: number };
 }
 
@@ -113,6 +117,8 @@ export function systemMap(run: RunResult): SystemMap {
     experiences: catalog.experiences.map((e) => ({ id: e.id, statement: e.statement, ...(e.actor ? { actor: e.actor } : {}), ...(e.intent ? { intent: e.intent } : {}), steps: e.steps ?? [], feels_broken_when: e.feels_broken_when ?? [] })),
     unclaimed: run.routes.filter((r) => !claimed.includes(r)),
     questions: catalog.unknowns.map((u) => ({ id: u.id, question: u.question, ...(u.answer ? { answer: u.answer } : {}) })),
+    terms: catalog.terms.map((t) => ({ id: t.id, statement: t.statement, aka: t.aka ?? [], proposed: t.status === 'proposed' })),
+    undefined_words: undefinedWords(catalog).map((u) => u.word),
     summary: {
       capabilities: capabilities.length,
       confirmed: capabilities.filter((c) => c.status === 'confirmed').length,

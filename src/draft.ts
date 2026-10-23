@@ -46,6 +46,9 @@ ${list(catalog.intents)}
 Outcomes:
 ${list(catalog.outcomes)}
 
+Terms (use these words as defined; don't invent new meanings for them):
+${list(catalog.terms)}
+
 Capabilities:
 ${list(catalog.capabilities)}
 

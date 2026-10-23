@@ -1,6 +1,7 @@
 import type { Catalog, Config, LintResult } from './types.ts';
 import { allConditions } from './security.ts';
 import { reaches } from './routes.ts';
+import { singular, undefinedWords } from './terms.ts';
 
 /**
  * Traceability checks from the spec:
@@ -113,6 +114,23 @@ export function lint(catalog: Catalog, config?: Config): LintResult {
     const where = `${catalog.sources[`unknowns:${u.id}`]}: ${u.id}`;
     for (const id of u.about ?? []) if (!known.has(id)) errors.push(`${where}: "about" names "${id}", which is not in the catalog`);
     if (!u.answer) warnings.push(`${where}: open question${u.ask ? ` for the ${u.ask}` : ''}: ${u.question}`);
+  }
+
+  // Terms (0013): one meaning per word. Once a catalog defines any, the words its system is built around should be defined too.
+  const claimed = new Map<string, string>();
+  for (const t of catalog.terms) {
+    const where = `${catalog.sources[`terms:${t.id}`]}: ${t.id}`;
+    for (const w of [t.id, ...(t.aka ?? [])].map(singular)) {
+      const other = claimed.get(w);
+      if (other && other !== t.id) errors.push(`${where}: "${w}" is also defined by the term ${other}. One word, one meaning.`);
+      claimed.set(w, t.id);
+    }
+    if (t.status === 'proposed') warnings.push(`${where}: proposed term, waiting for a person. Confirm it by deleting "status: proposed".`);
+  }
+  if (catalog.terms.length) {
+    for (const u of undefinedWords(catalog)) {
+      warnings.push(`terms: "${u.word}" is used in ${u.usedIn.length === 1 ? u.usedIn[0] : `${u.usedIn.length} statements (${u.usedIn.slice(0, 3).join(', ')}${u.usedIn.length > 3 ? ', …' : ''})`} and no term says what it means. Add it to terms, or run oodle interview.`);
+    }
   }
 
   // Changes (0012): what they reach and amend must exist, or they would cover nothing.

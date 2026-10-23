@@ -221,7 +221,7 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     lines.push(heading('Outcomes', 'declared · any change needs a human'));
     for (const o of shown) {
       const paint = STATUS[o.status];
-      const tag = o.approved_by ? `  ${s.green(`approved${o.approved_by.length ? ` by ${o.approved_by.join(', ')}` : ''}`)}` : o.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
+      const tag = o.covered_by ? `  ${s.green(`covered by ${o.covered_by}`)}` : o.approved_by ? `  ${s.green(`approved${o.approved_by.length ? ` by ${o.approved_by.join(', ')}` : ''}`)}` : o.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
       lines.push(`  ${paint(MARK[o.status])} ${paint(pad(o.status, 9))} ${pad(o.blocking ? s.bold(o.id) : o.id, idWidth)}  ${s.dim(o.boundary)}${tag}`);
       if (o.status !== 'held') lines.push(`      ${s.dim(s.italic(o.statement))}`);
       if (o.status !== 'new' || o.blocking) lines.push(...grouped(o.details));
@@ -232,7 +232,7 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
   if (r.constraints.length) {
     lines.push(heading('Constraints', 'durable · changing one needs a human'));
     for (const c of r.constraints) {
-      const tag = c.approved_by ? `  ${s.green(`approved${c.approved_by.length ? ` by ${c.approved_by.join(', ')}` : ''}`)}` : c.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
+      const tag = c.covered_by ? `  ${s.green(`covered by ${c.covered_by}`)}` : c.approved_by ? `  ${s.green(`approved${c.approved_by.length ? ` by ${c.approved_by.join(', ')}` : ''}`)}` : c.blocking ? `  ${s.red(s.bold('blocking'))}` : '';
       lines.push(`  ${c.blocking ? s.red(sym.fail) : c.approved_by ? s.green(sym.ok) : s.cyan('+')} ${pad(c.status, 9)} ${c.id}${tag}`);
       for (const d of c.details) lines.push(detail(d));
     }
@@ -267,6 +267,17 @@ export function renderDiff(r: DiffReport, view: { verbose?: boolean; base: strin
     lines.push('');
   }
 
+  if (r.changes.used.length || r.changes.outside.length) {
+    lines.push(heading('Intent', 'merged changes this carries out · outside them blocks'));
+    for (const c of r.changes.used) lines.push(`  ${s.green(sym.ok)} ${c.id}  ${s.dim(`${c.because}${c.origin ? ` · ${c.origin}` : ''} · covers ${c.covers.join(', ')}`)}`);
+    for (const x of r.changes.outside) lines.push(`  ${s.red(sym.fail)} ${s.bold('outside intent')}  ${x}`);
+    lines.push('');
+  }
+  if (r.changes.proposed.length) {
+    lines.push(heading('Proposed changes', 'count once merged'));
+    for (const c of r.changes.proposed) lines.push(`  ${s.cyan('+')} ${c.id}  ${s.dim(c.because)}`);
+    lines.push('');
+  }
   if (r.capabilities.changes.length || r.capabilities.touched.length) {
     lines.push(heading('Capabilities', 'the inventory · report only, never blocking'));
     for (const t of r.capabilities.touched) lines.push(`  ${s.cyan(sym.pointer)} ${t.id}  ${s.dim(`reached by ${t.by.join(', ')}`)}`);

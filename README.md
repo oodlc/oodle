@@ -279,6 +279,28 @@ When a change to a promise is intended (a new field in a confirmation, a price t
 
 A maintainer other than the author submits a review containing it, and the check re-runs green, with the change marked approved and by whom. The approval covers that change exactly as it is. If a later push changes it, it needs approving again. A broken outcome is never approvable: fix the code, or redefine the outcome and approve that. See [`docs/cli.md`](docs/cli.md#ci) and [0007](docs/decisions/0007-approvals-in-ci.md).
 
+### Agree the change before the code
+
+Approving a changed outcome after the code is written means arguing about intent on finished work. A **change** lets the intent merge first:
+
+```yaml
+# oodlc/changes/show-currency.yaml
+changes:
+  - id: show-currency-on-confirmation
+    because: International shoppers ask support which currency they were charged
+    reaches: [checkout.create]                       # capabilities it may touch
+    amends:
+      - outcome: checkout.payment-confirmed
+        expect: { body: { currency: { matches: "^[A-Z]{3}$" } } }
+    rules_out: [new effects, new hosts, new routes, new dependencies]
+```
+
+1. **Intent pull request**: only the change file. Review it there (a `CODEOWNERS` entry on `oodlc/changes/` picks the reviewers). Oodle lists it as a proposed change.
+2. **Code pull request**, often an agent's: `oodle changes brief show-currency-on-confirmation` is its brief. Once the change is merged, `oodle check` covers what it amends: the confirmation now shows a currency that matches, so `checkout.payment-confirmed` is `changed`, *covered by* the change, and nothing blocks. The comment cites the change and the commit that merged it. Anything that moves outside `reaches`, behaviors included, or anything it rules out (a new effect, host, route or dependency) blocks as **outside intent**.
+3. **After it ships**, `oodle changes fold show-currency-on-confirmation` writes the amendment into the outcome and moves the change to `oodlc/changes/archive/`.
+
+Only changes already on the base count, so a pull request can never approve itself by adding one. A broken outcome is never covered. See [0012](docs/decisions/0012-changes-merge-intent-before-code.md).
+
 ### Is the catalog any good?
 
 A green run says your outcomes hold. It doesn't say they would notice if the code broke. `oodle mutate` checks that: it plants small bugs in your app, one at a time (a flipped comparison, a changed status code, a dropped effect), and runs the catalog against each one. This is mutation testing, pointed at your outcomes instead of your unit tests.
@@ -322,6 +344,7 @@ oodle mutate [project]         Plant small bugs and see which ones the catalog c
 oodle explain [project]        Map what the system does, for whom and why, and what protects it
 oodle discover [project]       Propose the capabilities your routes add up to, and open questions
 oodle interview [project]      Answer what only a person can say: what each capability does, for whom, why
+oodle changes [brief|fold]     List changes agreed before their code, brief an agent, fold one in
 oodle propose <file>           Add drafted entries as proposals, never changing an existing one
 oodle draft <brief>            Print the prompt that drafts catalog entries from a brief
 oodle mcp [project]            Serve Oodle to coding agents over MCP

@@ -18,6 +18,7 @@ oodle <command> [project] [flags]
 | `oodle explain [project]` | The system map: intents, the capabilities that serve them, who they are for, whether their outcomes hold, and the next rung each needs. `--only <glob>` shows capabilities in full; `--format md` writes a page. Never blocks |
 | `oodle discover [project]` | Propose the capabilities the routes add up to, with their evidence, and the open questions only a person can answer. Writes proposals only; running it again adds only what is new. `--from <file>` adds evidence: an OpenAPI spec, a HAR capture or an OTLP JSON trace export |
 | `oodle interview [project]` | Walk through each capability whose statement says nothing yet, with its evidence, and the open questions, writing answers as you go. Confirms a capability only with someone at a terminal. Without one, or with `--json`, lists the questions; `--ask` reads answers from stdin |
+| `oodle changes [brief\|fold <id>] [project]` | Changes in `oodlc/changes/`, agreed before their code. With no action, lists them and the commit each was agreed in. `brief <id>` prints a coding agent's brief; `fold <id>` writes a shipped change into the catalog and archives it. `oodle check` covers what a merged change amends and blocks what moves outside it |
 | `oodle propose <file> [project]` | Add drafted entries as proposals in `oodlc/proposed.yaml`, never changing an existing one. `--routes` proposes an outcome for each route nothing describes, from probing it, linked to the capability that lists the route |
 | `oodle draft <brief> [project]` | Print the prompt that drafts catalog entries from a brief, for any agent |
 | `oodle mcp [project]` | Serve Oodle to coding agents over MCP (stdio) |
@@ -48,7 +49,7 @@ Rules for `--json`:
 
 - stdout gets exactly one JSON document, even when the command fails.
 - Every document has an `ok` boolean.
-- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `no-app`, `sealed`, `database-driver`, `database-schema`, `exists`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `approved`, `answer`, `evidence`, `internal`.
+- A failure looks like `{ "ok": false, "error": { "code", "message", "hint", "problems" } }`. Scripts can match on `error.code`, which is stable: `usage`, `no-project`, `no-match`, `catalog`, `app-load`, `app-contract`, `app-crash`, `no-app`, `sealed`, `database-driver`, `database-schema`, `exists`, `no-files`, `baseline`, `not-holding`, `proposal`, `proposal-exists`, `approved`, `answer`, `evidence`, `fold`, `internal`.
 - stderr stays silent.
 
 `check --md diff.md` and `diff --md diff.md` also write the markdown to a file, whatever the output format.

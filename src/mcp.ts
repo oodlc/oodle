@@ -15,6 +15,7 @@ import { loadCatalog, loadConfig } from './catalog.ts';
 import { draftPrompt } from './draft.ts';
 import { propose } from './propose.ts';
 import { applyAnswers, interviewPrompt, type Answer } from './interview.ts';
+import { changeBrief } from './changes.ts';
 import { OodleError } from './errors.ts';
 import { BUILTIN_CONDITIONS } from './security.ts';
 import type { Gap, Observation } from './types.ts';
@@ -68,7 +69,8 @@ export function agentDiff(doc: any) {
     ok: doc.ok,
     blocking: doc.blocking,
     base: doc.base,
-    outcomes: notHeld.map((o: any) => ({ id: o.id, status: o.status, blocking: o.blocking, details: o.details })),
+    outcomes: notHeld.map((o: any) => ({ id: o.id, status: o.status, blocking: o.blocking, details: o.details, ...(o.covered_by ? { covered_by: o.covered_by } : {}) })),
+    ...(doc.changes ? { changes: doc.changes } : {}),
     constraints: doc.constraints,
     behavior_changes: [
       ...(doc.outcomes ?? []).filter((o: any) => o.behavior.length).map((o: any) => ({ under: o.id, changes: o.behavior })),
@@ -85,8 +87,12 @@ function whatToDo(notHeld: any[], doc: any): string[] {
   const by = (s: string) => notHeld.filter((o) => o.status === s).map((o) => o.id);
   if (by('broken').length) out.push(`Fix the code: these outcomes held on the base and now break: ${by('broken').join(', ')}.`);
   if (by('failing').length) out.push(`These outcomes do not hold: ${by('failing').join(', ')}. If they were failing before your change, say so rather than weakening them.`);
-  const human = [...by('changed'), ...by('redefined'), ...by('removed')];
+  const unmet = doc.changes?.unmet ?? {};
+  const pending = (s: string) => notHeld.filter((o) => o.status === s && o.blocking && !unmet[o.id]).map((o) => o.id);
+  const human = [...pending('changed'), ...pending('redefined'), ...pending('removed')];
   if (human.length) out.push(`A human must approve: ${human.join(', ')}. Explain each change in the PR; do not edit outcomes to make them pass.`);
+  for (const [id, why] of Object.entries<string[]>(unmet)) out.push(`Keep going on ${id}: ${why.join('; ')}.`);
+  for (const x of doc.changes?.outside ?? []) out.push(`Outside intent, revert it: ${x}.`);
   if ((doc.constraints ?? []).some((c: any) => c.blocking)) out.push('A constraint was changed or removed: that needs a human. Revert it unless you were asked to change it.');
   if ((doc.behaviors ?? []).some((b: any) => b.violations.length) || (doc.gaps ?? []).some((g: any) => g.violations.length)) out.push('A constraint is violated outside any outcome: fix the code.');
   if ((doc.gaps ?? []).length) out.push('Routes nothing describes: add each as a behavior, or propose an outcome for it with the propose tool.');
@@ -167,6 +173,11 @@ const TOOLS = [
 
 const PROMPTS = [
   {
+    name: 'change',
+    description: 'Carry out an agreed change from oodlc/changes/: why, where you may go, what must hold after, and what is ruled out.',
+    arguments: [{ name: 'id', description: 'The change id (see oodlc/changes/)', required: true }],
+  },
+  {
     name: 'interview',
     description: 'Interview the person about their system: what each capability does, for whom, and why. Shows the questions with their evidence; record answers with the answer tool.',
     arguments: [],
@@ -183,7 +194,8 @@ const INSTRUCTIONS = `Oodle protects declared outcomes. The catalog in oodlc/ is
 - Never edit or delete an outcome, constraint or intent to make something pass. Use propose to add new ones; a human approves them.
 - Prefer conditions over new outcomes for variants, and when to say what a condition changes. Use the security.* conditions for hostile inputs.
 - Use mutate to find outcomes too loose to catch real bugs.
-- To describe a system, call discover, then interview the person with the interview prompt and record their words with answer. Never confirm a capability yourself.`;
+- To describe a system, call discover, then interview the person with the interview prompt and record their words with answer. Never confirm a capability yourself.
+- To carry out an agreed change, use the change prompt with its id. Don't edit the catalog for it, and don't add change files to make your own work pass: only merged changes count.`;
 
 async function callTool(projectDir: string, name: string, args: any): Promise<unknown> {
   switch (name) {
@@ -303,7 +315,7 @@ export function serveMcp(projectDir: string, version: string): Promise<void> {
       case 'prompts/get': {
         const prompt = PROMPTS.find((p) => p.name === params?.name);
         if (!prompt) return fail(id, -32602, `Unknown prompt "${params?.name}"`);
-        const text = prompt.name === 'interview' ? interviewPrompt(projectDir) : `${draftPrompt(projectDir, String(params?.arguments?.brief ?? ''))}\nWhen you have the YAML, call the propose tool with it instead of replying with it.`;
+        const text = prompt.name === 'change' ? changeBrief(projectDir, String(params?.arguments?.id ?? '')) : prompt.name === 'interview' ? interviewPrompt(projectDir) : `${draftPrompt(projectDir, String(params?.arguments?.brief ?? ''))}\nWhen you have the YAML, call the propose tool with it instead of replying with it.`;
         return reply(id, { description: prompt.description, messages: [{ role: 'user', content: { type: 'text', text } }] });
       }
       case 'resources/list':

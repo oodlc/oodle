@@ -1,5 +1,6 @@
 import type { Catalog, Config, LintResult } from './types.ts';
 import { allConditions } from './security.ts';
+import { reaches } from './routes.ts';
 
 /**
  * Traceability checks from the spec:
@@ -59,6 +60,13 @@ export function lint(catalog: Catalog, config?: Config): LintResult {
         // A proposal never blocks, so it doesn't protect anything yet.
         if (o.status !== 'proposed') protectedCapabilities.add(capability.id);
       }
+    } else if (o.status !== 'proposed') {
+      // An outcome that names no capability protects the one whose surfaces reach its trigger, as `oodle explain` counts it.
+      const reached = catalog.capabilities.find((c) => (c.surfaces ?? []).some((s) => reaches(o.trigger.http, s)));
+      if (reached) {
+        protectedCapabilities.add(reached.id);
+        if (reached.intent) used.add(reached.intent);
+      }
     }
     for (const c of o.conditions ?? []) if (!conditions.has(c)) errors.push(`${where}: unknown condition "${c}"`);
     for (const c of Object.keys(o.when ?? {})) {
@@ -105,6 +113,21 @@ export function lint(catalog: Catalog, config?: Config): LintResult {
     const where = `${catalog.sources[`unknowns:${u.id}`]}: ${u.id}`;
     for (const id of u.about ?? []) if (!known.has(id)) errors.push(`${where}: "about" names "${id}", which is not in the catalog`);
     if (!u.answer) warnings.push(`${where}: open question${u.ask ? ` for the ${u.ask}` : ''}: ${u.question}`);
+  }
+
+  // Changes (0012): what they reach and amend must exist, or they would cover nothing.
+  for (const c of catalog.changes) {
+    const where = `${catalog.sources[`changes:${c.id}`]}: ${c.id}`;
+    for (const cap of c.reaches ?? []) if (!capabilities.has(cap)) errors.push(`${where}: reaches unknown capability "${cap}"`);
+    for (const a of c.amends ?? []) {
+      // What a change removes is meant to disappear, so its absence is the change carried out.
+      if (a.outcome && !a.remove && !catalog.outcomes.some((o) => o.id === a.outcome)) errors.push(`${where}: amends unknown outcome "${a.outcome}"`);
+      if (a.constraint && !a.remove && !constraints.has(a.constraint)) errors.push(`${where}: amends unknown constraint "${a.constraint}"`);
+      if (a.constraint && (a.expect || a.when)) errors.push(`${where}: ${a.constraint} is a constraint; amend its check, not an expect`);
+      if (a.outcome && a.check) errors.push(`${where}: ${a.outcome} is an outcome; amend its expect, not a check`);
+      if (a.remove && (a.expect || a.when || a.check || a.statement)) errors.push(`${where}: an amendment that removes ${a.outcome ?? a.constraint} can't also change it`);
+    }
+    if (!(c.amends ?? []).length && !(c.reaches ?? []).length) warnings.push(`${where}: change amends nothing and reaches nothing, so it covers nothing`);
   }
 
   for (const i of catalog.intents) {

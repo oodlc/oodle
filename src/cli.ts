@@ -20,6 +20,7 @@ import { mutate, type MutateReport } from './mutate.ts';
 import { propose, proposeRoutes } from './propose.ts';
 import { discover } from './discover.ts';
 import { systemMap } from './explain.ts';
+import { changeBrief, foldChange, originOf } from './changes.ts';
 import { questions, runInterview } from './interview.ts';
 import { draftPrompt } from './draft.ts';
 import { serveMcp } from './mcp.ts';
@@ -27,7 +28,7 @@ import { runHook, HOOKS } from './hooks.ts';
 import { completion, SHELLS, type Shell } from './completion.ts';
 import { findProject, display } from './project.ts';
 import { EXIT, OodleError, suggest, usageError } from './errors.ts';
-import { clearSpinner, columns, err as e, hints, ms, note, plural, out as o, settings, spinner, sym, type ColorMode } from './term.ts';
+import { clearSpinner, columns, err as e, hints, ms, note, pad, plural, out as o, settings, spinner, sym, type ColorMode } from './term.ts';
 import { hello, say } from './oodle.ts';
 import type { RunResult } from './types.ts';
 
@@ -267,6 +268,26 @@ const COMMANDS: Command[] = [
       ['oodle interview --json', 'The questions still waiting, for a script or an agent'],
     ],
     run: cmdInterview,
+  },
+  {
+    name: 'changes',
+    summary: 'List changes agreed before their code, brief an agent on one, or fold one in once shipped',
+    description:
+      'A change in oodlc/changes/ is an intent agreed before the code exists: why, the capabilities it reaches, how it amends outcomes and constraints, and what it rules out (new effects, hosts, routes or dependencies). Once its pull request is merged, `oodle check` lets a code pull request change exactly what it amends and blocks anything outside it as outside intent. Only changes on the base count. With no action, lists them. `brief <id>` prints the brief a coding agent builds from. `fold <id>` writes the amendments into the catalog once the code has shipped, and moves the change to oodlc/changes/archive/. See docs/decisions/0012.',
+    args: [
+      { name: 'action', description: 'brief or fold. Default: list' },
+      { name: 'id', description: 'The change, for brief and fold' },
+      PROJECT_ARG,
+    ],
+    flags: [],
+    formats: ['text', 'json'],
+    positional: ['brief', 'fold'],
+    examples: [
+      ['oodle changes', 'The changes waiting for their code'],
+      ['oodle changes brief show-currency | claude -p', 'Hand one to a coding agent'],
+      ['oodle changes fold show-currency', 'Once it shipped: write it into the catalog, archive the change'],
+    ],
+    run: cmdChanges,
   },
   {
     name: 'propose',
@@ -708,6 +729,44 @@ async function cmdPropose(ctx: Ctx): Promise<number> {
   console.log(`\n${o.green(o.bold(`${sym.ok} Proposed`))}  ${o.dim(`${plural(result.added.length, 'entry', 'entries')} in ${result.file} · reported, not blocking`)}`);
   await say('curious', 'Proposals noted. A human gets the final say.');
   hints(approvalHints(result.file));
+  return EXIT.ok;
+}
+
+async function cmdChanges(ctx: Ctx): Promise<number> {
+  const [action, id, project] = ['brief', 'fold'].includes(ctx.args[0]) ? ctx.args : [undefined, undefined, ctx.args[0]];
+  if (action && !id) throw usageError(`\`oodle changes ${action}\` needs a change id`, `Usage: oodle changes ${action} <id> [dir]. \`oodle changes\` lists them.`);
+  const dir = findProject(project, 'changes');
+  if (action === 'brief') {
+    const brief = changeBrief(dir, id!);
+    if (ctx.format === 'json') return printJson({ ok: true, id, brief }), EXIT.ok;
+    return process.stdout.write(brief), EXIT.ok;
+  }
+  if (action === 'fold') {
+    const result = foldChange(dir, id!);
+    if (ctx.format === 'json') return printJson({ ok: true, id, ...result }), EXIT.ok;
+    heading('changes fold', dir);
+    for (const c of result.changed) console.log(`  ${o.green('✎')} ${c}`);
+    console.log(`  ${o.cyan(sym.arrow)} archived as ${result.archived}`);
+    console.log(`\n${o.green(o.bold(`${sym.ok} Folded ${id}`))}  ${o.dim('the catalog now says what the change said')}`);
+    hints([`In its own pull request, ${e.cyan('oodle check')} shows each redefinition covered by ${id}`]);
+    return EXIT.ok;
+  }
+  const catalog = loadCatalog(dir, loadConfig(dir));
+  const list = catalog.changes.map((c) => ({ ...c, file: catalog.sources[`changes:${c.id}`], origin: originOf(dir, catalog.sources[`changes:${c.id}`]) }));
+  if (ctx.format === 'json') return printJson({ ok: true, changes: list }), EXIT.ok;
+  heading('changes', dir);
+  if (!list.length) {
+    console.log(`${o.bold('No changes waiting')}  ${o.dim('agree one before the code: a file in oodlc/changes/')}`);
+    hints([`See the format: ${e.cyan('oodle changes --help')}`]);
+    return EXIT.ok;
+  }
+  const width = Math.max(...list.map((c) => c.id.length));
+  for (const c of list) {
+    console.log(`  ${o.cyan('◇')} ${pad(o.bold(c.id), width)}  ${c.because}`);
+    const facts = [c.reaches?.length ? `reaches ${c.reaches.join(', ')}` : '', c.amends?.length ? `amends ${c.amends.map((a) => a.outcome ?? a.constraint).join(', ')}` : '', c.rules_out?.length ? `rules out ${c.rules_out.join(', ')}` : '', c.origin ? `agreed in ${c.origin}` : 'not merged yet'].filter(Boolean);
+    console.log(`      ${o.dim(facts.join(` ${sym.dot} `))}`);
+  }
+  hints([`Brief an agent on one: ${e.cyan(`oodle changes brief ${list[0].id}`)}`]);
   return EXIT.ok;
 }
 

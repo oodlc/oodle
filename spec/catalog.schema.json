@@ -15,7 +15,8 @@
     "actors": { "type": "array", "items": { "$ref": "#/definitions/actor" } },
     "capabilities": { "type": "array", "items": { "$ref": "#/definitions/capability" } },
     "experiences": { "type": "array", "items": { "$ref": "#/definitions/experience" } },
-    "unknowns": { "type": "array", "items": { "$ref": "#/definitions/unknown" } }
+    "unknowns": { "type": "array", "items": { "$ref": "#/definitions/unknown" } },
+    "changes": { "description": "Only in oodlc/changes/: intents to change the system, agreed before the code. See docs/decisions/0012.", "type": "array", "items": { "$ref": "#/definitions/change" } }
   },
   "definitions": {
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$", "maxLength": 128 },
@@ -208,6 +209,35 @@
         "ask": { "description": "The role that can answer it, e.g. product owner", "type": "string", "minLength": 1 },
         "about": { "description": "Ids of the entries it is about", "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
         "answer": { "description": "What a person said. An answered question is no longer open.", "type": "string", "minLength": 1 }
+      }
+    },
+    "change": {
+      "description": "An intent to change the system, agreed before the code exists. Once merged, it lets a code pull request change exactly what it amends, inside the capabilities it reaches, and nothing it rules out. See docs/decisions/0012.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "because"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "because": { "description": "Why, in words a reviewer can argue with", "type": "string", "minLength": 1 },
+        "reaches": { "description": "Capabilities it may touch. Without it, only what it amends", "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
+        "amends": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "outcome": { "$ref": "#/definitions/id" },
+              "constraint": { "$ref": "#/definitions/id" },
+              "statement": { "type": "string", "minLength": 1 },
+              "expect": { "description": "Merged over the outcome's expect: body fields by key, effects by kind, the rest replaced", "$ref": "#/definitions/expect" },
+              "when": { "type": "object", "additionalProperties": { "$ref": "#/definitions/expect" } },
+              "check": { "description": "A constraint's new check", "type": "string", "minLength": 1 },
+              "remove": { "description": "The change retires it", "const": true }
+            },
+            "oneOf": [{ "required": ["outcome"] }, { "required": ["constraint"] }]
+          }
+        },
+        "rules_out": { "type": "array", "items": { "enum": ["new effects", "new hosts", "new routes", "new dependencies"] }, "uniqueItems": true }
       }
     },
     "constraint": {

@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { Behavior, Boundary, Gap, LintResult, Observation, Outcome, RunResult } from './types.ts';
+import type { Behavior, Boundary, Change, Gap, LintResult, Observation, Outcome, RunResult } from './types.ts';
 import { jsonDiff, stableStringify } from './expect.ts';
 import { capabilityOf } from './explain.ts';
+import { coverage, movedOf, originOf, outsideIntent, type ChangeReport } from './changes.ts';
 import { reaches } from './runner.ts';
 
 /**
@@ -51,6 +52,8 @@ export interface OutcomeDiff {
   fingerprint?: string;
   /** Who approved this change. An approved change does not block. */
   approved_by?: string[];
+  /** The merged change (0012) this pull request carries out exactly. A covered change does not block. */
+  covered_by?: string;
 }
 
 export interface BehaviorDiff {
@@ -75,6 +78,7 @@ export interface ConstraintDiff {
   details: string[];
   fingerprint?: string;
   approved_by?: string[];
+  covered_by?: string;
 }
 
 /** A capability added, removed, confirmed or reworded. The inventory explains; it never blocks (0010). */
@@ -102,6 +106,8 @@ export interface DiffReport {
   gaps: Gap[];
   /** Report only: what the change does to the inventory, and which capabilities it reaches. */
   capabilities: { changes: CapabilityDiff[]; touched: TouchedCapability[] };
+  /** Merged changes this pull request carries out, what moved outside them (blocking), and changes it proposes. See 0012. */
+  changes: ChangeReport;
   lint: LintResult;
   blocking: number;
   approvals: {
@@ -315,6 +321,37 @@ function applyApprovals(outcomes: OutcomeDiff[], constraints: ConstraintDiff[], 
   return { applied, stale };
 }
 
+/**
+ * A merged change covers what it said a pull request would change: the item stops blocking and names the
+ * change. Using a change binds the pull request to its scope, and what moves outside blocks (0012).
+ */
+function applyChanges(base: RunResult, head: RunResult, outcomes: OutcomeDiff[], constraints: ConstraintDiff[], behaviors: BehaviorDiff[]): ChangeReport {
+  const unmet: Record<string, string[]> = {};
+  const covers = new Map<string, string[]>();
+  const cover = (d: OutcomeDiff | ConstraintDiff, kind: 'outcome' | 'constraint') => {
+    if (!d.blocking || d.approved_by || !['changed', 'redefined', 'removed'].includes(d.status)) return;
+    const r = coverage(base, head, { kind, id: d.id, status: d.status });
+    if (r.by) {
+      d.covered_by = r.by;
+      d.blocking = false;
+      covers.set(r.by, [...(covers.get(r.by) ?? []), d.id]);
+    } else if (r.unmet.length) {
+      unmet[d.id] = r.unmet;
+      d.details.push(...r.unmet);
+    }
+  };
+  for (const d of outcomes) cover(d, 'outcome');
+  for (const d of constraints) cover(d, 'constraint');
+  const used = base.catalog.changes.filter((c) => covers.has(c.id));
+  const origin = (c: Change) => originOf(base.projectDir, base.catalog.sources[`changes:${c.id}`]);
+  return {
+    used: used.map((c) => ({ id: c.id, because: c.because, ...(origin(c) ? { origin: origin(c) } : {}), covers: covers.get(c.id)! })),
+    outside: outsideIntent(base, head, used, movedOf(head, base, outcomes, behaviors)),
+    proposed: head.catalog.changes.filter((c) => !base.catalog.changes.some((b) => b.id === c.id)).map((c) => ({ id: c.id, because: c.because })),
+    unmet,
+  };
+}
+
 const CAPABILITY_FIELDS = ['statement', 'actor', 'intent', 'surfaces'] as const;
 
 function diffCapabilities(base: RunResult, head: RunResult, outcomes: OutcomeDiff[], behaviors: BehaviorDiff[]): DiffReport['capabilities'] {
@@ -361,12 +398,14 @@ export function diffRuns(base: RunResult, head: RunResult, approvals: Approval[]
   const behaviors = diffBehaviors(base, head);
   const constraints = diffConstraints(base, head);
   const approved = applyApprovals(outcomes, constraints, approvals);
+  const changes = applyChanges(base, head, outcomes, constraints, behaviors);
   // Only what a human declared can block: outcomes and constraints. Behavior drift never does.
   const blocking =
     outcomes.filter((d) => d.blocking).length +
     behaviors.filter((d) => d.blocking).length +
     constraints.filter((d) => d.blocking).length +
     head.gaps.filter((g) => g.violations.length).length +
+    changes.outside.length +
     head.lint.errors.length;
-  return { outcomes, behaviors, constraints, gaps: head.gaps, capabilities: diffCapabilities(base, head, outcomes, behaviors), lint: head.lint, blocking, approvals: approved };
+  return { outcomes, behaviors, constraints, gaps: head.gaps, capabilities: diffCapabilities(base, head, outcomes, behaviors), changes, lint: head.lint, blocking, approvals: approved };
 }

@@ -236,7 +236,8 @@ test('inventory: a confirmed capability justifies an outcome without an intent',
 
 test('inventory: a proposed capability justifies only proposed outcomes, until a person confirms it', () => {
   const dir = copyExample();
-  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS.replace('actor: shopper\n    surfaces', 'actor: shopper\n    status: proposed\n    surfaces'));
+  // A surface no other outcome reaches, so only the outcome that names the capability counts.
+  writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS.replace('actor: shopper\n    surfaces', 'actor: shopper\n    status: proposed\n    surfaces').replace('[POST /checkout]', '[POST /buy]'));
   edit(dir, 'oodlc/checkout.yaml', 'intent: buy-without-surprises\n    statement: After', 'capability: buy-items\n    statement: After');
   const errors = lint(loadCatalog(dir, loadConfig(dir))).errors;
   assert.ok(errors.some((e) => e.includes('checkout.payment-confirmed: traces only to the proposed capability "buy-items"')));
@@ -252,7 +253,8 @@ test('inventory: capabilities alone are a valid catalog that explains and never 
   writeFileSync(join(dir, 'oodlc/inventory.yaml'), BUY_ITEMS.replace('A shopper can pay for a cart and get one receipt', 'Handles checkout'));
   const result = lint(loadCatalog(dir, loadConfig(dir)));
   assert.deepEqual(result.errors, []);
-  assert.ok(result.warnings.some((w) => w.includes('buy-items: capability has no outcomes yet')));
+  // The outcomes on POST /checkout protect it without naming it, as `oodle explain` counts them.
+  assert.ok(!result.warnings.some((w) => w.includes('buy-items: capability has no outcomes yet')));
   assert.ok(result.warnings.some((w) => w.includes(`buy-items: "Handles" doesn't say what the actor can do`)));
   const report = diffRuns(await runProject(EXAMPLE), await runProject(dir));
   assert.equal(report.blocking, 0);

@@ -120,6 +120,14 @@ export function lint(catalog: Catalog, config?: Config): LintResult {
     for (const where of seeding) errors.push(`${where}: given.db seeds a database, but oodlc/config.yaml has no "database". Add database: { schema: <a .sql file or migrations folder> }.`);
   }
 
+  // With no app nothing runs, so a promise here would read as protection that nobody checks (0011).
+  if (config && !config.app) {
+    for (const section of ['outcomes', 'behaviors', 'conditions', 'constraints'] as const) {
+      const n = catalog[section].length;
+      if (n) errors.push(`oodlc/config.yaml: ${n} ${n === 1 ? section.replace(/s$/, '') : section} declared, but nothing runs ${n === 1 ? 'it' : 'them'}: there is no app. Point app at your service to protect it, or keep this project to intents and the inventory.`);
+    }
+  }
+
   for (const id of config?.probe?.conditions ?? []) {
     if (!conditions.has(id)) errors.push(`oodlc/config.yaml: probe.conditions: unknown condition "${id}"`);
   }

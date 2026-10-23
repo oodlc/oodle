@@ -48,8 +48,8 @@ test('readEvidence: OpenAPI operations with their words, HAR requests by page, O
   const spec = readEvidence(file('openapi.yaml', OPENAPI));
   assert.equal(spec.kind, 'openapi');
   assert.deepEqual(spec.seen, [
-    { method: 'POST', path: '/checkout', summary: 'Pay for the items in a cart', operationId: 'checkout', tags: ['orders'] },
-    { method: 'GET', path: '/orders/:id', summary: 'Look up an order' },
+    { method: 'POST', path: '/checkout', summary: 'Pay for the items in a cart', operationId: 'checkout', tags: ['orders'], host: 'shop.example.test' },
+    { method: 'GET', path: '/orders/:id', summary: 'Look up an order', host: 'shop.example.test' },
   ]);
   const har = readEvidence(file('session.har', HAR));
   assert.equal(har.kind, 'har');

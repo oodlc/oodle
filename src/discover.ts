@@ -13,7 +13,8 @@
  */
 import { propose, type ProposeResult } from './propose.ts';
 import { reaches, runProject } from './runner.ts';
-import { readEvidence, type Evidence } from './evidence.ts';
+import { readEvidence, routesFrom, type Evidence } from './evidence.ts';
+import { OodleError } from './errors.ts';
 import type { Capability, EffectRecord, Experience, RunResult, Unknown } from './types.ts';
 
 /** Path segments that say where an API lives, not what it acts on. */
@@ -247,6 +248,11 @@ export interface DiscoverResult extends ProposeResult {
 export async function discover(projectDir: string, files: string[] = []): Promise<DiscoverResult> {
   const evidence = files.map(readEvidence);
   const run = await runProject(projectDir);
+  // With no app to ask, the routes are the ones the evidence names (0011).
+  if (!run.config.app) {
+    if (!evidence.length) throw new OodleError('evidence', 'Nothing to discover from: this project has no app to run', { hint: 'Pass evidence with --from: an OpenAPI spec, a HAR capture or an OTLP JSON trace export.' });
+    run.routes = routesFrom(evidence, reaches, ASSET);
+  }
   const inv = inventoryFrom(run, evidence);
   const fragment = {
     ...(inv.capabilities.length ? { capabilities: inv.capabilities } : {}),

@@ -66,7 +66,14 @@ function openapi(doc: any, name: string): Evidence {
       });
     }
   }
-  return { kind: 'openapi', name, seen, sequences: [] };
+  // The host the spec says it serves, so traffic to it can be told from other sites'.
+  let host: string | undefined;
+  try {
+    host = doc.host ?? (doc.servers?.[0]?.url ? new URL(doc.servers[0].url).host || undefined : undefined);
+  } catch {
+    host = undefined;
+  }
+  return { kind: 'openapi', name, seen: host ? seen.map((s) => ({ ...s, host })) : seen, sequences: [] };
 }
 
 /** Counts requests by host, method and path, keeping the first-seen order. */
@@ -139,4 +146,38 @@ export function readEvidence(file: string): Evidence {
   throw new OodleError('evidence', `${file} is not an OpenAPI spec, a HAR capture or an OTLP trace export`, {
     hint: 'OpenAPI has an "openapi" or "swagger" key, a HAR file a "log.entries" list, and an OTLP JSON export "resourceSpans".',
   });
+}
+
+/** A path segment that names one record rather than a kind of thing: `ord_1`, `42`, a uuid. `v2` is a version. */
+const RECORD = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12,}|[a-z]+[_-]?[a-z0-9]*\d[a-z0-9_-]*)$/i;
+
+/** `/orders/ord_1/refund` -> `/orders/:id/refund`. An inference: a person can rename the routes it gives. */
+export function templateOf(path: string): string {
+  return path.split('/').map((seg, i) => (i > 0 && !seg.startsWith(':') && !/^v\d+$/.test(seg) && RECORD.test(seg) ? ':id' : seg)).join('/');
+}
+
+/**
+ * The routes evidence implies, for a project with no app to ask (0011): a spec's
+ * operations as they are, then traffic templated where no spec route covers it.
+ * Traffic counts only on the service's own host: the spec's, or else the one
+ * most of the non-asset requests went to.
+ */
+export function routesFrom(evidence: Evidence[], reaches: (surface: string, route: string) => boolean, asset: RegExp): string[] {
+  const routes: string[] = [];
+  const add = (r: string) => {
+    if (!routes.includes(r)) routes.push(r);
+  };
+  for (const e of evidence) if (e.kind === 'openapi') for (const s of e.seen) add(`${s.method} ${s.path}`);
+  const declared = new Set(evidence.flatMap((e) => (e.kind === 'openapi' ? e.seen.map((s) => s.host).filter(Boolean) : [])));
+  const traffic = evidence.filter((e) => e.kind !== 'openapi').flatMap((e) => e.seen).filter((s) => !asset.test(s.path));
+  const byHost = new Map<string, number>();
+  for (const s of traffic) if (s.host) byHost.set(s.host, (byHost.get(s.host) ?? 0) + (s.count ?? 1));
+  const busiest = [...byHost].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const own = declared.size ? declared : new Set(busiest ? [busiest] : []);
+  for (const s of traffic) {
+    if (s.host && own.size && !own.has(s.host)) continue;
+    if (routes.some((r) => reaches(`${s.method} ${s.path}`, r))) continue;
+    add(`${s.method} ${templateOf(s.path)}`);
+  }
+  return routes;
 }

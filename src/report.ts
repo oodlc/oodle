@@ -173,7 +173,7 @@ export function runSummary(run: RunResult): string {
 export function systemMarkdown(map: SystemMap): string {
   const lines: string[] = ['# What the system does', ''];
   const m = map.summary;
-  lines.push(`${m.capabilities} capabilities · ${m.confirmed} confirmed · ${m.protected} protected by an outcome that holds · ${m.claimed} of ${m.routes} routes claimed`, '');
+  lines.push(`${m.capabilities} capabilities · ${m.confirmed} confirmed · ${m.protected} protected by an outcome that holds${m.routes ? ` · ${m.claimed} of ${m.routes} routes claimed` : ''}`, '');
   const cell = (s: string) => s.replace(/\|/g, '\\|');
   const table = (caps: CapabilityView[]) => {
     if (!caps.length) return;

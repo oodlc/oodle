@@ -156,6 +156,21 @@
         "given": { "$ref": "#/definitions/given" }
       }
     },
+    "evidence": {
+      "description": "One piece of evidence. Oodle grades what it writes: observed when it saw it happen (a route the app serves, a probe, a recorded call or table write, a request in a capture or trace), inferred for anything else. Plain text, or an item with no grade, loads as inferred. Only observed evidence ranks a capability. See docs/decisions/0014.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text"],
+          "properties": {
+            "text": { "type": "string", "minLength": 1 },
+            "grade": { "enum": ["observed", "inferred"] }
+          }
+        }
+      ]
+    },
     "surface": { "type": "string", "pattern": "^(GET|POST|PUT|PATCH|DELETE) /\\S*$" },
     "actor": {
       "description": "Who uses the system. Part of the inventory, which never blocks. See docs/decisions/0010.",
@@ -179,7 +194,7 @@
         "actor": { "$ref": "#/definitions/id" },
         "intent": { "$ref": "#/definitions/id" },
         "surfaces": { "description": "Triggers that reach it, e.g. POST /checkout", "type": "array", "items": { "$ref": "#/definitions/surface" }, "uniqueItems": true },
-        "evidence": { "description": "Where the claim comes from: a file, a probe, a record", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "evidence": { "description": "Where the claim comes from: a file, a probe, a record", "type": "array", "items": { "$ref": "#/definitions/evidence" } },
         "status": { "$ref": "#/definitions/status" }
       }
     },
@@ -195,7 +210,7 @@
         "intent": { "$ref": "#/definitions/id" },
         "steps": { "description": "Capability ids, in the order the actor meets them", "type": "array", "items": { "$ref": "#/definitions/id" } },
         "feels_broken_when": { "description": "Failures the actor would notice. Each is a candidate condition or constraint.", "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "evidence": { "description": "Where the journey was seen: a capture, a trace export", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "evidence": { "description": "Where the journey was seen: a capture, a trace export", "type": "array", "items": { "$ref": "#/definitions/evidence" } },
         "status": { "$ref": "#/definitions/status" }
       }
     },

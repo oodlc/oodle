@@ -451,7 +451,7 @@ function capabilityLines(c: CapabilityView, width: number, detailed: boolean): s
   const mark = c.status === 'confirmed' ? s.green(sym.watch) : s.yellow('○');
   const lines = [`  ${mark} ${pad(s.bold(c.id), width)}  ${c.statement}`];
   const facts = [c.actor?.id, c.surfaces.join(', '), ...outcomeWords(c)].filter(Boolean);
-  if (facts.length) lines.push(`      ${s.dim(facts.join(` ${sym.dot} `))}`);
+  if (facts.length || c.inferred_only) lines.push(`      ${[...(c.inferred_only ? [s.yellow('inferred only')] : []), ...(facts.length ? [s.dim(facts.join(` ${sym.dot} `))] : [])].join(s.dim(` ${sym.dot} `))}`);
   lines.push(`      ${rungLine(c)}`);
   if (detailed) {
     const row = (label: string, value: string) => lines.push(detail(`${s.dim(label.padEnd(11))} ${value}`));
@@ -462,7 +462,7 @@ function capabilityLines(c: CapabilityView, width: number, detailed: boolean): s
     if (c.writes.length) row('writes', c.writes.join(', '));
     if (c.constraints.length) row('constraints', c.constraints.join(', '));
     for (const e of c.experiences) row('experience', e);
-    for (const e of c.evidence) row('evidence', s.dim(e));
+    for (const e of c.evidence) row('evidence', `${e.grade === 'observed' ? s.green(e.grade) : s.yellow(e.grade)}  ${s.dim(e.text)}`);
   }
   return lines;
 }
@@ -517,6 +517,6 @@ export function renderSystem(map: SystemMap, view: { only?: string[] } = {}): st
     if (open.length) lines.push(`${s.bold('Open questions')}`, ...open.map((q) => `  ${s.yellow(sym.unknown)} ${q.id}  ${s.dim(q.question)}`), '');
   }
   const m = map.summary;
-  lines.push(`${s.bold(`${plural(m.capabilities, 'capability', 'capabilities')}`)}  ${s.dim([`${m.confirmed} confirmed`, `${m.protected} protected by an outcome that holds`, ...(m.routes ? [`${m.claimed} of ${plural(m.routes, 'route')} claimed`] : [])].join(` ${sym.dot} `))}`);
+  lines.push(`${s.bold(`${plural(m.capabilities, 'capability', 'capabilities')}`)}  ${s.dim([`${m.confirmed} confirmed`, `${m.protected} protected by an outcome that holds`, ...(m.inferred_only ? [`${m.inferred_only} inferred only, nothing seen yet`] : []), ...(m.routes ? [`${m.claimed} of ${plural(m.routes, 'route')} claimed`] : [])].join(` ${sym.dot} `))}`);
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }

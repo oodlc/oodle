@@ -20,7 +20,7 @@ import { undefinedWords } from './terms.ts';
 export const TERMS_FILE = 'terms.yaml';
 import { lint, saysNothing } from './lint.ts';
 import { OodleError } from './errors.ts';
-import type { Catalog, Unknown } from './types.ts';
+import type { Catalog, EvidenceItem, Unknown } from './types.ts';
 
 export interface Question {
   /**
@@ -37,17 +37,21 @@ export interface Question {
   file: string;
 }
 
+/** "observed: POST /checkout: calls payment.capture", so a person can tell what was seen from what was said. */
+const graded = (e: EvidenceItem) => `${e.grade}: ${e.text}`;
+
 /** A `why.<capability>` question from discovery is the capability's own `why`, asked with it. */
 const folded = (u: Unknown, catalog: Catalog) => u.id.startsWith('why.') && (u.about ?? []).length === 1 && catalog.capabilities.some((c) => c.id === u.about![0]);
 
 /** What the catalog still needs a person to say, capability by capability, then the other open questions. */
 export function questions(catalog: Catalog): Question[] {
   const out: Question[] = [];
-  // The capabilities with the most evidence first: more outcomes and calls usually means it matters more.
-  const weight = (c: (typeof catalog.capabilities)[number]) => (c.evidence?.length ?? 0) + (c.surfaces?.length ?? 0);
+  // The capabilities with the most observed evidence first: more calls, writes and requests seen usually means it matters more.
+  // What someone wrote about a capability, however much, never moves it up (0014).
+  const weight = (c: (typeof catalog.capabilities)[number]) => (c.evidence ?? []).filter((e) => e.grade === 'observed').length;
   for (const c of [...catalog.capabilities].sort((a, b) => weight(b) - weight(a))) {
     const file = catalog.sources[`capabilities:${c.id}`];
-    const evidence = [...(c.surfaces ?? []).map((s) => `reached by ${s}`), ...(c.evidence ?? [])];
+    const evidence = [...(c.surfaces ?? []).map((s) => `reached by ${s}`), ...(c.evidence ?? []).map(graded)];
     const where = c.surfaces?.length ? ` through ${c.surfaces.join(', ')}` : '';
     const q = (kind: Question['kind'], ask: string) => out.push({ kind, about: 'capability', target: c.id, ask, evidence, file });
     if (saysNothing(c.statement)) q('statement', `What can someone do${where}? Say it as "<actor> can <verb> <object>".`);
@@ -56,7 +60,7 @@ export function questions(catalog: Catalog): Question[] {
   }
   for (const x of catalog.experiences) {
     const file = catalog.sources[`experiences:${x.id}`];
-    const evidence = [...((x.steps ?? []).length ? [`steps: ${x.steps!.join(' then ')}`] : []), ...(x.evidence ?? [])];
+    const evidence = [...((x.steps ?? []).length ? [`steps: ${x.steps!.join(' then ')}`] : []), ...(x.evidence ?? []).map(graded)];
     const q = (kind: Question['kind'], ask: string) => out.push({ kind, about: 'experience', target: x.id, ask, evidence, file });
     if (saysNothing(x.statement)) q('statement', `Who goes through ${(x.steps ?? []).join(' then ') || x.id}, and what are they trying to get done?`);
     if (!(x.feels_broken_when ?? []).length) q('broken', 'What would make it feel broken to them? Separate several with ;');

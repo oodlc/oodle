@@ -105,12 +105,35 @@ function entries(text: string): Map<string, any> | null {
   return out;
 }
 
+/** Evidence graded observed, by entry: "capability checkout.create" -> its texts. */
+function observed(text: string): Map<string, Set<string>> | null {
+  let doc: any;
+  try {
+    doc = parse(text) ?? {};
+  } catch {
+    return null;
+  }
+  const out = new Map<string, Set<string>>();
+  for (const s of ['capabilities', 'experiences'] as const) {
+    for (const item of Array.isArray(doc?.[s]) ? doc[s] : []) {
+      const seen = (Array.isArray(item?.evidence) ? item.evidence : []).filter((e: any) => e?.grade === 'observed').map((e: any) => String(e.text));
+      if (item?.id && seen.length) out.set(`${singular(s)} ${item.id}`, new Set(seen));
+    }
+  }
+  return out;
+}
+
 /** What an edit would do to approved entries: change, remove, approve or add one directly. */
 export function catalogConcerns(before: string, after: string): string[] {
   const a = entries(before);
   const b = entries(after);
   if (!a || !b) return [];
   const concerns: string[] = [];
+  // Only Oodle grades evidence as observed, from what it saw (0014). Writing that grade by hand claims Oodle saw it.
+  const seenBefore = observed(before) ?? new Map();
+  for (const [key, texts] of observed(after) ?? new Map()) {
+    if ([...texts].some((x) => !seenBefore.get(key)?.has(x))) concerns.push(`writes evidence graded observed for ${key}; only Oodle grades what it saw, through oodle discover`);
+  }
   for (const [key, was] of a) {
     if (was.status === 'proposed') continue;
     const now = b.get(key);

@@ -45,7 +45,7 @@ const scripted = (answers: string[]) => {
   return { asked, io: { ask: async (p: string) => (asked.push(p), answers.length ? answers.shift()! : null), say: () => {} } };
 };
 
-test('questions: capability by capability, the one with more evidence first, then the open questions', () => {
+test('questions: capability by capability, then the open questions', () => {
   const q = questions(catalogOf(project()));
   assert.deepEqual(q.map((x) => `${x.kind} ${x.target}`), [
     'statement checkout.create', 'confirm checkout.create',
@@ -53,7 +53,8 @@ test('questions: capability by capability, the one with more evidence first, the
     // why.health.read is health.read's own `why`, so it isn't asked twice.
     'open unserved.customers-track-orders',
   ]);
-  assert.ok(q[0].evidence.includes('POST /checkout: calls email.sent, payment.capture'));
+  // Free-text evidence loads as inferred, and says so (0014).
+  assert.ok(q[0].evidence.includes('inferred: POST /checkout: calls email.sent, payment.capture'));
 });
 
 test('answers from a person: written in place, comments kept, new actors and intents are theirs, the why question goes', () => {

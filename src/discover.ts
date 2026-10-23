@@ -10,12 +10,18 @@
  * Everything is written through `propose`, so it lands as a proposal: it never
  * blocks, and a person confirms a capability by deleting its status line.
  * See docs/decisions/0010.
+ *
+ * Each piece of evidence is graded by where it came from (0014): what Oodle saw
+ * (a route the app serves, a probe, a recorded call or table write, a request in
+ * a capture) is observed; what someone wrote (a spec's summary, the outcomes that
+ * describe a route) is inferred. Only observed traffic orders the capabilities, and
+ * a capture's silence about a route is a question that says what the capture covered.
  */
 import { propose, type ProposeResult } from './propose.ts';
 import { reaches, runProject } from './runner.ts';
-import { readEvidence, routesFrom, type Evidence } from './evidence.ts';
+import { notSeenIn, readEvidence, routesFrom, type Evidence, type Scope } from './evidence.ts';
 import { OodleError } from './errors.ts';
-import type { Capability, EffectRecord, Experience, RunResult, Unknown } from './types.ts';
+import type { Capability, EffectRecord, EvidenceItem, Experience, RunResult, Unknown } from './types.ts';
 
 /** Path segments that say where an API lives, not what it acts on. */
 const PREFIX = /^(api|v\d+)$/;
@@ -39,6 +45,9 @@ export function capabilityId(route: string): string {
   const parts = [...(fixed.length ? fixed : ['root']), ...(named ? [] : [ACTION[method] ?? method.toLowerCase()])];
   return parts.map(slug).join('.');
 }
+
+const seen = (text: string): EvidenceItem => ({ text, grade: 'observed' });
+const said = (text: string): EvidenceItem => ({ text, grade: 'inferred' });
 
 /** "calls payment.capture, email.sent" / "writes orders": what crossed the boundary, in words. */
 function effectWords(effects: EffectRecord[]): string[] {
@@ -101,7 +110,7 @@ export function inventoryFrom(run: RunResult, evidence: Evidence[] = []): Invent
 
   const known: string[] = [];
   const drafts = new Map<string, Capability>();
-  const said = new Map<string, string>();
+  const words = new Map<string, string>();
   const routeOf = new Map<string, string>();
   for (const route of run.routes) {
     const listed = owner(route);
@@ -118,20 +127,23 @@ export function inventoryFrom(run: RunResult, evidence: Evidence[] = []): Invent
     }
     routeOf.set(route, id);
     const describing = subjects.filter((s) => reaches(s.item.trigger.http, route));
-    const seen = run.observations.filter((o) => describing.some((s) => s.item.id === o.id)).flatMap((o) => o.effects);
+    const recorded = run.observations.filter((o) => describing.some((s) => s.item.id === o.id)).flatMap((o) => o.effects);
     const gap = run.gaps.find((g) => g.route === route);
     const named = (kind: string) => describing.filter((s) => s.kind === kind).map((s) => s.item.id);
     const specs = evidence.filter((e) => e.kind === 'openapi').flatMap((e) => e.seen.filter((s) => routeFor(s.method, s.path) === route).map((s) => ({ e, s })));
-    for (const { s } of specs) if (s.summary && !said.has(id)) said.set(id, s.summary);
+    for (const { s } of specs) if (s.summary && !words.has(id)) words.set(id, s.summary);
     const evidenceLines = [
-      ...(['outcome', 'behavior'] as const).filter((k) => named(k).length).map((k) => `${route}: described by ${k}${named(k).length > 1 ? 's' : ''} ${named(k).join(', ')}`),
-      ...specs.map(({ e, s }) => `${route}: ${e.name} says ${s.summary ? `"${s.summary}"` : 'nothing about it'}${s.operationId ? ` (${s.operationId})` : ''}${s.tags?.length ? `, tagged ${s.tags.join(', ')}` : ''}`),
-      ...traffic.map((e) => {
+      // With an app, the route list is the app's own; without one, routes come from the evidence below (0011).
+      ...(run.config.app ? [seen(`${route}: served by the app`)] : []),
+      ...(['outcome', 'behavior'] as const).filter((k) => named(k).length).map((k) => said(`${route}: described by ${k}${named(k).length > 1 ? 's' : ''} ${named(k).join(', ')}`)),
+      ...specs.map(({ e, s }) => said(`${route}: ${e.name} says ${s.summary ? `"${s.summary}"` : 'nothing about it'}${s.operationId ? ` (${s.operationId})` : ''}${s.tags?.length ? `, tagged ${s.tags.join(', ')}` : ''}`)),
+      // A capture that never reached the route says nothing about it here; the question below cites what it covered.
+      ...traffic.flatMap((e) => {
         const n = e.seen.filter((s) => relevant(s) && routeFor(s.method, s.path) === route).reduce((sum, s) => sum + (s.count ?? 0), 0);
-        return `${route}: ${n ? `${n} request${n === 1 ? '' : 's'}` : 'no requests'} in ${e.name}`;
+        return n ? [seen(`${route}: ${n} request${n === 1 ? '' : 's'} in ${e.name}`)] : [];
       }),
-      ...(gap && gap.probe.status !== null ? [`${route}: answered ${gap.probe.status} when probed`] : []),
-      ...effectWords([...seen, ...(gap?.probe.effects ?? [])]).map((w) => `${route}: ${w}`),
+      ...(gap && gap.probe.status !== null ? [seen(`${route}: answered ${gap.probe.status} when probed`)] : []),
+      ...effectWords([...recorded, ...(gap?.probe.effects ?? [])]).map((w) => seen(`${route}: ${w}`)),
     ];
     const draft = drafts.get(id) ?? { id, statement: '', surfaces: [], evidence: [], status: 'proposed' as const };
     draft.surfaces!.push(route);
@@ -140,15 +152,16 @@ export function inventoryFrom(run: RunResult, evidence: Evidence[] = []): Invent
   }
 
   // A capability serves an intent when every approved outcome on its routes says so.
-  const used = (surfaces: string[]) => surfaces.reduce((n, r) => n + (usage.get(r) ?? 0), 0);
+  // Only observed traffic ranks: a spec's operations or a capability nobody has seen used come last (0014).
+  const used = (surfaces: string[]) => run.routes.filter((r) => surfaces.some((s) => reaches(s, r))).reduce((n, r) => n + (usage.get(r) ?? 0), 0);
   const ordered = [...drafts.values()].sort((a, b) => used(b.surfaces!) - used(a.surfaces!));
   drafts.clear();
   for (const d of ordered) {
     const intents = new Set(catalog.outcomes.filter((o) => o.status !== 'proposed' && d.surfaces!.some((r) => reaches(o.trigger.http, r))).map((o) => o.intent).filter(Boolean));
-    const words = said.get(d.id);
+    const spec = words.get(d.id);
     drafts.set(d.id, {
       id: d.id,
-      statement: `TODO: who can do what through ${d.surfaces!.join(', ')}? ${words ? `The spec says "${words}". ` : ''}Say it as "<actor> can <verb> <object>".`,
+      statement: `TODO: who can do what through ${d.surfaces!.join(', ')}? ${spec ? `The spec says "${spec}". ` : ''}Say it as "<actor> can <verb> <object>".`,
       ...(intents.size === 1 ? { intent: [...intents][0] } : {}),
       surfaces: d.surfaces,
       ...(d.evidence!.length ? { evidence: d.evidence } : {}),
@@ -189,7 +202,7 @@ export function inventoryFrom(run: RunResult, evidence: Evidence[] = []): Invent
       id: `journey.${slugOf(j.steps[0])}-then-${slugOf(j.steps.at(-1)!)}`,
       statement: `TODO: who goes through ${j.steps.join(' then ')}, and what are they trying to get done?`,
       steps: j.steps,
-      evidence: [`seen ${j.count} times in ${[...j.from].join(', ')}`],
+      evidence: [seen(`seen ${j.count} times in ${[...j.from].join(', ')}`)],
       status: 'proposed' as const,
     }))
     .filter((x, i, all) => all.findIndex((y) => y.id === x.id) === i && !catalog.experiences.some((y) => y.id === x.id));
@@ -220,9 +233,14 @@ export function inventoryFrom(run: RunResult, evidence: Evidence[] = []): Invent
         : { id: `unrouted.${slugOf(e.name)}`, question: `${e.name} has requests no route serves: ${list}. Another service, an old client, or a missing route?`, ask: 'API owner' });
     }
   }
+  // Coverage is not absence: a capability no captured request reached was not seen in that window, on those hosts.
+  // Asked of every capability with surfaces, new or not, once each (`unused.` is how 0.11 to 0.13 named it).
   if (traffic.length) {
-    for (const d of drafts.values()) {
-      if (!used(d.surfaces!)) ask({ id: `unused.${d.id}`, question: `No request in ${traffic.map((e) => e.name).join(', ')} reached ${d.surfaces!.join(', ')}. Is it still used, or just not in these captures?`, ask: 'product owner', about: [d.id] });
+    const scopes: Scope[] = traffic.map((e) => e.scope);
+    for (const c of [...drafts.values(), ...catalog.capabilities]) {
+      if (!c.surfaces?.length || used(c.surfaces) || taken.has(`unseen.${c.id}`) || taken.has(`unused.${c.id}`)) continue;
+      taken.add(`unseen.${c.id}`);
+      unknowns.push({ id: `unseen.${c.id}`, question: `${c.surfaces.join(', ')}: ${notSeenIn(scopes)} Who calls it, and how often?`, ask: 'product owner', about: [c.id] });
     }
   }
 
@@ -240,8 +258,8 @@ export interface DiscoverResult extends ProposeResult {
   known: string[];
   /** Routes no outcome or behavior describes: `oodle propose --routes` drafts outcomes for them. */
   undescribed: number;
-  /** The evidence files read, and what each held. */
-  evidence: { file: string; kind: Evidence['kind']; requests: number }[];
+  /** The evidence files read, what each held, and what it covered. */
+  evidence: { file: string; kind: Evidence['kind']; requests: number; scope: Scope }[];
 }
 
 /** Runs the project and proposes the inventory it implies. Adds, never changes: see src/propose.ts. */
@@ -259,7 +277,8 @@ export async function discover(projectDir: string, files: string[] = []): Promis
     ...(inv.experiences.length ? { experiences: inv.experiences } : {}),
     ...(inv.unknowns.length ? { unknowns: inv.unknowns } : {}),
   };
-  const result = Object.keys(fragment).length ? propose(projectDir, fragment) : { file: '', added: [], warnings: [] };
+  // Oodle graded this evidence itself, from where each piece came from, so the grades stand (0014).
+  const result = Object.keys(fragment).length ? propose(projectDir, fragment, { graded: true }) : { file: '', added: [], warnings: [] };
   return {
     ...result,
     capabilities: inv.capabilities,
@@ -268,6 +287,6 @@ export async function discover(projectDir: string, files: string[] = []): Promis
     links: inv.links,
     known: inv.known,
     undescribed: run.gaps.length,
-    evidence: evidence.map((e, i) => ({ file: files[i], kind: e.kind, requests: e.seen.reduce((n, s) => n + (s.count ?? 1), 0) })),
+    evidence: evidence.map((e, i) => ({ file: files[i], kind: e.kind, requests: e.seen.reduce((n, s) => n + (s.count ?? 1), 0), scope: e.scope })),
   };
 }

@@ -5,6 +5,9 @@
  * blocks), and any id that already exists is refused. Proposals land in
  * oodlc/proposed.yaml, where a human approves one by deleting its status line
  * and, if they like, moving it next to its neighbours. See docs/decisions/0006.
+ *
+ * Evidence that arrives here was written by whoever proposed it, so it is inferred,
+ * whatever grade it claims. Only Oodle's own discovery grades what it saw (0014).
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -34,8 +37,20 @@ export interface ProposeResult {
   warnings: string[];
 }
 
+export interface ProposeOptions {
+  /**
+   * The evidence was graded by Oodle from where it came from (src/discover.ts), so its grades stand.
+   * No CLI flag or MCP argument sets this: whatever an agent or a file proposes is inferred.
+   */
+  graded?: boolean;
+}
+
+/** Evidence as a proposal may carry it: every item inferred, unless Oodle graded it itself. */
+const inferred = (evidence: unknown, opts: ProposeOptions) =>
+  Array.isArray(evidence) ? evidence.map((e: any) => (typeof e === 'string' ? { text: e, grade: 'inferred' } : e && typeof e === 'object' ? { ...e, grade: opts.graded && e.grade === 'observed' ? 'observed' : 'inferred' } : e)) : evidence;
+
 /** Accepts a parsed fragment or YAML text with any of the catalog sections. */
-export function propose(projectDir: string, input: unknown): ProposeResult {
+export function propose(projectDir: string, input: unknown, opts: ProposeOptions = {}): ProposeResult {
   let fragment: any = input;
   if (typeof input === 'string') {
     try {
@@ -55,8 +70,12 @@ export function propose(projectDir: string, input: unknown): ProposeResult {
   const before = loadCatalog(projectDir, config);
   const lintBefore = new Set(lint(before, config).errors);
 
-  // Everything approvable arrives as a proposal, whatever the input said.
-  const incoming: Record<Section, any[]> = Object.fromEntries(SECTIONS.map((s) => [s, (fragment[s] ?? []).map((item: any) => (APPROVED.includes(s) && item && typeof item === 'object' ? { ...item, status: 'proposed' } : item))])) as any;
+  // Everything approvable arrives as a proposal, and all evidence as inferred, whatever the input said.
+  const incoming: Record<Section, any[]> = Object.fromEntries(SECTIONS.map((s) => [s, (fragment[s] ?? []).map((item: any) => {
+    if (!item || typeof item !== 'object') return item;
+    const graded = 'evidence' in item ? { ...item, evidence: inferred(item.evidence, opts) } : item;
+    return APPROVED.includes(s) ? { ...graded, status: 'proposed' } : graded;
+  })])) as any;
   const problems = validateCatalogDoc({ version: 0, ...Object.fromEntries(SECTIONS.filter((s) => incoming[s].length).map((s) => [s, incoming[s]])) }, 'proposal');
   if (problems.length) throw new OodleError('proposal', 'The proposal does not match the catalog schema', { problems, hint: 'See spec/catalog.schema.json for every field.' });
 

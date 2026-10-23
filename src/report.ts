@@ -193,7 +193,7 @@ export function runSummary(run: RunResult): string {
 export function systemMarkdown(map: SystemMap): string {
   const lines: string[] = ['# What the system does', ''];
   const m = map.summary;
-  lines.push(`${m.capabilities} capabilities · ${m.confirmed} confirmed · ${m.protected} protected by an outcome that holds${m.routes ? ` · ${m.claimed} of ${m.routes} routes claimed` : ''}`, '');
+  lines.push(`${m.capabilities} capabilities · ${m.confirmed} confirmed · ${m.protected} protected by an outcome that holds${m.inferred_only ? ` · ${m.inferred_only} inferred only, nothing seen yet` : ''}${m.routes ? ` · ${m.claimed} of ${m.routes} routes claimed` : ''}`, '');
   const cell = (s: string) => s.replace(/\|/g, '\\|');
   const table = (caps: CapabilityView[]) => {
     if (!caps.length) return;
@@ -202,7 +202,7 @@ export function systemMarkdown(map: SystemMap): string {
       const held = c.outcomes.filter((o) => o.state === 'holds').length;
       const failing = c.outcomes.filter((o) => o.state === 'fails').length;
       const outcomes = [held ? `${held} hold` : '', failing ? `${failing} failing` : ''].filter(Boolean).join(', ') || '—';
-      lines.push(`| \`${c.id}\`${c.status === 'proposed' ? ' (proposed)' : ''} | ${cell(c.statement)} | ${c.actor?.id ?? '—'} | ${c.surfaces.map((x) => `\`${x}\``).join(', ') || '—'} | ${outcomes} | ${c.next ? cell(c.next) : 'every rung'} |`);
+      lines.push(`| \`${c.id}\`${c.status === 'proposed' ? ' (proposed)' : ''}${c.inferred_only ? ' (inferred only)' : ''} | ${cell(c.statement)} | ${c.actor?.id ?? '—'} | ${c.surfaces.map((x) => `\`${x}\``).join(', ') || '—'} | ${outcomes} | ${c.next ? cell(c.next) : 'every rung'} |`);
     }
     lines.push('');
   };

@@ -4,6 +4,14 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.16.0 (2026-10-23): stubs and request bodies from traffic
+
+- **Changes:** `oodlc/config.yaml` takes a `proposed` section. `oodle propose --stubs --from <file>` writes stubs there from the outbound calls in a HAR capture or OTLP trace export that the app's `effects` rules name: the answer seen most, its status, its median latency, and observed evidence. No run reads `proposed`; a person accepts a stub by moving it into `defaults.given.stubs`. Every other status seen becomes a proposed condition. See [0015](docs/decisions/0015-stubs-and-bodies-from-traffic.md).
+- `oodle propose --routes --from <file>` probes each route nothing describes with a body a caller really sent, and proposes it as the outcome's `given.body`.
+- Captures are scrubbed as they are read. Every header but `content-type` is dropped, and so are query strings; paths lose their ids. Bodies keep their keys, numbers and short codes, and everything else becomes a deterministic placeholder (emails, card and phone numbers, IP addresses, tokens, names, free text). No flag keeps real values.
+- The MCP `propose` tool takes `draft: stubs` with `from`, and `from` with `draft: routes`. `oodle doctor` lists stubs waiting to be accepted, and the Claude Code hook asks before an edit accepts one.
+- `httpApp` and `nextApp` expose `effectKindOf(url, method)`, so traffic is classified as a run would classify it.
+
 ## 0.15.1 (2026-10-23): captured paths are scrubbed
 
 - **Fix, privacy:** since 0.11.0, `oodle discover --from` wrote concrete paths from a HAR capture or trace export into `oodlc/proposed.yaml` and its output, in the question about requests no route serves. A token, an email or a record id in a path went in as it was. Paths are now scrubbed as each file is read: the query string goes, and every segment that isn't a plain lowercase word becomes a parameter (`/password-reset/eyJ…` is `/password-reset/:id`). An asset keeps only its extension. Raw captured paths no longer reach the catalog, the terminal or the JSON. If you ran `discover --from` on a capture with secrets in its paths, check `oodlc/proposed.yaml` for `unrouted.` questions. See [0015](docs/decisions/0015-stubs-and-bodies-from-traffic.md).

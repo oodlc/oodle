@@ -98,6 +98,21 @@ export default httpApp(app, {
 
 `oodle doctor` then tells you whether Oodle is running your code or still a starter app, whether anything escapes the simulation, and whether two identical runs agree.
 
+### Stubs from real traffic
+
+`init`'s stubs are placeholders (`{ result: {} }`), so a route that charges a card usually fails at its first line in the simulation. If you have a capture of what your service really sent and got back, Oodle can propose better ones:
+
+```bash
+npx oodle propose --stubs --from egress.har        # a HAR recorded where the service calls out, or an OTLP trace export
+npx oodle propose --routes --from session.har      # probe new routes with the bodies callers really sent
+```
+
+- **Each outbound call your `effects` rules name** becomes a proposed stub: the answer seen most, its status, and its median latency. Every other status seen becomes a proposed condition (`observed.payment-charge-402`, a declined card), which does nothing until an outcome lists it. Traces carry no bodies, so from OTLP you get status and latency only.
+- **Proposed stubs go under `proposed.stubs` in `oodlc/config.yaml`**, next to the placeholder each would replace. No run reads them. Accept one by moving it into `defaults.given.stubs`, without its `evidence`. `oodle doctor` lists those waiting, and the Claude Code hook asks you before an agent accepts one.
+- **Nothing personal or secret gets through.** A capture is scrubbed as it's read. Every header but `content-type` is dropped, query strings are dropped, and paths lose their ids. Bodies keep their shape and short codes (`succeeded`, `usd`, `card_declined`). Emails, card and phone numbers, IP addresses, tokens, names and any other text become placeholders, the same one for the same value. No flag keeps real values.
+
+What traffic shows is observed evidence, and still only a proposal until you accept it. See [0015](docs/decisions/0015-stubs-and-bodies-from-traffic.md).
+
 ### Next.js
 
 For a Next.js app (15 or 16, App Router), `oodle init` writes `oodle.app.ts` around `@oodlc/oodle/next`. Oodle runs every `app/**/route.ts` handler, behind `middleware.ts` (or `proxy.ts`), in process: no build, no server.

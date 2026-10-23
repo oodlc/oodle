@@ -419,6 +419,7 @@ function freeze(ctx: AppContext, clock: Clock): () => void {
 
 export function httpApp(target: HttpTarget | Promise<HttpTarget>, options: HttpAppOptions = {}): CreateApp {
   const rules = rulesOf(options.effects);
+  const ruleFor = (url: URL, method: string) => rules.filter((r) => r.test(url, method)).sort((a, b) => b.weight - a.weight)[0];
   const deterministic = options.deterministic ?? true;
   let resolved: Promise<ReturnType<typeof dispatchFor>> | undefined;
   const app = () => (resolved ??= Promise.resolve(target).then(dispatchFor));
@@ -433,7 +434,7 @@ export function httpApp(target: HttpTarget | Promise<HttpTarget>, options: HttpA
     try { return dispatchFor(target as HttpTarget).routes; } catch { return []; }
   })();
 
-  return (ctx: AppContext) => {
+  const createApp: CreateApp = (ctx: AppContext) => {
     const clock: Clock = { random: prng(0x0dd1e), uuids: 0 };
     let ready: Promise<void> | undefined;
 
@@ -442,7 +443,6 @@ export function httpApp(target: HttpTarget | Promise<HttpTarget>, options: HttpA
       async handle(req: Request): Promise<Response> {
         await (ready ??= Promise.resolve(options.setup?.(ctx)).then(() => undefined));
         const { dispatch } = await app();
-        const ruleFor = (url: URL, method: string) => rules.filter((r) => r.test(url, method)).sort((a, b) => b.weight - a.weight)[0];
         const outer = globalThis.fetch;
         globalThis.fetch = (async (input: string | URL | globalThis.Request, init?: RequestInit) => {
           const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
@@ -468,4 +468,6 @@ export function httpApp(target: HttpTarget | Promise<HttpTarget>, options: HttpA
       },
     };
   };
+  // The effect each outbound call becomes, so traffic from a capture is classified as a run would (0015).
+  return Object.assign(createApp, { effectKindOf: (url: URL, method: string) => ruleFor(url, method.toUpperCase())?.kind });
 }

@@ -17,6 +17,7 @@ import { lint, saysNothing } from './lint.ts';
 import { OodleError } from './errors.ts';
 import { reaches, runProject } from './runner.ts';
 import { capabilityOf } from './explain.ts';
+import { readEvidence, type Evidence } from './evidence.ts';
 import type { Capability, EffectRecord, Gap, RunResult, Trigger } from './types.ts';
 
 export const PROPOSALS_FILE = 'proposed.yaml';
@@ -147,13 +148,14 @@ interface Sighting {
   sent?: string;
 }
 
-/** The request a probe makes: a made-up id for each path parameter, and an empty body for anything but GET. */
-function probeWords(route: string): string | undefined {
+/** The request a probe makes: a made-up id for each path parameter, and for anything but GET an empty body, or one seen in a capture. */
+function probeWords(route: string, from?: string): string | undefined {
   const [method, path] = route.split(' ');
   const params = /(^|\/)(:|\[)/.test(path);
-  if (params && method !== 'GET') return 'With a made-up id and an empty body';
+  const body = from ? `a body seen in ${from}` : 'an empty body';
+  if (params && method !== 'GET') return `With a made-up id and ${body}`;
   if (params) return 'Asked for a made-up id';
-  if (method !== 'GET') return 'Sent an empty body';
+  if (method !== 'GET') return `Sent ${body}`;
   return undefined;
 }
 
@@ -195,7 +197,8 @@ function outcomeFrom(id: string, capability: Capability | undefined, s: Sighting
 function probed(g: Gap): Sighting | string {
   if (g.probe.status === null) return `${g.route}: ${g.probe.error ?? 'no response'}`;
   const [method] = g.route.split(' ');
-  return { route: g.route, trigger: { http: g.proposal.trigger.http, ...(method === 'GET' ? {} : { given: { body: {} } }) }, status: g.probe.status, body: g.probe.body, effects: g.probe.effects ?? [], ...(probeWords(g.route) ? { sent: probeWords(g.route) } : {}) };
+  const sent = probeWords(g.route, g.sent?.from);
+  return { route: g.route, trigger: { http: g.proposal.trigger.http, ...(method === 'GET' ? {} : { given: { body: g.sent?.body ?? {} } }) }, status: g.probe.status, body: g.probe.body, effects: g.probe.effects ?? [], ...(sent ? { sent } : {}) };
 }
 
 /**
@@ -266,10 +269,23 @@ export function capabilityOutcomes(run: RunResult): { fragment: { outcomes: unkn
   return { fragment: { outcomes }, skipped };
 }
 
-/** Probes every route nothing describes and adds a proposed outcome for each to oodlc/proposed.yaml. */
-export async function proposeRoutes(projectDir: string): Promise<ProposeResult & { skipped: string[] }> {
+/** The body a caller sent to a route, scrubbed: from the first request that succeeded, or else the first seen (0015). */
+export function bodyFinder(evidence: Evidence[]): (route: string) => { body: unknown; from: string } | undefined {
+  return (route) => {
+    const sent = evidence.flatMap((e) => e.calls.filter((c) => !c.outbound && c.request !== undefined && reaches(`${c.method} ${c.path}`, route)).map((call) => ({ call, from: e.name })));
+    const pick = sent.find(({ call }) => call.status !== undefined && call.status >= 200 && call.status < 300) ?? sent[0];
+    return pick ? { body: pick.call.request, from: pick.from } : undefined;
+  };
+}
+
+/**
+ * Probes every route nothing describes and adds a proposed outcome for each to oodlc/proposed.yaml.
+ * With evidence files, a route a caller sent a body to is probed with that body, scrubbed, instead of an empty one.
+ */
+export async function proposeRoutes(projectDir: string, files: string[] = []): Promise<ProposeResult & { skipped: string[] }> {
   if (!loadConfig(projectDir).app) throw new OodleError('no-app', 'There are no routes to probe: this project has no app', { hint: 'Draft capabilities from evidence instead: `oodle discover --from <openapi, har or otlp file>`.' });
-  const run = await runProject(projectDir);
+  const evidence = files.map(readEvidence);
+  const run = await runProject(projectDir, evidence.length ? { probeBody: bodyFinder(evidence) } : {});
   const { fragment, skipped } = routeOutcomes(run);
   if (!fragment.outcomes.length) return { file: join(run.config.catalog, PROPOSALS_FILE), added: [], warnings: [], skipped };
   return { ...propose(projectDir, fragment), skipped };

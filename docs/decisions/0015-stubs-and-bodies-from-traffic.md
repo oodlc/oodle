@@ -1,6 +1,6 @@
 # 0015. Stubs and request bodies are proposed from traffic, scrubbed, and accepted by a person
 
-- **Status:** Proposed (design only, for review before any code)
+- **Status:** Proposed (approved in review; implemented in 0.16.0)
 - **Date:** 2026-10-23
 - **Deciders:** Jean-Philippe LeBlanc (maintainer)
 - **Builds on:** [0006. Proposals](0006-proposals-and-propose-only-agents.md), [0014. Evidence grades](0014-evidence-grades.md)

@@ -224,7 +224,7 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   return obs;
 }
 
-async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>, db: SimDatabase | null): Promise<Gap[]> {
+async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>, db: SimDatabase | null, probeBody?: RunOptions['probeBody']): Promise<Gap[]> {
   const gaps: Gap[] = [];
   const triggers = [...catalog.outcomes, ...catalog.behaviors].map((x) => x.trigger.http.split(' '));
   for (const route of app.routes) {
@@ -235,12 +235,14 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
     // never real) and propose what was observed as a behavior. Constraints are checked on the default probe and
     // on one probe per condition in `probe.conditions`, so a new route meets the security pack too.
     const probePath = route.path.replace(/:[^/]+/g, 'probe');
+    // A body a caller really sent, scrubbed, when a capture has one (0015); otherwise an empty one.
+    const sent = route.method === 'GET' ? undefined : probeBody?.(`${route.method} ${route.path}`);
     const extra = (config.probe?.conditions ?? []).map((id) => conditions.get(id)).filter((c): c is Condition => !!c);
     let probe: Gap['probe'] = { status: null, body: undefined };
     const violations: string[] = [];
     const notices: string[] = [];
     for (const c of [null, ...extra]) {
-      const given = mergeGiven(config.defaults?.given, { body: route.method === 'GET' ? undefined : {} }, c?.given);
+      const given = mergeGiven(config.defaults?.given, { body: route.method === 'GET' ? undefined : sent?.body ?? {} }, c?.given);
       const sim = simulate(given);
       const req = requestFor(route.method, probePath, given);
       let result: Gap['probe'];
@@ -268,6 +270,7 @@ async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, 
     gaps.push({
       route: `${route.method} ${route.path}`,
       probe,
+      ...(sent ? { sent } : {}),
       ...(extra.length ? { probed_under: extra.map((c) => c.id) } : {}),
       violations,
       notices,
@@ -288,6 +291,8 @@ export interface RunOptions {
   only?: string[];
   /** Called before each run, for progress display. */
   onProgress?: (label: string, done: number, total: number) => void;
+  /** The body to probe a route nothing describes with, and the file it was seen in, instead of an empty one. */
+  probeBody?: (route: string) => { body: unknown; from: string } | undefined;
 }
 
 export const globMatcher = (patterns: string[]) => {
@@ -364,6 +369,6 @@ async function runSealed(projectDir: string, config: Config, catalog: Catalog, l
     });
   }
   const routes = probeApp.routes.map((r) => `${r.method} ${r.path}`);
-  const gaps = await findGaps(createApp, catalog, config, probeApp, conditions, db);
+  const gaps = await findGaps(createApp, catalog, config, probeApp, conditions, db, opts.probeBody);
   return { projectDir, config, catalog, lint: lintResult, routes, observations, gaps };
 }

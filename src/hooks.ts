@@ -164,6 +164,12 @@ function configConcerns(before: string, after: string): string[] {
   if (stableStringify(a?.probe ?? null) !== stableStringify(b?.probe ?? null)) out.push('changes `probe`, which decides which hostile conditions unknown routes are probed with');
   if (stableStringify(a?.app ?? null) !== stableStringify(b?.app ?? null)) out.push('changes `app`, which decides what Oodle runs');
   if (stableStringify(a?.database ?? null) !== stableStringify(b?.database ?? null)) out.push('changes `database`, which decides the schema and connection the app\'s data lives in');
+  // Accepting a stub proposed from traffic changes what every run sees, so it is a person's call (0015).
+  for (const kind of Object.keys(a?.proposed?.stubs ?? {})) {
+    const was = a?.defaults?.given?.stubs?.[kind];
+    const now = b?.defaults?.given?.stubs?.[kind];
+    if (stableStringify(was ?? null) !== stableStringify(now ?? null)) out.push(`accepts the proposed stub ${kind} into defaults, which every run uses`);
+  }
   return out;
 }
 

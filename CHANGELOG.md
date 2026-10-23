@@ -4,6 +4,13 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## Unreleased: the system map
+
+- `oodle explain` prints the system map: each intent, its capabilities and experiences, who each capability is for, the routes that reach it, whether its outcomes hold, and the next rung it needs. `--only` shows capabilities in full; `--format md` writes a page. Also the `map` MCP tool.
+- An outcome or behavior with no `capability` belongs to the capability whose routes reach its trigger, so coverage shows before anyone links them.
+- `oodle mutate` adds a by-capability tally when the catalog has capabilities: the planted bugs each capability's outcomes catch, and how many nothing outside it catches (`capabilities` in the JSON).
+- The outcome diff (terminal, PR comment and JSON) gains a report-only capabilities section: which capabilities a change reaches, and the ones it adds, removes, confirms or rewords.
+
 ## 0.9.0 (2026-10-23): describing the system
 
 - The catalog gains an inventory: `actors`, `capabilities`, `experiences` and `unknowns`. It explains the system and never blocks. A catalog of capabilities alone is valid. See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).

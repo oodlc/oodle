@@ -305,6 +305,7 @@ Each section tells you what to do next:
 - **Survived**: nothing checks this code. Here, no outcome sends an unknown customer, and nothing checks the order count. Propose an outcome or add a condition that reaches it.
 - **Only noticed**: the response changed, but no expectation failed, so only a reviewer reading the outcome diff would catch it. Tighten the expectation, e.g. `order_id: { matches: "^ord_" }` instead of `{ exists: true }`.
 - **Redundant outcomes**: every bug they catch, a smaller set of outcomes catches too. Merge or drop them.
+- **By capability**, when the catalog has [capabilities](#describing-the-system): how many planted bugs each capability's outcomes catch, and how many only they catch. A capability that catches little is explained but barely protected.
 
 `oodle mutate --tests "npm test"` runs your unit tests against the same bugs, and lists the tests whose every catch an outcome made too: candidates to delete once you've read them. `--min-score 80` makes the score a CI gate. Every flag, status and the JSON output are in [`docs/cli.md`](docs/cli.md#mutation-testing).
 
@@ -318,6 +319,7 @@ oodle lint [project]           Validate the catalog and its traceability
 oodle init [dir]               Start a project: wraps the service already here, or a starter app
 oodle doctor [project]         Check your environment and project setup
 oodle mutate [project]         Plant small bugs and see which ones the catalog catches
+oodle explain [project]        Map what the system does, for whom and why, and what protects it
 oodle discover [project]       Propose the capabilities your routes add up to, and open questions
 oodle interview [project]      Answer what only a person can say: what each capability does, for whom, why
 oodle propose <file>           Add drafted entries as proposals, never changing an existing one
@@ -394,6 +396,8 @@ unknowns:
 - **Inferred means proposed.** Actors, capabilities and experiences take `status: proposed` like any proposal. A person confirms one by deleting that line. Agents write them through `oodle propose`.
 - **Oodle drafts it for you.** `oodle discover` runs the app and groups its routes into proposed capabilities by what they act on and what they do (`POST /orders/:id/refund` is `orders.refund`). Each one lists its evidence: the outcomes that describe it, the calls and table writes seen, how a probe answered. The intent comes from its approved outcomes when they agree. What the code can't tell, such as who a capability is for, becomes an open question. You write the real statement and confirm it. `oodle propose --routes` then links the outcomes it drafts to their capability.
 - **Oodle asks you.** `oodle interview` walks you through each capability that still says `TODO`, with its evidence: what can someone do there, who are they, and why does it exist. It writes your answers into the catalog as you go and offers to confirm each capability. Agents can run the same interview with you through the `interview` MCP prompt.
+- **See the whole system.** `oodle explain` prints the map: each intent, the capabilities that serve it, who they are for, whether their outcomes hold, and the next rung each one needs (`capability ✔  outcome ✔  intent ✔  experience ·`). `--only <capability>` shows one in full, with its calls, table writes and constraints; `--format md` writes the map as a page. An outcome belongs to the capability it names, or else to the one whose routes reach its trigger, so coverage shows up before anyone links them.
+- **Pull requests say which capabilities they reach.** The outcome diff gains a report-only section: the capabilities a change reaches through an outcome, a behavior or a new route, and the capabilities it adds, removes, confirms or rewords.
 - **Lint helps you say it.** It flags a capability statement that says nothing (`TODO`, or "handles", "manages", "processes", "supports"), a confirmed capability with no outcome yet, and every open question with who can answer it.
 
 See [0010](docs/decisions/0010-capabilities-and-the-inventory.md).

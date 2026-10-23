@@ -127,6 +127,11 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { files: strs('Globs relative to the project'), only: strs('Outcome ids or globs to run'), max: { type: 'number', description: 'At most this many mutants. Default 60' } } },
   },
   {
+    name: 'map',
+    description: 'The system map: each intent, the capabilities that serve it and their experiences; per capability its actor, routes, whether its outcomes hold, calls and table writes, the rungs it has and the next to add; routes no capability lists; open questions. Use only to narrow to capabilities.',
+    inputSchema: { type: 'object', properties: { only: strs('Capability ids or globs, e.g. ["orders.*"]') } },
+  },
+  {
     name: 'discover',
     description: 'Run the app and propose the capabilities its routes add up to, with their evidence (describing outcomes, calls, table writes, probes), plus open questions only a person can answer. Writes proposals only; returns them, and the outcomes that could name their capability. Next, rewrite each TODO statement as "<actor> can <verb> <object>" by proposing a sharper capability, or ask the person.',
     inputSchema: { type: 'object', properties: {} },
@@ -233,6 +238,8 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
         redundant: doc.redundant,
       };
     }
+    case 'map':
+      return (await oodleJson(['explain', projectDir, ...(args?.only ?? []).flatMap((g: string) => ['--only', g])], projectDir)).doc;
     case 'discover':
       return (await oodleJson(['discover', projectDir], projectDir)).doc;
     case 'answer': {

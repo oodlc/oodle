@@ -119,7 +119,7 @@ Back in `oodlc/proposed.yaml`, find the outcome `init` drafted for the same rout
     status: proposed
 ```
 
-Say what it promises, in words a customer would recognise. Point it at the capability it protects, and delete the `status: proposed` line:
+Say what it promises, in words a customer would recognise. Point it at the capability it protects, and delete the `status: proposed` line. (No outcome drafted for your capability's route? `npx oodle propose --capabilities` drafts one from the capability's words and what Oodle saw the route do.)
 
 ```yaml
   - id: orders.empty-cart-rejected

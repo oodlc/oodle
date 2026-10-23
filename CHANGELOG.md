@@ -4,6 +4,11 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.15.0 (2026-10-23): outcomes drafted from what a person confirmed
+
+- `oodle propose --routes` drafts each outcome's statement from its capability when a person has confirmed it and it says what it does: the capability's words, then what the probe saw ("A shopper can look up one of their orders. Asked for a made-up id, GET /orders/:id answers 404 (order_not_found), with no outside call or write."). Under a capability nobody confirmed, the statement stays a TODO that names it. Either way it is a proposal.
+- `oodle propose --capabilities` proposes an outcome for each surface of each confirmed capability no outcome protects yet, from a probe or from the behavior that already runs the route. Running it again adds nothing. Also `draft: capabilities` (and `draft: routes`) on the MCP `propose` tool, which returns the same JSON as the CLI.
+
 ## 0.14.0 (2026-10-23): what was seen, and what was said
 
 - **Changes:** each piece of `evidence` on a capability or experience is `{ text, grade }`, and the grade is `observed` (Oodle saw it: a route the app serves, a probe, a recorded call or table write, a request in a capture or trace) or `inferred` (someone wrote it: a spec's words, an agent's draft, anything else). Plain text, or an item with no grade, loads as `inferred`, so older catalogs load as they are. See [0014](docs/decisions/0014-evidence-grades.md).

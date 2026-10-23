@@ -199,6 +199,52 @@ outcomes:
         ok: true
         added: ''
 
+  - id: cli.propose-drafts-for-capabilities
+    intent: agents-propose-humans-approve
+    capability: proposals.add
+    statement: oodle propose --capabilities proposes an outcome for a confirmed capability nothing protects yet
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body:
+          copy: true
+          files:
+            checkout/oodlc/inventory.yaml: |
+              version: 0
+              capabilities:
+                - { id: health.read, statement: An operator can see that the service answers, surfaces: [GET /health] }
+          steps: [[propose, --capabilities, $COPY, --json]]
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        added: get-health
+
+  - id: cli.propose-capabilities-adds-only-new
+    intent: agents-propose-humans-approve
+    capability: proposals.add
+    statement: Running oodle propose --capabilities again adds nothing it already proposed
+    boundary: external
+    trigger:
+      http: POST /invoke
+      given:
+        body:
+          copy: true
+          files:
+            checkout/oodlc/inventory.yaml: |
+              version: 0
+              capabilities:
+                - { id: health.read, statement: An operator can see that the service answers, surfaces: [GET /health] }
+          steps: [[propose, --capabilities, $COPY, --json], [propose, --capabilities, $COPY, --json]]
+    expect:
+      status: 200
+      body:
+        exit_code: 0
+        ok: true
+        added: ''
+
   - id: cli.undefined-word-named
     intent: systems-are-explained
     capability: terms.define

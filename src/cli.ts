@@ -17,7 +17,7 @@ import { installOodle, oodleCommand, packageManager, runnable } from './invocati
 import { doctor } from './doctor.ts';
 import { hasPGlite } from './database.ts';
 import { mutate, type MutateReport } from './mutate.ts';
-import { propose, proposeRoutes } from './propose.ts';
+import { propose, proposeCapabilities, proposeRoutes } from './propose.ts';
 import { discover } from './discover.ts';
 import { scopeFacts } from './evidence.ts';
 import { systemMap } from './explain.ts';
@@ -294,13 +294,14 @@ const COMMANDS: Command[] = [
     name: 'propose',
     summary: 'Add drafted catalog entries as proposals, never changing an existing one',
     description:
-      'Reads a YAML catalog fragment (from a file, or - for stdin) and adds it to oodlc/proposed.yaml. Every intent, outcome and constraint is marked status: proposed, so it runs and is reported but never blocks until a human approves it by deleting that line. An id that already exists is refused: a proposal can add, never change or remove. This is how agents and the drafter write to the catalog. With --routes, there is no file: Oodle probes every route nothing describes, in the sealed simulation, and proposes an outcome for each from what it saw.',
+      'Reads a YAML catalog fragment (from a file, or - for stdin) and adds it to oodlc/proposed.yaml. Every intent, outcome and constraint is marked status: proposed, so it runs and is reported but never blocks until a human approves it by deleting that line. An id that already exists is refused: a proposal can add, never change or remove. This is how agents and the drafter write to the catalog. With --routes, there is no file: Oodle probes every route nothing describes, in the sealed simulation, and proposes an outcome for each from what it saw. With --capabilities, it proposes one outcome per surface of each confirmed capability no outcome protects yet. Under a confirmed capability that says what it does, the draft statement starts from its words and adds what Oodle saw; anywhere else it is a TODO. Running either again adds nothing new.',
     args: [
       { name: 'file', description: 'YAML with any of intents, outcomes, behaviors, conditions, constraints; - reads stdin. With --routes, the project directory' },
       PROJECT_ARG,
     ],
     flags: [
       { name: 'routes', type: 'boolean', description: 'Propose an outcome for every route nothing describes, from probing it' },
+      { name: 'capabilities', type: 'boolean', description: 'Propose an outcome for each surface of each confirmed capability with no outcome' },
     ],
     formats: ['text', 'json'],
     positional: 'files',
@@ -308,6 +309,7 @@ const COMMANDS: Command[] = [
       ['oodle propose draft.yaml', 'Add a drafted outcome as a proposal'],
       ['oodle draft brief.md | claude -p | oodle propose -', 'Draft from a brief with an agent, straight into proposals'],
       ['oodle propose --routes', 'A proposed outcome for each route nothing describes'],
+      ['oodle propose --capabilities', 'A proposed outcome for each confirmed capability nothing protects yet'],
     ],
     run: cmdPropose,
   },
@@ -709,19 +711,21 @@ function readInput(path: string, what: string): string {
 }
 
 async function cmdPropose(ctx: Ctx): Promise<number> {
-  if (ctx.flags.routes) {
-    if (ctx.args.length > 1) throw usageError('`oodle propose --routes` takes no file', 'Usage: oodle propose --routes [dir]. It probes the app itself.');
+  if (ctx.flags.routes && ctx.flags.capabilities) throw usageError('--routes and --capabilities draft different things', 'Run one, then the other.');
+  if (ctx.flags.routes || ctx.flags.capabilities) {
+    const flag = ctx.flags.routes ? '--routes' : '--capabilities';
+    if (ctx.args.length > 1) throw usageError(`\`oodle propose ${flag}\` takes no file`, `Usage: oodle propose ${flag} [dir]. It runs the app itself.`);
     const dir = findProject(ctx.args[0], 'propose');
-    const spin = ctx.format === 'text' ? spinner('Probing routes') : null;
-    const result = await proposeRoutes(dir).finally(() => spin?.stop());
+    const spin = ctx.format === 'text' ? spinner(ctx.flags.routes ? 'Probing routes' : 'Running capabilities') : null;
+    const result = await (ctx.flags.routes ? proposeRoutes(dir) : proposeCapabilities(dir)).finally(() => spin?.stop());
     if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
-    heading('propose --routes', dir);
+    heading(`propose ${flag}`, dir);
     printProposals(result.added, result.file, result.skipped);
-    if (result.added.length) await say('curious', 'Here is what your routes do today. Which of it is a promise?');
-    hints(result.added.length ? approvalHints(result.file) : [`Every route is described. Draft from a brief instead: ${e.cyan('oodle draft --help')}`]);
+    if (result.added.length) await say('curious', ctx.flags.routes ? 'Here is what your routes do today. Which of it is a promise?' : 'Here is what your capabilities do today. Which of it is a promise?');
+    hints(result.added.length ? approvalHints(result.file) : ctx.flags.routes ? [`Every route is described. Draft from a brief instead: ${e.cyan('oodle draft --help')}`] : [`Every confirmed capability has an outcome. Confirm more with ${e.cyan('oodle interview')}`]);
     return EXIT.ok;
   }
-  if (!ctx.args[0]) throw usageError('`oodle propose` needs <file>', 'Usage: oodle propose <file> [dir], or oodle propose --routes. See `oodle propose --help`.');
+  if (!ctx.args[0]) throw usageError('`oodle propose` needs <file>', 'Usage: oodle propose <file> [dir], oodle propose --routes, or oodle propose --capabilities. See `oodle propose --help`.');
   const dir = findProject(ctx.args[1], 'propose');
   const result = propose(dir, readInput(ctx.args[0], 'Proposal'));
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;

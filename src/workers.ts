@@ -46,6 +46,7 @@ const SIM_KEY = Symbol.for('oodle.workers');
 /** The simulated SQLite database, published by the runner (src/sqlite.ts). */
 const SQLITE_KEY = Symbol.for('oodle.sqlite');
 const HOOKS = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'workers-hooks.mjs');
+const CF_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'workers-cf');
 
 type Env = Record<string, unknown>;
 type Wrangler = Record<string, any>;
@@ -233,15 +234,17 @@ function hook(config: Wrangler) {
   register(pathToFileURL(HOOKS).href, { data: { kinds } });
 
   // A project without "type": "module" loads its TypeScript through require (tsx), which the hooks above never see.
-  const Module = createRequire(import.meta.url)('node:module') as { _load: (request: string, ...rest: unknown[]) => unknown };
-  const load = Module._load;
-  Module._load = function (request: string, ...rest: unknown[]) {
+  // Every require, including the one Node gives CommonJS imported from ESM, resolves through _resolveFilename:
+  // `cloudflare:x` becomes a file that hands back the module above.
+  const Module = createRequire(import.meta.url)('node:module') as { _resolveFilename: (request: string, ...rest: unknown[]) => string };
+  const resolveFilename = Module._resolveFilename;
+  Module._resolveFilename = function (request: string, ...rest: unknown[]) {
     if (request.startsWith('cloudflare:')) {
-      const m = modules[request.slice('cloudflare:'.length)];
-      if (!m) throw new Error(`${request} is not simulated by Oodle`);
-      return m;
+      const name = request.slice('cloudflare:'.length);
+      if (!modules[name]) throw new Error(`${request} is not simulated by Oodle`);
+      return join(CF_DIR, `${name}.cjs`);
     }
-    return load.call(this, request, ...rest);
+    return resolveFilename.call(this, request, ...rest);
   };
   const extensions = createRequire(import.meta.url).extensions as unknown as Record<string, (m: { exports: unknown }, file: string) => void>;
   for (const ext of kinds.text) extensions[ext] = (m, file) => void (m.exports = readFileSync(file, 'utf8'));

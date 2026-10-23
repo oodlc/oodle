@@ -77,8 +77,9 @@ function workerProject(worker: string, catalog: string, wrangler: Record<string,
   mkdirSync(join(dir, 'oodlc'));
   mkdirSync(join(dir, 'migrations'));
   writeFileSync(join(dir, 'migrations', '0001.sql'), "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0);\nINSERT INTO notes (body) VALUES ('first');\n");
-  writeFileSync(join(dir, 'wrangler.json'), JSON.stringify({ name: 'notes', main: 'index.ts', d1_databases: [{ binding: 'DB', database_name: 'notes' }], kv_namespaces: [{ binding: 'KV' }], services: [{ binding: 'AUTH', service: 'auth' }], ...wrangler }));
+  writeFileSync(join(dir, 'wrangler.json'), JSON.stringify({ name: 'notes', main: 'index.ts', d1_databases: [{ binding: 'DB', database_name: 'notes' }], kv_namespaces: [{ binding: 'KV' }], services: [{ binding: 'AUTH', service: 'auth' }], rules: [{ type: 'Text', globs: ['**/*.md'] }], ...wrangler }));
   writeFileSync(join(dir, 'index.ts'), worker);
+  writeFileSync(join(dir, 'greeting.md'), 'Hello');
   writeFileSync(join(dir, 'oodle.app.mts'), `import { workerApp } from '${WORKERS}';\nexport default await workerApp(() => import('./index.ts'), { wrangler: new URL('./wrangler.json', import.meta.url), routes: ['GET /notes', 'POST /notes'] });\n`);
   writeFileSync(join(dir, 'oodlc', 'config.yaml'), 'app: oodle.app.mts\ndatabase: { engine: sqlite, schema: migrations }\ndefaults:\n  given:\n    stubs:\n      AUTH.fetch: { result: { user: u1 } }\n');
   writeFileSync(join(dir, 'oodlc', 'notes.yaml'), `version: 0\nintents: [{ id: notes, statement: People keep notes }]\n${catalog}`);
@@ -86,6 +87,7 @@ function workerProject(worker: string, catalog: string, wrangler: Record<string,
 }
 
 const NOTES = `import { WorkerEntrypoint } from 'cloudflare:workers';
+import greeting from './greeting.md';
 export default class extends WorkerEntrypoint {
   async fetch(req) {
     const url = new URL(req.url);
@@ -102,7 +104,7 @@ export default class extends WorkerEntrypoint {
     }
     const count = await this.env.DB.prepare('SELECT count(*) AS n FROM notes').first('n');
     const [names] = await this.env.DB.prepare('SELECT body FROM notes ORDER BY id').raw({ columnNames: true });
-    return Response.json({ count, names, last: await this.env.KV.get('last') });
+    return Response.json({ count, names, last: await this.env.KV.get('last'), greeting });
   }
 }
 `;
@@ -125,7 +127,7 @@ const NOTES_CATALOG = `outcomes:
     statement: The list counts the seeded notes and reads KV
     boundary: customer
     trigger: { http: GET /notes, given: { db: { notes: [{ id: 7, body: a }, { id: 8, body: b }] }, state: { KV: { last: '8' } } } }
-    expect: { status: 200, body: { count: 2, names: [body], last: '8' } }
+    expect: { status: 200, body: { count: 2, names: [body], last: '8', greeting: Hello } }
 constraints:
   - id: kv-matches-db
     statement: The last note in KV is a note in the database

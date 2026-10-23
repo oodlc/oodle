@@ -84,6 +84,7 @@ test('propose --routes: a route a capability lists gets that capability and its 
   const outcome = proposed(dir).outcomes[0];
   assert.equal(outcome.capability, 'orders.read');
   assert.equal(outcome.intent, 'customers-track-orders');
-  assert.match(outcome.statement, /about "A customer can see an order they placed"/);
+  // A confirmed capability that says what it does gives the draft its words (test/drafts.test.ts has the rest).
+  assert.match(outcome.statement, /^A customer can see an order they placed\. Asked for a made-up id, GET \/orders\/:id answers 404/);
   assert.equal(proposed(dir).intents, undefined);
 });

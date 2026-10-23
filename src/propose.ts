@@ -13,10 +13,11 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { CatalogError, SECTIONS, type Section, loadCatalog, loadConfig, schemaLine, singular, validateCatalogDoc } from './catalog.ts';
-import { lint } from './lint.ts';
+import { lint, saysNothing } from './lint.ts';
 import { OodleError } from './errors.ts';
 import { reaches, runProject } from './runner.ts';
-import type { RunResult } from './types.ts';
+import { capabilityOf } from './explain.ts';
+import type { Capability, EffectRecord, Gap, RunResult, Trigger } from './types.ts';
 
 export const PROPOSALS_FILE = 'proposed.yaml';
 /**
@@ -122,7 +123,7 @@ export function propose(projectDir: string, input: unknown, opts: ProposeOptions
 }
 
 
-// ── Routes nothing describes ────────────────────────────────────────────────
+// ── Outcomes drafted from what Oodle saw ────────────────────────────────────
 
 /** Body fields worth pinning exactly: flags and the codes callers branch on. Everything else just has to be there. */
 const EXACT_FIELDS = /^(ok|error|code|status|state|type|kind)$/;
@@ -134,11 +135,73 @@ function expectedBody(body: unknown): Record<string, unknown> | undefined {
   return Object.fromEntries(fields.map(([k, v]) => [k, typeof v === 'boolean' || v === null || (EXACT_FIELDS.test(k) && typeof v !== 'object') ? v : { exists: true }]));
 }
 
+/** What Oodle saw one route do: from probing it, or from a behavior or outcome that already runs it. */
+interface Sighting {
+  /** "METHOD /pattern", as the app declares it. */
+  route: string;
+  trigger: Trigger;
+  status: number;
+  body: unknown;
+  effects: EffectRecord[];
+  /** What was sent, when Oodle made the request up itself: "Asked for a made-up id". */
+  sent?: string;
+}
+
+/** The request a probe makes: a made-up id for each path parameter, and an empty body for anything but GET. */
+function probeWords(route: string): string | undefined {
+  const [method, path] = route.split(' ');
+  const params = /(^|\/)(:|\[)/.test(path);
+  if (params && method !== 'GET') return 'With a made-up id and an empty body';
+  if (params) return 'Asked for a made-up id';
+  if (method !== 'GET') return 'Sent an empty body';
+  return undefined;
+}
+
+/**
+ * The statement a person starts from. Under a confirmed capability that says what it does, it is
+ * the capability's own words and what Oodle saw: "A shopper can pay for a cart. Sent an empty body,
+ * POST /orders answers 400 (empty_cart), with no outside call or write." Anywhere else it stays a
+ * TODO, and names the capability whose confirmation would make it better. Either way it is a proposal.
+ */
+export function draftStatement(capability: Capability | undefined, s: Sighting): string {
+  const todo = `TODO: say what a caller can count on. Observed: ${s.route} answered ${s.status}`;
+  if (!capability) return todo;
+  if (capability.status === 'proposed') return `${todo}. Confirm the capability ${capability.id} first, and the draft starts from what it says.`;
+  if (saysNothing(capability.statement)) return `${todo}. Say what the capability ${capability.id} does first, and the draft starts from it.`;
+  const calls = [...new Set(s.effects.filter((e) => e.boundary === 'external' && !e.error).map((e) => e.kind))].sort();
+  const writes = [...new Set(s.effects.flatMap((e) => (e.boundary === 'data' && !e.error ? [/^db\.(.+)\.(inserted|updated|deleted)$/.exec(e.kind)?.[1]] : [])).filter((x): x is string => !!x))].sort();
+  const code = s.body && typeof s.body === 'object' && !Array.isArray(s.body) ? ['error', 'code'].map((k) => (s.body as Record<string, unknown>)[k]).find((v) => typeof v === 'string') : undefined;
+  const crossed = [...(calls.length ? [`calls ${calls.join(', ')}`] : []), ...(writes.length ? [`writes ${writes.join(', ')}`] : [])];
+  return `${capability.statement.trim().replace(/[.!]+$/, '')}. ${s.sent ? `${s.sent}, ` : ''}${s.route} answers ${s.status}${code ? ` (${code})` : ''}${crossed.length ? `, ${crossed.join(' and ')}` : ', with no outside call or write'}.`;
+}
+
+/** A proposed outcome, from what Oodle saw a route do. A starting point for a person to sharpen, never a promise on its own. */
+function outcomeFrom(id: string, capability: Capability | undefined, s: Sighting, intent?: string) {
+  const counts = new Map<string, number>();
+  for (const e of s.effects) if (e.boundary !== 'internal' && !e.error) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  const effects = [...counts].map(([kind, count]) => ({ kind, count }));
+  const body = expectedBody(s.body);
+  return {
+    id,
+    ...(capability ? { ...(capability.intent ? { intent: capability.intent } : {}), capability: capability.id } : { intent }),
+    statement: draftStatement(capability, s),
+    boundary: 'external',
+    trigger: s.trigger,
+    expect: { status: s.status, ...(body ? { body } : {}), ...(effects.length ? { effects } : {}) },
+  };
+}
+
+/** The route a probe saw, as a sighting, or why there is none. */
+function probed(g: Gap): Sighting | string {
+  if (g.probe.status === null) return `${g.route}: ${g.probe.error ?? 'no response'}`;
+  const [method] = g.route.split(' ');
+  return { route: g.route, trigger: { http: g.proposal.trigger.http, ...(method === 'GET' ? {} : { given: { body: {} } }) }, status: g.probe.status, body: g.probe.body, effects: g.probe.effects ?? [], ...(probeWords(g.route) ? { sent: probeWords(g.route) } : {}) };
+}
+
 /**
  * A proposed outcome for each route nothing describes, from what probing it in
  * the simulation showed: the status, the top-level body fields, and the external
- * calls it made. A starting point for a human to sharpen, never a promise on its own.
- * A route a capability lists gets that capability, and its intent if it has one (0010).
+ * calls it made. A route a capability lists gets that capability, and its intent if it has one (0010).
  */
 export function routeOutcomes(run: RunResult): { fragment: { intents?: unknown[]; outcomes: unknown[] }; skipped: string[] } {
   const intent = run.catalog.intents.find((i) => i.status !== 'proposed') ?? run.catalog.intents[0];
@@ -147,31 +210,60 @@ export function routeOutcomes(run: RunResult): { fragment: { intents?: unknown[]
   const skipped: string[] = [];
   let generic = false;
   for (const g of run.gaps) {
-    if (g.probe.status === null) {
-      skipped.push(`${g.route}: ${g.probe.error ?? 'no response'}`);
+    const s = probed(g);
+    if (typeof s === 'string') {
+      skipped.push(s);
       continue;
     }
-    const [method] = g.route.split(' ');
     const id = g.proposal.id.replace(/^observed\./, '');
     if (taken.has(id)) continue;
-    const counts = new Map<string, number>();
-    for (const e of g.probe.effects ?? []) if (e.boundary !== 'internal' && !e.error) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
-    const effects = [...counts].map(([kind, count]) => ({ kind, count }));
-    const body = expectedBody(g.probe.body);
-    const capability = run.catalog.capabilities.find((c) => (c.surfaces ?? []).some((s) => reaches(s, g.route)));
-    const said = capability && !/\bTODO\b/.test(capability.statement) ? ` about "${capability.statement}"` : '';
+    const capability = run.catalog.capabilities.find((c) => (c.surfaces ?? []).some((x) => reaches(x, g.route)));
     if (!capability) generic = true;
-    outcomes.push({
-      id,
-      ...(capability ? { ...(capability.intent ? { intent: capability.intent } : {}), capability: capability.id } : { intent: intent?.id ?? 'service-available' }),
-      statement: `TODO: say what a caller can count on${said}. Observed: ${g.route} answered ${g.probe.status}`,
-      boundary: 'external',
-      trigger: { http: g.proposal.trigger.http, ...(method === 'GET' ? {} : { given: { body: {} } }) },
-      expect: { status: g.probe.status, ...(body ? { body } : {}), ...(effects.length ? { effects } : {}) },
-    });
+    outcomes.push(outcomeFrom(id, capability, s, intent?.id ?? 'service-available'));
   }
   const intents = intent || !generic ? undefined : [{ id: 'service-available', statement: 'Callers can rely on the service being there when they need it.' }];
   return { fragment: { ...(intents ? { intents } : {}), outcomes }, skipped };
+}
+
+/**
+ * A proposed outcome for each surface of each confirmed capability that no outcome protects yet,
+ * proposals included, so running it again adds nothing. Drafted from a probe of a route nothing
+ * describes, or else from the behavior or outcome that already runs the route.
+ */
+export function capabilityOutcomes(run: RunResult): { fragment: { outcomes: unknown[] }; skipped: string[] } {
+  const { catalog } = run;
+  const taken = new Set([...catalog.outcomes, ...catalog.behaviors].map((x) => x.id));
+  const outcomes: unknown[] = [];
+  const skipped: string[] = [];
+  for (const c of catalog.capabilities) {
+    if (c.status === 'proposed' || catalog.outcomes.some((o) => capabilityOf(catalog, o)?.id === c.id)) continue;
+    for (const surface of c.surfaces ?? []) {
+      const route = run.routes.find((r) => reaches(surface, r));
+      if (!route) {
+        skipped.push(`${c.id}: no route serves ${surface}`);
+        continue;
+      }
+      const gap = run.gaps.find((g) => g.route === route);
+      let s: Sighting | string;
+      if (gap) s = probed(gap);
+      else {
+        // Behaviors first: an outcome on this route already promises something for another capability.
+        const item = [...catalog.behaviors, ...catalog.outcomes].find((x) => reaches(x.trigger.http, route));
+        const obs = item && run.observations.find((o) => o.id === item.id && o.condition === 'default');
+        s = item && obs && obs.status !== null ? { route, trigger: item.trigger, status: obs.status, body: obs.body, effects: obs.effects } : `${c.id}: ${surface} didn't answer when it ran`;
+      }
+      if (typeof s === 'string') {
+        skipped.push(s);
+        continue;
+      }
+      const slug = `${route.split(' ')[0].toLowerCase()}${route.split(' ')[1].replace(/[/:[\]]+/g, '-').replace(/-+$/, '')}`;
+      const id = taken.has(slug) ? `${c.id}.${slug}` : slug;
+      if (taken.has(id)) continue;
+      taken.add(id);
+      outcomes.push(outcomeFrom(id, c, s));
+    }
+  }
+  return { fragment: { outcomes }, skipped };
 }
 
 /** Probes every route nothing describes and adds a proposed outcome for each to oodlc/proposed.yaml. */
@@ -179,6 +271,15 @@ export async function proposeRoutes(projectDir: string): Promise<ProposeResult &
   if (!loadConfig(projectDir).app) throw new OodleError('no-app', 'There are no routes to probe: this project has no app', { hint: 'Draft capabilities from evidence instead: `oodle discover --from <openapi, har or otlp file>`.' });
   const run = await runProject(projectDir);
   const { fragment, skipped } = routeOutcomes(run);
+  if (!fragment.outcomes.length) return { file: join(run.config.catalog, PROPOSALS_FILE), added: [], warnings: [], skipped };
+  return { ...propose(projectDir, fragment), skipped };
+}
+
+/** Adds a proposed outcome for each surface of each confirmed capability with none. */
+export async function proposeCapabilities(projectDir: string): Promise<ProposeResult & { skipped: string[] }> {
+  if (!loadConfig(projectDir).app) throw new OodleError('no-app', 'There is nothing to run the capabilities against: this project has no app', { hint: 'Point app in oodlc/config.yaml at a Node service to protect its capabilities with outcomes.' });
+  const run = await runProject(projectDir);
+  const { fragment, skipped } = capabilityOutcomes(run);
   if (!fragment.outcomes.length) return { file: join(run.config.catalog, PROPOSALS_FILE), added: [], warnings: [], skipped };
   return { ...propose(projectDir, fragment), skipped };
 }

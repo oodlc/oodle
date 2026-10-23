@@ -166,6 +166,8 @@ async function afterRun(db: SimDatabase | null, catalog: Catalog, effects: Effec
 }
 
 /** Sends the request `repeat` times against one app instance; the last response is the one observed. */
+const lowerCase = (h: Record<string, string> | undefined) => Object.fromEntries(Object.entries(h ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+
 async function send(app: OodleApp, req: Request, repeat = 1) {
   let res = await app.handle(structuredClone(req));
   for (let i = 1; i < repeat; i++) res = await app.handle(structuredClone(req));
@@ -206,11 +208,14 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   }
 
   const t0 = performance.now();
+  // Headers are checked, not kept: a run's report and a behavior's snapshot stay status, body and effects.
+  let headers: Record<string, string> = {};
   const { escapes } = await recordEscapes(async () => {
     try {
       const res = await send(createApp(sim.ctx), req, given.repeat);
       obs.status = res.status;
       obs.body = res.body;
+      headers = lowerCase(res.headers);
     } catch (err) {
       obs.error = (err as Error).message;
     }
@@ -219,11 +224,11 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   const tables = await afterRun(db, catalog, sim.effects);
 
   if (obs.error) obs.failures.push(`app threw: ${obs.error}`);
-  if (subject.kind === 'outcome') obs.failures.push(...evaluate(expectFor(subject.item, condition?.id), obs));
-  else if (subject.item.observed) obs.failures.push(...evaluate(subject.item.observed, obs));
+  if (subject.kind === 'outcome') obs.failures.push(...evaluate(expectFor(subject.item, condition?.id), { ...obs, headers }));
+  else if (subject.item.observed) obs.failures.push(...evaluate(subject.item.observed, { ...obs, headers }));
   // A missing stub usually surfaces as a 500 or a wrong body. Name it first, since it is the thing to fix.
   if (obs.failures.length) obs.failures.unshift(...missingStubs(sim.effects).filter((m) => obs.error !== m));
-  const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body }, req, tables);
+  const checked = checkConstraints(catalog, sim.effects, sim.ctx.state, { status: obs.status, body: obs.body, headers }, req, tables);
   obs.violations = [...checked.violations, ...builtinViolations(escapes, db)];
   obs.notices = checked.notices;
   return obs;

@@ -90,6 +90,11 @@
           "oneOf": [{ "type": "integer", "minimum": 100, "maximum": 599 }, { "type": "object", "minProperties": 1 }]
         },
         "body": { "type": "object" },
+        "headers": {
+          "description": "Response headers by name (any case), each an exact string or a matcher, e.g. { location: /login, set-cookie: { contains: session= } }. See docs/decisions/0016.",
+          "type": "object", "additionalProperties": true
+        },
+        "text": { "description": "The whole response body as text (JSON as Oodle writes it): an exact string, or a matcher such as { contains: Welcome, not_contains: [draft, queued] }. See docs/decisions/0016." },
         "effects": {
           "type": "array",
           "items": {
@@ -128,6 +133,7 @@
           "description": "Traceability only: the constraints this outcome depends on. Every constraint is checked on every run regardless. See docs/decisions/0002.",
           "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true
         },
+        "refs": { "description": "Ids in a spec kept outside the catalog that this restates, e.g. B-083. Traceability only: changing them changes no promise. See docs/decisions/0016.", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "status": { "$ref": "#/definitions/status" }
       }
     },
@@ -143,7 +149,8 @@
         "boundary": { "$ref": "#/definitions/boundary" },
         "trigger": { "$ref": "#/definitions/trigger" },
         "conditions": { "type": "array", "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
-        "observed": { "$ref": "#/definitions/expect" }
+        "observed": { "$ref": "#/definitions/expect" },
+        "refs": { "description": "Ids in a spec kept outside the catalog that this restates, e.g. B-083. Traceability only: changing them changes no promise. See docs/decisions/0016.", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
       }
     },
     "condition": {
@@ -276,7 +283,8 @@
       "properties": {
         "id": { "$ref": "#/definitions/id" },
         "statement": { "type": "string", "minLength": 1 },
-        "check": { "description": "JS expression over effects, state, response, request and db (each table's rows after the run, with the simulated database); must be true", "type": "string", "minLength": 1 },
+        "check": { "description": "JS expression over effects, state, response (status, body, headers), request and db (each table's rows after the run, with the simulated database); must be true", "type": "string", "minLength": 1 },
+        "refs": { "description": "Ids in a spec kept outside the catalog that this restates, e.g. B-083. Traceability only: changing them changes no promise. See docs/decisions/0016.", "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "status": { "$ref": "#/definitions/status" }
       }
     }

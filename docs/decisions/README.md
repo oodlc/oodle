@@ -19,6 +19,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0013](0013-terms.md) | Terms: one meaning per word | Proposed |
 | [0014](0014-evidence-grades.md) | Evidence is graded observed or inferred, and coverage is not absence | Proposed |
 | [0015](0015-stubs-and-bodies-from-traffic.md) | Stubs and request bodies are proposed from traffic, scrubbed, and accepted by a person | Proposed |
+| [0016](0016-outcomes-check-headers-text-and-host.md) | Outcomes check headers and text, set the host, and cite outside specs | Proposed |
 
 ## When to write one
 

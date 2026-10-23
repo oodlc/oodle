@@ -234,12 +234,40 @@ outcomes:
     expect:
       status: 200
       body:
-        order_id: { exists: true }     # matchers: exists, type, matches, contains, gte, lte
+        order_id: { exists: true }     # matchers: exists, type, matches, contains, not_contains, gte, lte, not
         status: confirmed              # or a literal value
       effects:
         - { kind: email.sent, match: { template: receipt }, count: 1 }
       latency_ms_max: 2000
 ```
+
+Pages and redirects have promises too. `headers` matches response headers by name, and `text` matches the whole body as text, which is what an HTML page needs. `refs` keeps the ids of a spec the outcome restates, for traceability only ([0016](docs/decisions/0016-outcomes-check-headers-text-and-host.md)):
+
+```yaml
+  - id: admin.redirects-logged-out
+    intent: trusted-admin
+    refs: [B-064]                   # an outside spec's id; shown in the outcome diff, changes no promise
+    statement: A logged-out visitor to /admin is sent to the login page
+    boundary: customer
+    trigger:
+      http: GET /admin
+      given: { headers: { host: admin.example.com } }   # fetch-style apps (Workers, Hono, Next.js) read it from request.url
+    expect:
+      status: 302
+      headers:
+        location: /login
+        set-cookie: { contains: HttpOnly }
+  - id: library.live-cards-only
+    intent: trusted-admin
+    statement: The public library shows no queued, draft or killed card
+    boundary: customer
+    trigger: { http: GET /library }
+    expect:
+      status: 200
+      text: { contains: Library, not_contains: [queued, draft, killed] }
+```
+
+Constraints see `response.headers` too, so "a public page never sets a cookie" holds on every run.
 
 ```yaml
 # oodlc/ops.yaml

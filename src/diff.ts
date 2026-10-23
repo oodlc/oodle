@@ -54,6 +54,8 @@ export interface OutcomeDiff {
   approved_by?: string[];
   /** The merged change (0012) this pull request carries out exactly. A covered change does not block. */
   covered_by?: string;
+  /** Ids in an outside spec the outcome restates (0016). */
+  refs?: string[];
 }
 
 export interface BehaviorDiff {
@@ -162,7 +164,7 @@ function diffOutcomes(base: RunResult, head: RunResult): OutcomeDiff[] {
     const o = headO.get(id);
     const prev = baseO.get(id);
     const ref = (o ?? prev)!;
-    const d: OutcomeDiff = { id, statement: ref.statement, boundary: ref.boundary, status: 'held', blocking: false, details: [], behavior: [] };
+    const d: OutcomeDiff = { id, statement: ref.statement, boundary: ref.boundary, status: 'held', blocking: false, details: [], behavior: [], ...(ref.refs?.length ? { refs: ref.refs } : {}) };
 
     // A proposal never blocks while it stays a proposal. Approving one (deleting `status: proposed`) makes it
     // a new outcome, which blocks if it does not hold. Marking an approved outcome proposed is a redefinition.

@@ -163,6 +163,10 @@ export interface Expect {
   /** An exact status, or a matcher such as `{ gte: 400, lte: 499 }`. */
   status?: number | Record<string, unknown>;
   body?: Record<string, unknown>;
+  /** Response headers by name (any case), each an exact value or a matcher: `location: /login`, `set-cookie: { contains: session= }`. See docs/decisions/0016. */
+  headers?: Record<string, unknown>;
+  /** The whole response body as text (JSON as written by Oodle), an exact string or a matcher: `{ contains: Welcome, not_contains: draft }`. */
+  text?: unknown;
   effects?: EffectExpect[];
   latency_ms_max?: number;
 }
@@ -184,6 +188,8 @@ export interface Outcome {
   /** Per-condition expectations. Each field named here replaces the same field of `expect` under that condition. See docs/decisions/0004. */
   when?: Record<string, Expect>;
   constraints?: string[];
+  /** Ids in a spec kept outside the catalog that this restates, e.g. B-083. Traceability only. See docs/decisions/0016. */
+  refs?: string[];
   status?: ProposalStatus;
 }
 
@@ -200,6 +206,8 @@ export interface Behavior {
   conditions?: string[];
   /** Snapshot of what was last observed. Mismatches are drift, not failures. */
   observed?: Expect;
+  /** Ids in a spec kept outside the catalog that this describes. Traceability only. */
+  refs?: string[];
 }
 
 export interface Condition {
@@ -211,8 +219,10 @@ export interface Condition {
 export interface Constraint {
   id: string;
   statement: string;
-  /** JS expression over `effects`, `state`, `response`, `request` and `db` (each table's rows after the run); must be true. */
+  /** JS expression over `effects`, `state`, `response` (status, body, headers), `request` and `db` (each table's rows after the run); must be true. */
   check: string;
+  /** Ids in a spec kept outside the catalog that this restates. Traceability only. */
+  refs?: string[];
   status?: ProposalStatus;
 }
 

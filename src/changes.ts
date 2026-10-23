@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { basename, dirname, join, relative } from 'node:path';
 import { parseDocument, isMap, isSeq, type Document, type YAMLMap, type YAMLSeq } from 'yaml';
 import { ARCHIVE_DIR, CatalogError, loadCatalog, loadConfig } from './catalog.ts';
-import { evaluate, stableStringify } from './expect.ts';
+import { MATCHER_KEYS, evaluate, stableStringify } from './expect.ts';
 import { expectFor, reaches } from './runner.ts';
 import { lint } from './lint.ts';
 import { OodleError } from './errors.ts';
@@ -22,12 +22,14 @@ import type { Amendment, Catalog, Change, Constraint, Expect, Outcome, RunResult
 
 // ── Amendments ──────────────────────────────────────────────────────────────
 
-/** Body fields merge by key, effects by kind; anything else the amendment names replaces the outcome's. */
+/** Body fields and headers merge by key, effects by kind; anything else the amendment names replaces the outcome's. */
 export function amendExpect(base: Expect, amend: Expect = {}): Expect {
   const out: Expect = { ...base };
   if (amend.status !== undefined) out.status = amend.status;
   if (amend.latency_ms_max !== undefined) out.latency_ms_max = amend.latency_ms_max;
   if (amend.body) out.body = mergeBody(base.body ?? {}, amend.body);
+  if (amend.headers) out.headers = { ...(base.headers ?? {}), ...amend.headers };
+  if (amend.text !== undefined) out.text = amend.text;
   if (amend.effects) {
     const kinds = new Set(amend.effects.map((e) => e.kind));
     out.effects = [...(base.effects ?? []).filter((e) => !kinds.has(e.kind)), ...amend.effects];
@@ -36,8 +38,7 @@ export function amendExpect(base: Expect, amend: Expect = {}): Expect {
 }
 
 const plainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const MATCHERS = new Set(['exists', 'type', 'matches', 'contains', 'gte', 'lte']);
-const isMatcher = (v: Record<string, unknown>) => Object.keys(v).length > 0 && Object.keys(v).every((k) => MATCHERS.has(k));
+const isMatcher = (v: Record<string, unknown>) => Object.keys(v).length > 0 && Object.keys(v).every((k) => MATCHER_KEYS.has(k));
 
 function mergeBody(base: Record<string, unknown>, amend: Record<string, unknown>): Record<string, unknown> {
   const out = { ...base };

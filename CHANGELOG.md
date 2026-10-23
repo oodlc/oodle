@@ -4,7 +4,7 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
-## Unreleased: explain any system
+## 0.12.0 (2026-10-23): explain any system
 
 - **Changes:** `app` in `oodlc/config.yaml` is optional. A project without it explains a system Oodle can't run, in any language, and protects nothing. `oodle init --inventory` starts one. See [0011](docs/decisions/0011-explain-what-oodle-cannot-run.md).
 - With no app, `oodle discover --from` takes its routes from the evidence: the spec's operations, and traffic on the service's own host templated (`/orders/ord_1` becomes `/orders/:id`).

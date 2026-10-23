@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
+version: 0
+changes:
+  - id: stubs-from-traffic
+    because: >-
+      Stubs start as placeholders ({ result: {} }) and proposed outcomes probe with an empty body, so most routes
+      that call Stripe or take a body never get past the first line in the simulation. A capture of real traffic
+      already holds what those APIs answered and what callers sent. Proposing stubs and request bodies from it,
+      scrubbed of anything personal or secret, gives a person a realistic starting point to accept. Design in
+      docs/decisions/0015, waiting for review before any code.
+    # discover reads the evidence; propose writes stubs, conditions and outcomes as proposals.
+    reaches: [inventory.draft, proposals.add]
+    rules_out: [new effects, new hosts, new routes, new dependencies]

@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
+version: 0
+changes:
+  - id: propose-from-capabilities
+    because: >-
+      oodle propose --routes writes every outcome's statement as a TODO, even for a route whose capability a person
+      has confirmed and put into words, so the words are typed twice. And a confirmed capability with no outcome has
+      no command that drafts one. Drafting from the capability and from what the probe saw gives a person something
+      to correct instead of a blank. Drafts stay proposals: nothing new can block.
+    # propose drafts the outcomes; discover's capabilities are what it drafts them from.
+    reaches: [proposals.add, inventory.draft]
+    rules_out: [new effects, new hosts, new routes, new dependencies]

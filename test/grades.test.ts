@@ -195,3 +195,38 @@ test('a project with no app, from one HAR: every question about a capability the
   const cli = oodle(['discover', dir, '--from', file('session.har', CAPTURE)]);
   assert.match(cli.stdout, /read \S*session\.har: HAR, 40 min, 6 requests, hosts: shop\.example\.test, analytics\.other\.test, cdn\.other\.test/);
 });
+
+test('a capture\'s paths never reach a file, the terminal or the JSON as they were: ids, emails, tokens and query strings are scrubbed', async () => {
+  const SECRETS = [
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZGFAZXhhbXBsZS5jb20ifQ.c2lnbmF0dXJl', 'ada.lovelace@example.com', 'ada%40example.com',
+    'sk_live_51HxQ2bLkdIwHu7ixVnS', 'ord_8d1f2a', '4242424242424242', '+14155550123', 'Ada_Lovelace', 'reset_token=abc123', 'hunter2',
+  ];
+  const at2 = (n: number) => `2026-10-20T10:00:${String(n).padStart(2, '0')}Z`;
+  const leak = { log: { entries: [
+    { startedDateTime: at2(0), request: { method: 'GET', url: `${SITE}/password-reset/${SECRETS[0]}?email=${SECRETS[1]}`, headers: [{ name: 'Authorization', value: `Bearer ${SECRETS[3]}` }] } },
+    { startedDateTime: at2(1), request: { method: 'GET', url: `${SITE}/users/${SECRETS[1]}/orders` } },
+    { startedDateTime: at2(2), request: { method: 'GET', url: `${SITE}/users/${SECRETS[2]}/cards/${SECRETS[5]}` } },
+    { startedDateTime: at2(3), request: { method: 'POST', url: `${SITE}/keys/${SECRETS[3]}?${SECRETS[8]}` } },
+    { startedDateTime: at2(4), request: { method: 'GET', url: `${SITE}/orders/${SECRETS[4]}/contact/${SECRETS[6]}` } },
+    { startedDateTime: at2(5), request: { method: 'GET', url: `${SITE}/people/${SECRETS[7]}?password=${SECRETS[9]}` } },
+    { startedDateTime: at2(6), request: { method: 'GET', url: `${SITE}/assets/${SECRETS[1]}.png` } },
+  ] } };
+  const said: string[] = [];
+  for (const dir of [checkout(), inventoryProject()]) {
+    const har = file('leak.har', leak);
+    said.push(JSON.stringify(await discover(dir, [har])));
+    const cli = oodle(['discover', dir, '--from', har]);
+    const json = oodle(['discover', dir, '--from', har, '--json']);
+    said.push(cli.stdout, cli.stderr, json.stdout, json.stderr, oodle(['explain', dir, '--json']).stdout, oodle(['interview', dir, '--json']).stdout);
+    for (const f of ['proposed.yaml', 'inventory.yaml', 'config.yaml']) {
+      try {
+        said.push(readFileSync(join(dir, 'oodlc', f), 'utf8'));
+      } catch {
+        // Not every project has every file.
+      }
+    }
+  }
+  const everything = said.join('\n');
+  assert.match(everything, /\/password-reset\/:id/, 'the scrubbed path is what gets said');
+  for (const s of SECRETS) assert.ok(!everything.includes(s), `${s} leaked`);
+});

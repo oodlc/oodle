@@ -19,7 +19,7 @@
  */
 import { propose, type ProposeResult } from './propose.ts';
 import { reaches, runProject } from './runner.ts';
-import { notSeenIn, readEvidence, routesFrom, type Evidence, type Scope } from './evidence.ts';
+import { ASSET, notSeenIn, readEvidence, routesFrom, type Evidence, type Scope } from './evidence.ts';
 import { OodleError } from './errors.ts';
 import type { Capability, EffectRecord, EvidenceItem, Experience, RunResult, Unknown } from './types.ts';
 
@@ -80,8 +80,6 @@ export interface Inventory {
   known: string[];
 }
 
-/** File types a browser fetches that are no API: a capture is full of them. */
-const ASSET = /\.(js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|html?|txt|json)$/i;
 const MAX_STEPS = 6;
 const MAX_JOURNEYS = 3;
 

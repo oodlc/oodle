@@ -55,6 +55,25 @@ export interface Scope {
 
 type Request = { method: string; path: string; host?: string };
 
+/** File types a browser fetches that are no API: a capture is full of them. */
+export const ASSET = /\.(js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|html?|txt|json)$/i;
+/** A path segment that names a kind of thing, never a record or a secret: `orders`, `password-reset`, `v2`. */
+const WORD = /^([a-z][a-z_-]{0,39}|v\d+)$/;
+
+/**
+ * A captured path with nothing personal or secret left in it (0015). The query string goes, and every
+ * segment that isn't a plain lowercase word becomes a parameter: ids, emails, tokens, names, anything
+ * encoded. An asset keeps only its extension, so discovery can still leave it out. Captured paths are
+ * scrubbed as they are read, so the raw ones never reach the catalog, the terminal or the JSON.
+ */
+export function scrubPath(path: string): string {
+  return path.split('?')[0].split('/').map((seg, i) => {
+    if (i === 0 || !seg || /^:[a-zA-Z_]\w*$/.test(seg) || WORD.test(seg)) return seg;
+    const ext = ASSET.exec(seg)?.[0];
+    return ext ? `:file${ext.toLowerCase()}` : ':id';
+  }).join('/');
+}
+
 /** Hosts by how many requests went to each, busiest first. */
 const hostsOf = (hosts: (string | undefined)[]) => {
   const n = new Map<string, number>();
@@ -133,7 +152,7 @@ function har(doc: any, name: string): Evidence {
     } catch {
       continue;
     }
-    const r = { method, path: url.pathname, host: url.host };
+    const r = { method, path: scrubPath(url.pathname), host: url.host };
     all.push(r);
     times.push(Date.parse(String(e.startedDateTime ?? '')));
     const page = String(e.pageref ?? '');
@@ -164,7 +183,7 @@ function otlp(doc: any, name: string): Evidence {
         const method = (attribute(span, 'http.request.method', 'http.method') ?? '').toUpperCase();
         const path = attribute(span, 'http.route') ?? attribute(span, 'url.path', 'http.target')?.split('?')[0];
         if (!METHODS.has(method) || !path) continue;
-        requests.push({ method, path: template(path) });
+        requests.push({ method, path: scrubPath(template(path)) });
         hosts.push(attribute(span, 'server.address', 'net.host.name', 'http.host')?.replace(/:\d+$/, ''));
         try {
           times.push(fromNanos(span.startTimeUnixNano));

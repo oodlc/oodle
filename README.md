@@ -17,7 +17,7 @@ Agents make code cheap and replaceable. What has to survive every rewrite is wha
 - `ops.health` changed: [default] body.version added
 ```
 
-Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action with approvals from reviews, the adapter for existing Express, Fastify, Koa, Hono and `node:http` services, [a real Postgres in the simulation](#a-real-database), and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin.
+Status: **v0, milestones 1–2** (spec, lint, runner, effect recorder, differ, gap finder) plus the GitHub Action with approvals from reviews, the adapter for existing Express, Fastify, Koa, Hono and `node:http` services, [a real Postgres in the simulation](#a-real-database), and the agent toolkit: the security condition pack, the sealed simulation, `oodle mutate`, proposals, the drafter, the MCP server and the Claude Code plugin. Then the inventory that explains a system (capabilities, `discover`, `interview`, `explain`, any language), changes agreed before the code, and evidence graded by what Oodle saw.
 
 ## Quick start
 
@@ -44,6 +44,22 @@ npx oodle run examples/checkout          # a service built for OODLC
 npx oodle run examples/express-orders    # an ordinary Express service, run through the adapter
 npm test                                 # the seeded scenarios
 ```
+
+## Start with three
+
+Three ideas are enough to start, in this order. [Your first outcome in 5 minutes](docs/first-outcome.md) walks them on your own service.
+
+1. **Describe a capability**: what the system lets someone do. `oodle discover` drafts capabilities from your routes. You say each one in your words ("a shopper can pay for a cart and get one receipt") and confirm it. A capability never blocks. See [Describing the system](#describing-the-system).
+2. **Protect it with an outcome**: a request, and what must come back. `oodle propose --capabilities` drafts one from the capability and what the app did. Once you approve it, a change that breaks it can't merge. See [Writing a catalog](#writing-a-catalog).
+3. **Change it through a change file**: what's about to change and why, merged before the code. A pull request that does exactly that goes through, and anything outside it blocks. See [Agree the change before the code](#agree-the-change-before-the-code).
+
+When you need them:
+
+- **Intents**: why the product exists. See [Three layers](#three-layers).
+- **Behaviors**: what Oodle saw a route do that nobody promised. Reported when it drifts, never blocking.
+- **Conditions**: the same outcome under a slow provider, a returning customer or no credentials, including the security pack.
+- **Constraints**: rules checked on every run, like never charging without an order. See [Conditions and constraints](#conditions-and-constraints).
+- **Actors**, **experiences**, **questions** and **terms**: who uses the system, what they go through, what it can't answer about itself, and what its words mean. See [Describing the system](#describing-the-system).
 
 ## Adopting an existing service
 
@@ -164,13 +180,14 @@ Clients that talk HTTP to a hosted Postgres (supabase-js, `@neondatabase/serverl
 
 ## Writing a catalog
 
-Everything Oodle needs lives in one visible folder, `oodlc/`, at the project root ([0003](docs/decisions/0003-one-visible-oodlc-folder.md)). `oodlc/config.yaml` says how to run the app. Every other YAML file in the folder is catalog, and any file can hold any of the sections: `intents`, `outcomes`, `behaviors`, `conditions`, `constraints`, and the [inventory](#describing-the-system) (`actors`, `capabilities`, `experiences`, `unknowns`).
+Everything Oodle needs lives in one visible folder, `oodlc/`, at the project root ([0003](docs/decisions/0003-one-visible-oodlc-folder.md)). `oodlc/config.yaml` says how to run the app. Every other YAML file in the folder is catalog, and any file can hold any of the sections: `intents`, `outcomes`, `behaviors`, `conditions`, `constraints`, and the [inventory](#describing-the-system) (`actors`, `capabilities`, `experiences`, `unknowns`, `terms`). [Changes](#agree-the-change-before-the-code) go in `oodlc/changes/`, one file each.
 
 ```
 my-service/
   oodlc/
     config.yaml        # how to run the app
     intents.yaml       # why the product exists
+    inventory.yaml     # capabilities, and the rest of the inventory
     checkout.yaml      # outcomes, behaviors, conditions, constraints: split however you like
   src/app.ts           # your app, wherever it already lives
 ```
@@ -192,7 +209,7 @@ defaults:
 version: 0
 outcomes:
   - id: checkout.payment-confirmed
-    intent: buy-without-surprises   # required: an outcome with no intent is a lint error
+    capability: checkout.create     # what it protects: a confirmed capability, an intent, or both. With neither, lint fails
     statement: After a successful payment the customer sees a confirmation and gets exactly one receipt
     boundary: customer              # customer | external | data | obligation | internal
     trigger:
@@ -223,7 +240,7 @@ behaviors:
       body: { ok: true }
 ```
 
-- **Promoting** a behavior means moving it from `behaviors` to `outcomes`, giving it an intent and turning `observed` into `expect`. An id can't be both. Promotion never blocks. **Demoting** removes an outcome, so it does block.
+- **Promoting** a behavior means moving it from `behaviors` to `outcomes`, giving it a confirmed capability or an intent, and turning `observed` into `expect`. An id can't be both. Promotion never blocks. **Demoting** removes an outcome, so it does block.
 - A behavior on any boundary other than `internal` gets a lint warning asking for that decision.
 - **The simulation is sealed.** Reaching the real network instead of going through `ctx.effects` is an `oodle.sealed` violation and blocks. `sealed: { allow: [host] }` lets named hosts through. See [0005](docs/decisions/0005-sealed-simulation.md).
 - **`status: proposed`** on an intent, outcome or constraint means it runs and is reported, but never blocks until a human deletes that line. `oodle propose` writes proposals, and only proposals. See [0006](docs/decisions/0006-proposals-and-propose-only-agents.md).
@@ -381,7 +398,7 @@ Oodle checks itself, too. The root [`oodlc/`](oodlc/) folder declares Oodle's ow
 | **Outcome** | Declared, human-approved | Yes, by definition | Paying shows a confirmation and sends one receipt |
 | **Behavior** | Observed by the runner | No, by default | Checkout emits `internal.audit` |
 
-1. **Intents** say why the product exists. **Outcomes** say what it must do for someone outside the system (customer, external caller, owned data, obligations), each traced to an intent.
+1. **Intents** say why the product exists. **Outcomes** say what it must do for someone outside the system (customer, external caller, owned data, obligations), each traced to a confirmed capability, an intent, or both.
 2. **Behaviors** are what the runner sees the system doing. Agents may change them freely. To protect one, promote it to an outcome.
 3. The app talks to the outside world only through `ctx.effects`, so the runner can stub every external call and record every side effect. That is the simulation.
 4. Every change runs base and head, then classifies each outcome: `held`, `changed`, `broken`, `failing`, `new`, `removed`, `redefined`. Any of those except `held` and a passing `new` blocks the merge until a human approves.

@@ -52,6 +52,37 @@ export interface Experience {
   status?: ProposalStatus;
 }
 
+/** What a change does to one outcome or constraint, once its code lands. See docs/decisions/0012. */
+export interface Amendment {
+  outcome?: string;
+  constraint?: string;
+  statement?: string;
+  /** Merged over the outcome's `expect`: body fields by key, effects by kind, the rest replaced. */
+  expect?: Expect;
+  when?: Record<string, Expect>;
+  /** A constraint's new check. */
+  check?: string;
+  /** The change retires it. */
+  remove?: true;
+}
+
+export const RULED_OUT = ['new effects', 'new hosts', 'new routes', 'new dependencies'] as const;
+export type RuledOut = (typeof RULED_OUT)[number];
+
+/**
+ * An intent to change the system, agreed before the code exists. Once merged, it lets a code pull
+ * request change exactly what it amends, inside the capabilities it reaches, and nothing it rules out.
+ * See docs/decisions/0012.
+ */
+export interface Change {
+  id: string;
+  because: string;
+  /** Capabilities it may touch. Without it, only the outcomes and constraints it amends. */
+  reaches?: string[];
+  amends?: Amendment[];
+  rules_out?: RuledOut[];
+}
+
 /** A question the system can't answer about itself, and who can. See docs/decisions/0010. */
 export interface Unknown {
   id: string;
@@ -168,6 +199,8 @@ export interface Catalog {
   capabilities: Capability[];
   experiences: Experience[];
   unknowns: Unknown[];
+  /** Changes agreed and waiting for their code, from oodlc/changes/. Never part of what runs. See docs/decisions/0012. */
+  changes: Change[];
   /** id -> file it was declared in, for error messages */
   sources: Record<string, string>;
 }
@@ -253,4 +286,6 @@ export interface RunResult {
   routes: string[];
   observations: Observation[];
   gaps: Gap[];
+  /** Package names the project depends on directly, from package.json, for a change that rules out new dependencies. */
+  dependencies?: string[];
 }

@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import type { AppContext, OodleApp, CreateApp, Request } from './contract.ts';
@@ -8,6 +8,9 @@ import { loadCatalog, loadConfig } from './catalog.ts';
 import { lint } from './lint.ts';
 import { evaluate } from './expect.ts';
 import { OodleError } from './errors.ts';
+import { reaches, routeRegex } from './routes.ts';
+
+export { reaches, routeRegex };
 import { allConditions, fuzzBody, takePollution } from './security.ts';
 import { recordEscapes, seal, sealViolations } from './seal.ts';
 import { SimDatabase, sqlInjectionViolations } from './database.ts';
@@ -221,18 +224,6 @@ export async function runSubject(createApp: CreateApp, catalog: Catalog, config:
   return obs;
 }
 
-/** Does a "METHOD /path" trigger or capability surface reach this "METHOD /pattern" route? */
-export function reaches(surface: string, route: string): boolean {
-  const [m, p] = surface.split(' ');
-  const [rm, rp] = route.split(' ');
-  return m === rm && (p === rp || routeRegex(rp).test(p.split('?')[0]));
-}
-
-export function routeRegex(pattern: string): RegExp {
-  const escaped = pattern.split('/').map((seg) => (seg.startsWith(':') ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/');
-  return new RegExp(`^${escaped}$`);
-}
-
 async function findGaps(createApp: CreateApp, catalog: Catalog, config: Config, app: OodleApp, conditions: Map<string, Condition>, db: SimDatabase | null): Promise<Gap[]> {
   const gaps: Gap[] = [];
   const triggers = [...catalog.outcomes, ...catalog.behaviors].map((x) => x.trigger.http.split(' '));
@@ -304,17 +295,28 @@ export const globMatcher = (patterns: string[]) => {
   return (id: string) => res.some((r) => r.test(id));
 };
 
+/** Direct dependencies by name, from package.json, for a change that rules out new ones (0012). */
+function dependenciesOf(projectDir: string): string[] {
+  try {
+    const pkg = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf8'));
+    return [...new Set(['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].flatMap((k) => Object.keys(pkg[k] ?? {})))].sort();
+  } catch {
+    return [];
+  }
+}
+
 export async function runProject(projectDir: string, opts: RunOptions = {}): Promise<RunResult> {
   const config = loadConfig(projectDir);
   const catalog = loadCatalog(projectDir, config);
   const lintResult = lint(catalog, config);
+  const dependencies = dependenciesOf(projectDir);
   // A project with no app explains a system Oodle can't run: nothing runs, nothing is probed (0011).
-  if (!config.app) return { projectDir, config, catalog, lint: lintResult, routes: [], observations: [], gaps: [] };
+  if (!config.app) return { projectDir, config, catalog, lint: lintResult, routes: [], observations: [], gaps: [], dependencies };
   // The database comes up before the app loads, so DATABASE_URL is set for modules that read it on import.
   const db = config.database ? await SimDatabase.open(projectDir, config.database, FIXED_NOW) : null;
   const unseal = config.sealed === false ? () => {} : seal(typeof config.sealed === 'object' ? config.sealed.allow : []);
   try {
-    return await runSealed(projectDir, config, catalog, lintResult, opts, db);
+    return { ...(await runSealed(projectDir, config, catalog, lintResult, opts, db)), dependencies };
   } finally {
     unseal();
     await db?.close();

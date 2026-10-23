@@ -4,6 +4,13 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## Unreleased: agree the change before the code
+
+- **Changes** in `oodlc/changes/`: why, the capabilities a change may reach, how it amends outcomes and constraints, and what it rules out (new effects, hosts, routes, dependencies). Once merged, `oodle check` covers a code pull request that does exactly that: the item names the change it is covered by and doesn't block, and the comment cites the commit that agreed it. What moves outside the change blocks as outside intent. Only changes on the base count. See [0012](docs/decisions/0012-changes-merge-intent-before-code.md).
+- `oodle changes` lists them, `oodle changes brief <id>` (and the MCP `change` prompt) briefs a coding agent, and `oodle changes fold <id>` writes a shipped change into the catalog and archives it.
+- The Stop hook sends outside-intent findings and unmet amendments back to the agent.
+- Lint counts an outcome toward the capability whose surfaces reach its trigger, as `oodle explain` does, so a capability those outcomes protect is no longer reported as having none.
+
 ## 0.12.0 (2026-10-23): explain any system
 
 - **Changes:** `app` in `oodlc/config.yaml` is optional. A project without it explains a system Oodle can't run, in any language, and protects nothing. `oodle init --inventory` starts one. See [0011](docs/decisions/0011-explain-what-oodle-cannot-run.md).

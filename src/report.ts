@@ -48,16 +48,36 @@ export function diffMarkdown(r: DiffReport): string {
     lines.push('| --- | --- | --- | --- |');
     for (const o of notable) {
       const what = mdFindings(o.details).map((d) => d.replace(/\|/g, '\\|')).join('<br>');
-      const tag = o.approved_by ? ` ✅ approved${approvedBy(o.approved_by)}` : o.blocking ? ' **(blocking)**' : '';
+      const tag = o.covered_by ? ` ✅ covered by \`${o.covered_by}\`` : o.approved_by ? ` ✅ approved${approvedBy(o.approved_by)}` : o.blocking ? ' **(blocking)**' : '';
       lines.push(`| ${ICON[o.status]} ${o.status}${tag} | \`${o.id}\`<br>${o.statement} | ${o.boundary} | ${what} |`);
     }
+    lines.push('');
+  }
+
+  const { used, outside, proposed } = r.changes;
+  if (used.length || outside.length) {
+    lines.push('### Intent');
+    lines.push('');
+    for (const c of used) lines.push(`Carries out \`${c.id}\`: ${c.because}${c.origin ? ` · agreed in ${c.origin}` : ''}. Covers ${c.covers.map((x) => `\`${x}\``).join(', ')}.`, '');
+    if (outside.length) {
+      lines.push('**Outside intent (blocking).** Revert these, or agree a change that includes them first:', '');
+      for (const x of outside) lines.push(`- ❌ ${x}`);
+      lines.push('');
+    }
+  }
+  if (proposed.length) {
+    lines.push('### Proposed changes');
+    lines.push('');
+    lines.push('Intents to change the system, before the code. Review them here; once merged, a code pull request that carries one out passes on its own, and anything outside it blocks.');
+    lines.push('');
+    for (const c of proposed) lines.push(`- 📝 \`${c.id}\`: ${c.because}`);
     lines.push('');
   }
 
   if (r.constraints.length) {
     lines.push('### Constraint changes');
     lines.push('');
-    for (const c of r.constraints) lines.push(`- ${ICON[c.status]} \`${c.id}\` ${c.status}${c.approved_by ? ` ✅ approved${approvedBy(c.approved_by)}` : c.blocking ? ' **(blocking)**' : ''}: ${c.details.join('; ')}`);
+    for (const c of r.constraints) lines.push(`- ${ICON[c.status]} \`${c.id}\` ${c.status}${c.covered_by ? ` ✅ covered by \`${c.covered_by}\`` : c.approved_by ? ` ✅ approved${approvedBy(c.approved_by)}` : c.blocking ? ' **(blocking)**' : ''}: ${c.details.join('; ')}`);
     lines.push('');
   }
 

@@ -15,6 +15,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0009](0009-a-real-database-in-the-simulation.md) | The simulation includes a real Postgres, and what the app writes to it is behavior | Proposed |
 | [0010](0010-capabilities-and-the-inventory.md) | The inventory explains the system: capabilities, actors, experiences and unknowns | Proposed |
 | [0011](0011-explain-what-oodle-cannot-run.md) | A project with no app explains a system Oodle can't run | Proposed |
+| [0012](0012-changes-merge-intent-before-code.md) | Changes: the intent merges before the code | Proposed |
 
 ## When to write one
 

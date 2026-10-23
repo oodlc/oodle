@@ -236,12 +236,15 @@ async function stop(input: HookInput, cwd: string) {
     const d = agentDiff(doc);
     for (const o of d.outcomes) {
       if (o.status === 'broken' || o.status === 'failing') fixable.push(`outcome ${o.id} ${o.status}: ${o.details.slice(0, 4).join('; ')}`);
+      else if (o.covered_by) continue;
+      else if (d.changes?.unmet?.[o.id]) fixable.push(`outcome ${o.id}: ${d.changes.unmet[o.id].join('; ')}`);
       else if (['changed', 'redefined', 'removed'].includes(o.status)) human.push(`outcome ${o.id} ${o.status}${o.fingerprint ? ` (approve: ${o.id}@${o.fingerprint})` : ''}`);
       else if (o.status === 'proposed' && !o.details.includes('proposed, holding')) fyi.push(`proposed outcome ${o.id} does not hold yet`);
     }
     for (const c of d.constraints ?? []) if (c.blocking) human.push(`constraint ${c.id} ${c.status}${c.fingerprint ? ` (approve: ${c.id}@${c.fingerprint})` : ''}`);
     for (const b of d.behavior_changes) if (b.violations?.length) fixable.push(`behavior ${b.id} violates: ${b.violations.join('; ')}`);
     for (const g of d.unknown_routes) if (g.violations.length) fixable.push(`route ${g.route} (described by nothing) violates: ${g.violations.join('; ')}`);
+    for (const x of d.changes?.outside ?? []) fixable.push(`outside intent: ${x}`);
     for (const l of d.lint?.errors ?? []) fixable.push(`catalog lint: ${l}`);
     if (d.unknown_routes.length) fyi.push(`${d.unknown_routes.length} route(s) nothing describes: ${d.unknown_routes.map((g: any) => g.route).join(', ')}`);
   } else {

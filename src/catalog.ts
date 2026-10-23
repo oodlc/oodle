@@ -29,7 +29,11 @@ export const SECTIONS = ['intents', 'outcomes', 'behaviors', 'conditions', 'cons
 export type Section = (typeof SECTIONS)[number];
 /** "capabilities" -> "capability", "outcomes" -> "outcome". */
 export const singular = (section: Section) => section.replace(/ies$/, 'y').replace(/s$/, '');
-export const emptyCatalog = (): Catalog => ({ ...(Object.fromEntries(SECTIONS.map((s) => [s, []])) as Record<Section, []>), sources: {} });
+export const emptyCatalog = (): Catalog => ({ ...(Object.fromEntries(SECTIONS.map((s) => [s, []])) as Record<Section, []>), changes: [], sources: {} });
+
+/** Where changes wait for their code, and where they go once folded in. See docs/decisions/0012. */
+export const CHANGES_DIR = 'changes';
+export const ARCHIVE_DIR = 'archive';
 
 /** Everything Oodle needs lives in one visible folder at the project root. See docs/decisions/0003. */
 export const FOLDER = 'oodlc';
@@ -90,6 +94,7 @@ export function loadCatalog(projectDir: string, config: Config): Catalog {
       problems.push(...formatAjv(rel, validateCatalogFile.errors));
       continue;
     }
+    if (doc.changes) problems.push(`${rel}: changes go in ${relative(projectDir, join(dir, CHANGES_DIR))}/, one file each, so each can be reviewed and archived on its own`);
     for (const section of SECTIONS) {
       for (const item of doc[section] ?? []) {
         const key = `${section}:${item.id}`;
@@ -99,6 +104,33 @@ export function loadCatalog(projectDir: string, config: Config): Catalog {
         if (twin && catalog.sources[twin]) problems.push(`${rel}: "${item.id}" is both an outcome and a behavior (also in ${catalog.sources[twin]}). Promoting a behavior moves it.`);
         catalog.sources[key] = rel;
         (catalog[section] as any[]).push(item);
+      }
+    }
+  }
+
+  // Changes: one file each in oodlc/changes/. Folded ones move to changes/archive/ and stop counting.
+  const changesDir = join(dir, CHANGES_DIR);
+  if (existsSync(changesDir) && statSync(changesDir).isDirectory()) {
+    for (const f of readdirSync(changesDir).filter((n) => /\.ya?ml$/.test(n)).sort()) {
+      const rel = relative(projectDir, join(changesDir, f));
+      let doc: any;
+      try {
+        doc = parse(readFileSync(join(changesDir, f), 'utf8')) ?? {};
+      } catch (err) {
+        problems.push(`${rel}: invalid YAML: ${(err as Error).message}`);
+        continue;
+      }
+      if (!validateCatalogFile(doc)) {
+        problems.push(...formatAjv(rel, validateCatalogFile.errors));
+        continue;
+      }
+      const other = SECTIONS.filter((s) => doc[s]);
+      if (other.length) problems.push(`${rel}: a change file holds changes only, not ${other.join(', ')}`);
+      for (const change of doc.changes ?? []) {
+        const key = `changes:${change.id}`;
+        if (catalog.sources[key]) problems.push(`${rel}: duplicate change id "${change.id}" (also in ${catalog.sources[key]})`);
+        catalog.sources[key] = rel;
+        catalog.changes.push(change);
       }
     }
   }

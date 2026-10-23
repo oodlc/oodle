@@ -3,7 +3,7 @@ import { join, relative, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import AjvModule from 'ajv';
-import type { Catalog, Config } from './types.ts';
+import type { Catalog, Config, EvidenceItem } from './types.ts';
 
 const Ajv: any = (AjvModule as any).default ?? AjvModule;
 const specDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'spec');
@@ -30,6 +30,13 @@ export type Section = (typeof SECTIONS)[number];
 /** "capabilities" -> "capability", "outcomes" -> "outcome". */
 export const singular = (section: Section) => section.replace(/ies$/, 'y').replace(/s$/, '');
 export const emptyCatalog = (): Catalog => ({ ...(Object.fromEntries(SECTIONS.map((s) => [s, []])) as Record<Section, []>), changes: [], sources: {} });
+
+/**
+ * Evidence as Oodle reads it: free text, or an item with no grade, is inferred. Only Oodle grades
+ * what it saw as observed, so anything it can't vouch for fails closed. See docs/decisions/0014.
+ */
+export const gradeEvidence = (raw: unknown[] | undefined): EvidenceItem[] | undefined =>
+  raw?.map((e: any) => (typeof e === 'string' ? { text: e, grade: 'inferred' } : { text: String(e.text), grade: e.grade === 'observed' ? 'observed' : 'inferred' }));
 
 /** Where changes wait for their code, and where they go once folded in. See docs/decisions/0012. */
 export const CHANGES_DIR = 'changes';
@@ -103,7 +110,7 @@ export function loadCatalog(projectDir: string, config: Config): Catalog {
         const twin = section === 'outcomes' ? `behaviors:${item.id}` : section === 'behaviors' ? `outcomes:${item.id}` : null;
         if (twin && catalog.sources[twin]) problems.push(`${rel}: "${item.id}" is both an outcome and a behavior (also in ${catalog.sources[twin]}). Promoting a behavior moves it.`);
         catalog.sources[key] = rel;
-        (catalog[section] as any[]).push(item);
+        (catalog[section] as any[]).push(item.evidence ? { ...item, evidence: gradeEvidence(item.evidence) } : item);
       }
     }
   }

@@ -40,8 +40,10 @@ test('discover: routes become proposed capabilities with their evidence, an inte
   assert.equal(checkout.status, 'proposed');
   assert.equal(checkout.intent, 'buy-without-surprises');
   assert.deepEqual(checkout.surfaces, ['POST /checkout']);
-  assert.ok(checkout.evidence.includes('POST /checkout: calls email.sent, payment.capture'));
-  assert.ok(checkout.evidence.some((e: string) => e.startsWith('POST /checkout: described by outcomes checkout.payment-confirmed,')));
+  // What Oodle saw is observed; the outcomes people wrote about the route are inferred (0014).
+  assert.deepEqual(checkout.evidence.find((e: any) => e.text === 'POST /checkout: calls email.sent, payment.capture'), { text: 'POST /checkout: calls email.sent, payment.capture', grade: 'observed' });
+  assert.deepEqual(checkout.evidence.find((e: any) => e.text === 'POST /checkout: served by the app'), { text: 'POST /checkout: served by the app', grade: 'observed' });
+  assert.equal(checkout.evidence.find((e: any) => e.text.startsWith('POST /checkout: described by outcomes checkout.payment-confirmed,')).grade, 'inferred');
   assert.equal(doc.capabilities.find((c: any) => c.id === 'health.read').intent, undefined);
   assert.deepEqual(result.links.find((l) => l.id === 'ops.health'), { id: 'ops.health', kind: 'behavior', capability: 'health.read' });
   // Proposals never block, and the TODO statements ask a person for the words.

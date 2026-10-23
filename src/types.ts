@@ -11,6 +11,21 @@ export interface Intent {
 }
 
 /**
+ * How a piece of evidence was come by. `observed`: Oodle saw it happen (a route the app serves, a probe's
+ * answer, a call or table write it recorded, a request in a capture or trace). `inferred`: anything else,
+ * such as a spec's description, a sentence an agent or a person wrote, or evidence with no grade.
+ * Only observed evidence ranks a capability. See docs/decisions/0014.
+ */
+export const GRADES = ['observed', 'inferred'] as const;
+export type Grade = (typeof GRADES)[number];
+
+/** One piece of evidence for a capability or experience. Oodle sets the grade from where it came from. */
+export interface EvidenceItem {
+  text: string;
+  grade: Grade;
+}
+
+/**
  * Who uses the system: a shopper, an operator, a partner's server. Part of the
  * inventory, which explains the system and never blocks. See docs/decisions/0010.
  */
@@ -32,8 +47,8 @@ export interface Capability {
   intent?: string;
   /** Triggers that reach it, "METHOD /path" like an outcome's trigger. */
   surfaces?: string[];
-  /** Where the claim comes from: a file, a probe, a record. Free text for now. */
-  evidence?: string[];
+  /** Where the claim comes from, graded. Free text in the file loads as inferred. */
+  evidence?: EvidenceItem[];
   status?: ProposalStatus;
 }
 
@@ -47,8 +62,8 @@ export interface Experience {
   steps?: string[];
   /** Failures the actor would notice. Each is a candidate condition or constraint. */
   feels_broken_when?: string[];
-  /** Where the journey was seen: a capture, a trace export. Free text for now. */
-  evidence?: string[];
+  /** Where the journey was seen, graded. Free text in the file loads as inferred. */
+  evidence?: EvidenceItem[];
   status?: ProposalStatus;
 }
 

@@ -6,11 +6,15 @@
  * Each capability shows the rungs it has (confirmed, an outcome, an intent, an
  * experience) and the next one to add, so a team that starts with capabilities
  * alone can see what each further rung would get them.
+ *
+ * Evidence shows with its grade (0014). A capability is "inferred only" when
+ * nothing Oodle saw backs it: no observed evidence, and none of its outcomes or
+ * behaviors ran. Running is seeing, so that is decided fresh on every run.
  */
 import { reaches } from './runner.ts';
 import { saysNothing } from './lint.ts';
 import { undefinedWords } from './terms.ts';
-import type { Behavior, Capability, Catalog, Outcome, RunResult } from './types.ts';
+import type { Behavior, Capability, Catalog, EvidenceItem, Outcome, RunResult } from './types.ts';
 
 /** The capability an outcome or behavior belongs to: the one it names, or else the one whose surfaces reach its trigger. */
 export function capabilityOf(catalog: Catalog, item: Outcome | Behavior): Capability | undefined {
@@ -34,7 +38,9 @@ export interface CapabilityView {
   /** What crossed the boundary while its outcomes and behaviors ran. */
   calls: string[];
   writes: string[];
-  evidence: string[];
+  evidence: EvidenceItem[];
+  /** Nothing observed backs it: every piece of evidence is inferred, and nothing that belongs to it ran. */
+  inferred_only: boolean;
   rungs: { capability: boolean; outcome: boolean; intent: boolean; experience: boolean };
   /** The next rung worth adding, in words. Absent when every rung is there. */
   next?: string;
@@ -50,7 +56,7 @@ export interface SystemMap {
   /** The vocabulary, and the system's own words no term defines yet (0013). */
   terms: { id: string; statement: string; aka: string[]; proposed: boolean }[];
   undefined_words: string[];
-  summary: { capabilities: number; confirmed: number; protected: number; routes: number; claimed: number };
+  summary: { capabilities: number; confirmed: number; protected: number; inferred_only: number; routes: number; claimed: number };
 }
 
 function nextRung(v: CapabilityView): string | undefined {
@@ -91,6 +97,7 @@ export function systemMap(run: RunResult): SystemMap {
       calls: [...new Set(effects.filter((e) => e.boundary === 'external').map((e) => e.kind))].sort(),
       writes: [...new Set(effects.flatMap((e) => (e.boundary === 'data' ? [/^db\.(.+)\.(inserted|updated|deleted)$/.exec(e.kind)?.[1]] : [])).filter((t): t is string => !!t))].sort(),
       evidence: c.evidence ?? [],
+      inferred_only: !ran.length && !(c.evidence ?? []).some((e) => e.grade === 'observed'),
       rungs: {
         capability: c.status !== 'proposed' && !saysNothing(c.statement),
         outcome: outcomes.some((o) => o.status !== 'proposed'),
@@ -123,6 +130,7 @@ export function systemMap(run: RunResult): SystemMap {
       capabilities: capabilities.length,
       confirmed: capabilities.filter((c) => c.status === 'confirmed').length,
       protected: capabilities.filter((c) => c.outcomes.some((o) => o.state === 'holds')).length,
+      inferred_only: capabilities.filter((c) => c.inferred_only).length,
       routes: run.routes.length,
       claimed: claimed.length,
     },

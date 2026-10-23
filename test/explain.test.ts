@@ -48,7 +48,7 @@ test('system map: each capability with its outcomes, the rungs it has, and the n
   assert.deepEqual(health.behaviors, ['ops.health']);
   assert.match(health.next!, /say what it does/);
   assert.deepEqual(map.intents.find((i) => i.id === 'buy-without-surprises')!.outcomes, []);
-  assert.deepEqual(map.summary, { capabilities: 2, confirmed: 1, protected: 1, routes: 2, claimed: 2 });
+  assert.deepEqual(map.summary, { capabilities: 2, confirmed: 1, protected: 1, inferred_only: 0, routes: 2, claimed: 2 });
   const md = systemMarkdown(map);
   assert.match(md, /\| `checkout\.create` \| A shopper can pay for a cart and get one receipt \| shopper \| `POST \/checkout` \| 4 hold \|/);
   assert.match(md, /## No intent yet/);

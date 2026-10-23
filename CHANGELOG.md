@@ -4,6 +4,15 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.14.0 (2026-10-23): what was seen, and what was said
+
+- **Changes:** each piece of `evidence` on a capability or experience is `{ text, grade }`, and the grade is `observed` (Oodle saw it: a route the app serves, a probe, a recorded call or table write, a request in a capture or trace) or `inferred` (someone wrote it: a spec's words, an agent's draft, anything else). Plain text, or an item with no grade, loads as `inferred`, so older catalogs load as they are. See [0014](docs/decisions/0014-evidence-grades.md).
+- Only `oodle discover` writes `observed`. `oodle propose` and the MCP `propose` tool grade every item they are given `inferred`, the MCP `answer` tool refuses evidence, and the Claude Code hook asks the person before an edit adds observed evidence.
+- Only observed evidence ranks: traffic orders capabilities in `discover` as before, and `oodle interview` now asks first about the capabilities with the most observed evidence, not the most lines.
+- `oodle explain` shows the grade beside each piece of evidence, and marks a capability **inferred only** when nothing Oodle saw backs it (no observed evidence, and nothing of its own ran). `inferred_only` is in its JSON, per capability and in the summary, and in the `map` tool.
+- **Not seen is not unused.** `oodle discover --from` records what each file covered (kind, first and last request, request count, hosts), prints it, and returns it as `scope` in the JSON. A capability no captured request reached gets an `unseen.<id>` question that cites it: "Not seen in 1 HAR capture, session.har (40 min, 312 requests, hosts: …). That doesn't mean it's unused." It is asked of existing capabilities too. The `unused.<id>` question and the `no requests in <file>` evidence line are gone.
+- `oodle discover` adds `<route>: served by the app` (observed) to each capability it drafts in a project with an app.
+
 ## 0.13.0 (2026-10-23): agree the change before the code, and say what the words mean
 
 - **Changes** in `oodlc/changes/`: why, the capabilities a change may reach, how it amends outcomes and constraints, and what it rules out (new effects, hosts, routes, dependencies). Once merged, `oodle check` covers a code pull request that does exactly that: the item names the change it is covered by and doesn't block, and the comment cites the commit that agreed it. What moves outside the change blocks as outside intent. Only changes on the base count. See [0012](docs/decisions/0012-changes-merge-intent-before-code.md).

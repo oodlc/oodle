@@ -68,10 +68,12 @@ test('discover --from: the spec\'s words, real use first, a repeated journey, an
   assert.deepEqual(result.capabilities.map((c) => c.id), ['health.read', 'checkout.create']);
   const checkout = result.capabilities.find((c) => c.id === 'checkout.create')!;
   assert.match(checkout.statement, /The spec says "Pay for the items in a cart"/);
-  assert.ok(checkout.evidence!.includes('POST /checkout: openapi.yaml says "Pay for the items in a cart" (checkout), tagged orders'));
-  assert.ok(checkout.evidence!.includes('POST /checkout: 2 requests in session.har'));
-  assert.ok(checkout.evidence!.includes('POST /checkout: 1 request in traces.json'));
-  assert.deepEqual(result.experiences.map((x) => [x.id, x.steps, x.evidence]), [['journey.health-read-then-checkout-create', ['health.read', 'checkout.create'], ['seen 2 times in session.har']]]);
+  const grade = (text: string) => checkout.evidence!.find((e) => e.text === text)?.grade;
+  // The spec's words are what people wrote; requests in a capture or a trace export were seen (0014).
+  assert.equal(grade('POST /checkout: openapi.yaml says "Pay for the items in a cart" (checkout), tagged orders'), 'inferred');
+  assert.equal(grade('POST /checkout: 2 requests in session.har'), 'observed');
+  assert.equal(grade('POST /checkout: 1 request in traces.json'), 'observed');
+  assert.deepEqual(result.experiences.map((x) => [x.id, x.steps, x.evidence]), [['journey.health-read-then-checkout-create', ['health.read', 'checkout.create'], [{ text: 'seen 2 times in session.har', grade: 'observed' }]]]);
   const ids = result.unknowns.map((u) => u.id);
   assert.ok(ids.includes('spec-only.openapi-yaml'));
   const unrouted = result.unknowns.find((u) => u.id === 'unrouted.session-har')!;
@@ -81,11 +83,13 @@ test('discover --from: the spec\'s words, real use first, a repeated journey, an
   assert.deepEqual(parse(readFileSync(join(dir, 'oodlc', 'proposed.yaml'), 'utf8')).experiences[0].status, 'proposed');
 });
 
-test('discover --from: a capability no captured request reached gets a question', async () => {
+test('discover --from: a capability no captured request reached gets a question that says what the capture covered', async () => {
   const dir = project();
   const result = await discover(dir, [file('session.har', { log: { entries: [entry('p1', 0, 'GET', `${SITE}/health`)] } })]);
-  const unused = result.unknowns.find((u) => u.id === 'unused.checkout.create')!;
-  assert.match(unused.question, /No request in session\.har reached POST \/checkout/);
+  const unseen = result.unknowns.find((u) => u.id === 'unseen.checkout.create')!;
+  assert.equal(unseen.question, `POST /checkout: Not seen in 1 HAR capture, session.har (under a minute, 1 request, host: shop.example.test). That doesn't mean it's unused. Who calls it, and how often?`);
+  // A capture's silence is not evidence of anything, so it leaves no evidence line behind.
+  assert.ok(!result.capabilities.find((c) => c.id === 'checkout.create')!.evidence!.some((e) => /session\.har/.test(e.text)));
 });
 
 test('interview: an experience asks what people are trying to do and what would feel broken, and writes both', async () => {

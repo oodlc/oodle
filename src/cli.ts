@@ -19,6 +19,7 @@ import { hasPGlite } from './database.ts';
 import { mutate, type MutateReport } from './mutate.ts';
 import { propose, proposeRoutes } from './propose.ts';
 import { discover } from './discover.ts';
+import { scopeFacts } from './evidence.ts';
 import { systemMap } from './explain.ts';
 import { changeBrief, foldChange, originOf } from './changes.ts';
 import { questions, runInterview } from './interview.ts';
@@ -223,7 +224,7 @@ const COMMANDS: Command[] = [
     name: 'explain',
     summary: 'Map what the system does, for whom and why, and how much of it is protected',
     description:
-      'Runs the project in the sealed simulation and prints the system map: each intent, the capabilities that serve it and the experiences that cross them. Each capability shows who it is for, the routes that reach it, whether its outcomes hold, which rungs it has (confirmed, an outcome, an intent, an experience) and the next one to add. Then the routes no capability lists, and the open questions. An outcome or behavior belongs to the capability it names, or else to the one whose routes reach its trigger. --only narrows to capabilities and shows each one in full: its outcomes, behaviors, calls, table writes, constraints and evidence. --format md writes the map as a page to keep in the repository. Never blocks. See docs/decisions/0010.',
+      'Runs the project in the sealed simulation and prints the system map: each intent, the capabilities that serve it and the experiences that cross them. Each capability shows who it is for, the routes that reach it, whether its outcomes hold, which rungs it has (confirmed, an outcome, an intent, an experience) and the next one to add. Then the routes no capability lists, and the open questions. An outcome or behavior belongs to the capability it names, or else to the one whose routes reach its trigger. --only narrows to capabilities and shows each one in full: its outcomes, behaviors, calls, table writes, constraints and evidence, each piece graded observed (Oodle saw it) or inferred (someone wrote it). A capability nothing observed backs, with no observed evidence and nothing of its own that ran, is marked inferred only. --format md writes the map as a page to keep in the repository. Never blocks. See docs/decisions/0010 and 0014.',
     args: [PROJECT_ARG],
     flags: [
       { name: 'only', short: 'o', type: 'string', multiple: true, value: 'glob', complete: 'none', description: 'Show only capabilities whose id matches, in full (repeatable)' },
@@ -240,7 +241,7 @@ const COMMANDS: Command[] = [
     name: 'discover',
     summary: 'Propose the capabilities your routes add up to, and the questions only a person can answer',
     description:
-      'Runs the project in the sealed simulation and groups its routes into capabilities by the resource each acts on and what it does to it (POST /orders/:id/refund is orders.refund). Each capability lists its routes and its evidence: the outcomes and behaviors that describe it, the calls and table writes seen, how a probe answered. An intent comes from its approved outcomes when they agree. What the code can\'t say becomes an open question: who a capability is for, and whether an intent nothing serves is still wanted. Everything lands in oodlc/proposed.yaml as a proposal that never blocks; confirm a capability by giving it a real statement and deleting its status line. Routes a capability already lists are left alone, so running it again only adds what is new. With --from, evidence from outside the code joins in: an OpenAPI spec gives each route the words people wrote for it; a HAR capture or an OTLP JSON trace export says how often each route is used (most used come first), which journeys callers repeat (proposed as experiences), and which capabilities nothing used. Where the evidence and the app disagree, a question says so. Nothing is replayed. See docs/decisions/0010.',
+      'Runs the project in the sealed simulation and groups its routes into capabilities by the resource each acts on and what it does to it (POST /orders/:id/refund is orders.refund). Each capability lists its routes and its evidence: the outcomes and behaviors that describe it, the calls and table writes seen, how a probe answered. An intent comes from its approved outcomes when they agree. What the code can\'t say becomes an open question: who a capability is for, and whether an intent nothing serves is still wanted. Everything lands in oodlc/proposed.yaml as a proposal that never blocks; confirm a capability by giving it a real statement and deleting its status line. Routes a capability already lists are left alone, so running it again only adds what is new. With --from, evidence from outside the code joins in: an OpenAPI spec gives each route the words people wrote for it; a HAR capture or an OTLP JSON trace export says how often each route is used (most used come first), which journeys callers repeat (proposed as experiences), and which capabilities no captured request reached, with what the capture covered: not seen is not unused. Each piece of evidence is graded: observed when Oodle saw it (a route the app serves, a probe, a recorded call or table write, a request in a capture), inferred when someone wrote it (a spec\'s words). Only observed traffic orders the capabilities. Where the evidence and the app disagree, a question says so. Nothing is replayed. See docs/decisions/0010 and 0014.',
     args: [PROJECT_ARG],
     flags: [
       { name: 'from', type: 'string', multiple: true, value: 'file', description: 'Evidence to read: an OpenAPI spec, a HAR capture or an OTLP JSON trace export (repeatable)' },
@@ -804,11 +805,11 @@ async function cmdDiscover(ctx: Ctx): Promise<number> {
   const result = await discover(dir, files).finally(() => spin?.stop());
   if (ctx.format === 'json') return printJson({ ok: true, ...result }), EXIT.ok;
   heading('discover', dir);
-  for (const ev of result.evidence) console.log(`  ${o.dim(`read ${display(ev.file)}: ${ev.kind === 'openapi' ? `OpenAPI, ${plural(ev.requests, 'operation')}` : `${ev.kind === 'har' ? 'HAR' : 'OTLP traces'}, ${plural(ev.requests, 'request')}`}`)}`);
+  for (const ev of result.evidence) console.log(`  ${o.dim(`read ${display(ev.file)}: ${ev.kind === 'openapi' ? 'OpenAPI' : ev.kind === 'har' ? 'HAR' : 'OTLP traces'}, ${scopeFacts(ev.scope)}`)}`);
   if (result.evidence.length) console.log('');
   const width = Math.max(0, ...result.capabilities.map((c) => c.id.length), ...result.experiences.map((x) => x.id.length), ...result.unknowns.map((u) => u.id.length), ...result.links.map((l) => l.capability.length));
   for (const c of result.capabilities) console.log(`  ${o.green('+')} ${'capability'.padEnd(10)} ${c.id.padEnd(width)}  ${o.dim([c.surfaces!.join(', '), c.intent].filter(Boolean).join(` ${sym.dot} `))}`);
-  for (const x of result.experiences) console.log(`  ${o.green('+')} ${'experience'.padEnd(10)} ${x.id.padEnd(width)}  ${o.dim([x.steps!.join(` ${sym.arrow} `), ...(x.evidence ?? [])].join(` ${sym.dot} `))}`);
+  for (const x of result.experiences) console.log(`  ${o.green('+')} ${'experience'.padEnd(10)} ${x.id.padEnd(width)}  ${o.dim([x.steps!.join(` ${sym.arrow} `), ...(x.evidence ?? []).map((ev) => ev.text)].join(` ${sym.dot} `))}`);
   for (const u of result.unknowns) console.log(`  ${o.yellow('?')} ${'question'.padEnd(10)} ${u.id.padEnd(width)}  ${o.dim(u.question)}`);
   const byCapability = new Map<string, string[]>();
   for (const l of result.links) byCapability.set(l.capability, [...(byCapability.get(l.capability) ?? []), l.id]);

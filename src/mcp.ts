@@ -119,7 +119,7 @@ const TOOLS = [
   { name: 'lint', description: 'Validate the catalog: schema, traceability, references.', inputSchema: { type: 'object', properties: {} } },
   {
     name: 'catalog',
-    description: 'Every intent, outcome, behavior, condition (including the built-in security.* pack) and constraint, and the inventory (actors, capabilities, experiences, open questions), with statements and status. Read this before writing code or proposals.',
+    description: 'Every intent, outcome, behavior, condition (including the built-in security.* pack) and constraint, and the inventory (actors, capabilities, experiences, open questions), with statements, status and graded evidence (observed: Oodle saw it; inferred: someone wrote it). Read this before writing code or proposals.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -164,7 +164,7 @@ const TOOLS = [
   },
   {
     name: 'propose',
-    description: 'Add catalog entries as proposals in oodlc/proposed.yaml. Intents, outcomes, constraints, actors, capabilities and experiences are marked status: proposed: they run and are reported but never block until a human approves them. Can only add: existing ids are refused. This is the only way to write to the catalog.',
+    description: 'Add catalog entries as proposals in oodlc/proposed.yaml. Intents, outcomes, constraints, actors, capabilities and experiences are marked status: proposed: they run and are reported but never block until a human approves them. Any evidence you give is graded inferred: only Oodle grades what it saw. Can only add: existing ids are refused. This is the only way to write to the catalog.',
     inputSchema: {
       type: 'object',
       properties: { yaml: str('A YAML mapping with any of intents, outcomes, behaviors, conditions, constraints, actors, capabilities, experiences, unknowns, in the oodlc catalog format') },
@@ -219,8 +219,8 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
         conditions: [...c.conditions.map(brief), ...BUILTIN_CONDITIONS.filter((b) => !c.conditions.some((x) => x.id === b.id)).map((b) => ({ ...brief(b), builtin: true }))],
         constraints: c.constraints.map((x) => ({ ...brief(x), check: x.check })),
         actors: c.actors.map(brief),
-        capabilities: c.capabilities.map((x) => ({ ...brief(x), actor: x.actor, intent: x.intent, surfaces: x.surfaces ?? [] })),
-        experiences: c.experiences.map((x) => ({ ...brief(x), actor: x.actor, intent: x.intent, steps: x.steps ?? [] })),
+        capabilities: c.capabilities.map((x) => ({ ...brief(x), actor: x.actor, intent: x.intent, surfaces: x.surfaces ?? [], evidence: x.evidence ?? [] })),
+        experiences: c.experiences.map((x) => ({ ...brief(x), actor: x.actor, intent: x.intent, steps: x.steps ?? [], evidence: x.evidence ?? [] })),
         unknowns: c.unknowns.map((u) => ({ id: u.id, question: u.question, ...(u.ask ? { ask: u.ask } : {}) })),
         stubs: Object.keys(config.defaults?.given?.stubs ?? {}),
         files: c.sources,
@@ -259,6 +259,8 @@ async function callTool(projectDir: string, name: string, args: any): Promise<un
       return (await oodleJson(['discover', projectDir, ...(args?.from ?? []).flatMap((f: string) => ['--from', f])], projectDir)).doc;
     case 'answer': {
       const a = args ?? {};
+      // An answer is what a person said, never what Oodle saw: it can't carry evidence, let alone grade it (0014).
+      if ('evidence' in a || 'grade' in a) throw new OodleError('answer', 'The answer tool records what the person said; it can\'t add evidence', { hint: 'Oodle grades evidence from what it sees: call the discover tool, with from: for a spec, capture or trace export.' });
       const answer: Answer = a.term
         ? { kind: 'term', id: String(a.term), ...(a.statement ? { statement: String(a.statement) } : {}), ...(Array.isArray(a.aka) ? { aka: a.aka.map(String) } : {}) }
         : a.answer

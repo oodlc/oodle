@@ -34,9 +34,40 @@ export interface Evidence {
   seen: Seen[];
   /** For traffic: requests in the order one caller made them (a HAR page, or the whole capture). */
   sequences: Request[][];
+  scope: Scope;
+}
+
+/**
+ * What one file covered. A route it never reached was not seen in that window, on those hosts:
+ * that is all its silence says. See docs/decisions/0014.
+ */
+export interface Scope {
+  kind: Evidence['kind'];
+  file: string;
+  /** For traffic: when the first and the last request started (ISO 8601), when the file says. */
+  first?: string;
+  last?: string;
+  /** Requests in a capture or trace export, operations in a spec. */
+  requests: number;
+  /** Every host its requests went to (a spec: the hosts it names), busiest first. */
+  hosts: string[];
 }
 
 type Request = { method: string; path: string; host?: string };
+
+/** Hosts by how many requests went to each, busiest first. */
+const hostsOf = (hosts: (string | undefined)[]) => {
+  const n = new Map<string, number>();
+  for (const h of hosts) if (h) n.set(h, (n.get(h) ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([h]) => h);
+};
+
+/** The earliest and latest of some timestamps, as ISO 8601. */
+function timeWindow(times: number[]): { first?: string; last?: string } {
+  const ok = times.filter((t) => Number.isFinite(t));
+  if (!ok.length) return {};
+  return { first: new Date(Math.min(...ok)).toISOString(), last: new Date(Math.max(...ok)).toISOString() };
+}
 
 /** `/orders/{id}/refund` -> `/orders/:id/refund`, the form routes and surfaces use. */
 const template = (path: string) => path.replace(/\{([^}]+)\}/g, ':$1');
@@ -73,7 +104,7 @@ function openapi(doc: any, name: string): Evidence {
   } catch {
     host = undefined;
   }
-  return { kind: 'openapi', name, seen: host ? seen.map((s) => ({ ...s, host })) : seen, sequences: [] };
+  return { kind: 'openapi', name, seen: host ? seen.map((s) => ({ ...s, host })) : seen, sequences: [], scope: { kind: 'openapi', file: name, requests: seen.length, hosts: host ? [host] : [] } };
 }
 
 /** Counts requests by host, method and path, keeping the first-seen order. */
@@ -91,6 +122,7 @@ function tally(requests: Request[]): Seen[] {
 function har(doc: any, name: string): Evidence {
   const pages = new Map<string, Request[]>();
   const all: Request[] = [];
+  const times: number[] = [];
   const entries = [...(doc.log?.entries ?? [])].sort((a: any, b: any) => String(a.startedDateTime ?? '').localeCompare(String(b.startedDateTime ?? '')));
   for (const e of entries) {
     const method = String(e.request?.method ?? '').toUpperCase();
@@ -103,10 +135,12 @@ function har(doc: any, name: string): Evidence {
     }
     const r = { method, path: url.pathname, host: url.host };
     all.push(r);
+    times.push(Date.parse(String(e.startedDateTime ?? '')));
     const page = String(e.pageref ?? '');
     pages.set(page, [...(pages.get(page) ?? []), r]);
   }
-  return { kind: 'har', name, seen: tally(all), sequences: [...pages.values()] };
+  const scope: Scope = { kind: 'har', file: name, ...timeWindow(times), requests: all.length, hosts: hostsOf(all.map((r) => r.host)) };
+  return { kind: 'har', name, seen: tally(all), sequences: [...pages.values()], scope };
 }
 
 /** OTLP JSON: the attribute value of a span, whichever of the old or new HTTP semantic conventions it uses. */
@@ -115,8 +149,13 @@ function attribute(span: any, ...keys: string[]): string | undefined {
   return undefined;
 }
 
+/** OTLP JSON timestamps are nanoseconds since the epoch, as a string or a number. */
+const fromNanos = (v: unknown) => (v === undefined || v === null || v === '' ? NaN : Number(BigInt(String(v)) / 1_000_000n));
+
 function otlp(doc: any, name: string): Evidence {
   const requests: Request[] = [];
+  const times: number[] = [];
+  const hosts: (string | undefined)[] = [];
   for (const rs of doc.resourceSpans ?? []) {
     for (const ss of rs.scopeSpans ?? rs.instrumentationLibrarySpans ?? []) {
       for (const span of ss.spans ?? []) {
@@ -124,11 +163,53 @@ function otlp(doc: any, name: string): Evidence {
         if (span.kind !== undefined && span.kind !== 2 && span.kind !== 'SPAN_KIND_SERVER') continue;
         const method = (attribute(span, 'http.request.method', 'http.method') ?? '').toUpperCase();
         const path = attribute(span, 'http.route') ?? attribute(span, 'url.path', 'http.target')?.split('?')[0];
-        if (METHODS.has(method) && path) requests.push({ method, path: template(path) });
+        if (!METHODS.has(method) || !path) continue;
+        requests.push({ method, path: template(path) });
+        hosts.push(attribute(span, 'server.address', 'net.host.name', 'http.host')?.replace(/:\d+$/, ''));
+        try {
+          times.push(fromNanos(span.startTimeUnixNano));
+        } catch {
+          // A timestamp that isn't a number leaves the window open, nothing more.
+        }
       }
     }
   }
-  return { kind: 'otlp', name, seen: tally(requests), sequences: [] };
+  const scope: Scope = { kind: 'otlp', file: name, ...timeWindow(times), requests: requests.length, hosts: hostsOf(hosts) };
+  return { kind: 'otlp', name, seen: tally(requests), sequences: [], scope };
+}
+
+const NOUN: Record<Evidence['kind'], [one: string, short: string]> = { har: ['HAR capture', 'HAR'], otlp: ['OTLP trace export', 'OTLP traces'], openapi: ['OpenAPI spec', 'OpenAPI'] };
+
+/** "40 min", "2 h 5 min", "3 days": how long a capture ran, from its first request to its last. */
+export function duration(scope: Scope): string | undefined {
+  if (!scope.first || !scope.last) return undefined;
+  const min = (Date.parse(scope.last) - Date.parse(scope.first)) / 60_000;
+  if (min < 1) return 'under a minute';
+  if (min < 60) return `${Math.round(min)} min`;
+  if (min < 48 * 60) return `${Math.floor(min / 60)} h${Math.round(min % 60) ? ` ${Math.round(min % 60)} min` : ''}`;
+  return `${Math.round(min / 1440)} days`;
+}
+
+const list = (xs: string[], max = 5) => `${xs.slice(0, max).join(', ')}${xs.length > max ? `, and ${xs.length - max} more` : ''}`;
+
+/** "40 min, 312 requests, hosts: a, b, c": what a file covered, in words. */
+export function scopeFacts(scope: Scope): string {
+  const n = scope.requests;
+  const what = scope.kind === 'openapi' ? `${n} operation${n === 1 ? '' : 's'}` : `${n} request${n === 1 ? '' : 's'}`;
+  return [duration(scope), what, ...(scope.hosts.length ? [`host${scope.hosts.length === 1 ? '' : 's'}: ${list(scope.hosts)}`] : [])].filter(Boolean).join(', ');
+}
+
+/**
+ * Where something was not seen, and how much that covers: "Not seen in 1 HAR capture, session.har
+ * (40 min, 312 requests, hosts: a, b, c). That doesn't mean it's unused." Absence in a capture is
+ * never evidence that nobody uses a route.
+ */
+export function notSeenIn(scopes: Scope[]): string {
+  const kinds = new Set(scopes.map((s) => s.kind));
+  const where = scopes.length === 1
+    ? `1 ${NOUN[scopes[0].kind][0]}, ${scopes[0].file} (${scopeFacts(scopes[0])})`
+    : `${scopes.length} ${kinds.size === 1 ? `${NOUN[scopes[0].kind][0]}s` : 'captures'}: ${scopes.map((s) => `${s.file} (${kinds.size === 1 ? '' : `${NOUN[s.kind][1]}, `}${scopeFacts(s)})`).join(' and ')}`;
+  return `Not seen in ${where}. That doesn't mean it's unused.`;
 }
 
 /** Reads one evidence file, telling the format by its shape. */

@@ -17,6 +17,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0011](0011-explain-what-oodle-cannot-run.md) | A project with no app explains a system Oodle can't run | Proposed |
 | [0012](0012-changes-merge-intent-before-code.md) | Changes: the intent merges before the code | Proposed |
 | [0013](0013-terms.md) | Terms: one meaning per word | Proposed |
+| [0014](0014-evidence-grades.md) | Evidence is graded observed or inferred, and coverage is not absence | Proposed |
 
 ## When to write one
 

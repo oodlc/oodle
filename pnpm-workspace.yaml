@@ -15,3 +15,4 @@ minimumReleaseAgeExclude:
   - "@biomejs/cli-win32-x64@2.6.3"
 allowBuilds:
   esbuild: true
+  workerd: true

@@ -3,3 +3,4 @@ dist/
 .oodle/
 .wrangler/
 *.tsbuildinfo
+.claude/worktrees/

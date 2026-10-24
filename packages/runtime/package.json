@@ -17,5 +17,11 @@
     "build": "tsup && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "hono": "^4.13.13"
+  },
+  "peerDependencies": {
+    "hono": "^4.13.13"
   }
 }

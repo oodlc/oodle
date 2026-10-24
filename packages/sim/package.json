@@ -17,5 +17,13 @@
     "build": "tsup && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oodle/runtime": "workspace:*",
+    "@oodle/spec": "workspace:*",
+    "esbuild": "^0.28.2",
+    "hono": "4.13.13",
+    "miniflare": "4.20260730.0",
+    "parse5": "^8.0.1"
   }
 }

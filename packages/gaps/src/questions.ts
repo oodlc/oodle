@@ -192,7 +192,7 @@ Kind of difference: ${sig.pattern}
 Build A: ${e.a.summary}: ${e.a.sample.map((s) => `"${s}"`).join(', ')}
 Build B: ${e.b.summary}: ${e.b.sample.map((s) => `"${s}"`).join(', ')}
 
-Write the question, describe each side in plain words, and give option "a" (what A does) and option "b" (what B does), each with what it becomes in the spec. For a permission or a domain rule, "becomes" is a constraint, a rule ({entity, text}) or a persona's cannot ({persona, text}); otherwise it is a decision, phrased so a non-engineer can agree or disagree with it (for example "Walks are listed by starts_at, soonest first").`,
+Write the question, describe each side in plain words, and give option "a" (what A does) and option "b" (what B does), each with what it becomes in the spec. For a permission or a domain rule, "becomes" is a constraint, a rule ({entity, text}) or a persona's cannot ({persona, text}, where text is what they can't do, as it would read after "cannot": "cancel another owner's walks"); otherwise it is a decision, phrased so a non-engineer can agree or disagree with it (for example "Walks are listed by starts_at, soonest first"). Never mention routes, status codes or code.`,
       schema: Worded,
     });
     const options: Option[] = worded.options.map((o) => ({ id: o.id, label: o.label, becomes: o.becomes }));

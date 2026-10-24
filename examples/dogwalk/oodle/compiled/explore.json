@@ -1,0 +1,2111 @@
+{
+  "hash": "6a77f0035293d6c227663a17bc1c492a12ddd0df1b85cf25e2e67c292ba9c5ef",
+  "cap": 200,
+  "planned": {
+    "collections": 4,
+    "permissions": 15,
+    "states": 9,
+    "rules": 3,
+    "fields": 9
+  },
+  "scenarios": [
+    {
+      "id": "explore/collections/walks-0",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "look": {
+            "screen": "walks"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "look": {
+            "screen": "walks"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/collections/walks-1",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "look": {
+            "screen": "walks"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "look": {
+            "screen": "walks"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/collections/walks-7",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-07T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-05T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-10T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-08T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-06T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "look": {
+            "screen": "walks"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "look": {
+            "screen": "walks"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/collections/walks-60",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-09T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-14T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-19T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-24T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-12-29T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "look": {
+            "screen": "walks"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "look": {
+            "screen": "walks"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.book_walk/walker:sam",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "walker:sam",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.book_walk/owner:bea",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:bea",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.book_walk/walker:cal",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "walker:cal",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.cancel_walk/owner:ada",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.cancel_walk/walker:sam",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.cancel_walk/owner:bea",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:bea",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/owner.cancel_walk/walker:cal",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:cal",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.accept_walk/owner:ada",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.accept_walk/walker:sam",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.accept_walk/owner:bea",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:bea",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.accept_walk/walker:cal",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:cal",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.decline_walk/owner:ada",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.decline_walk/walker:sam",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.decline_walk/owner:bea",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:bea",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/permissions/walker.decline_walk/walker:cal",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:cal",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/owner.cancel_walk-then-owner.cancel_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/owner.cancel_walk-then-walker.accept_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/owner.cancel_walk-then-walker.decline_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/walker.accept_walk-then-owner.cancel_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/walker.accept_walk-then-walker.accept_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/walker.accept_walk-then-walker.decline_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/walker.decline_walk-then-owner.cancel_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/walker.decline_walk-then-walker.accept_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.accept_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/states/walker.decline_walk-then-walker.decline_walk",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/rules/walk-1-inside",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "at": "2026-11-03T06:59:00Z",
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/rules/walk-1-at",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "at": "2026-11-03T07:00:00Z",
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/rules/walk-1-outside",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "at": "2026-11-03T07:01:00Z",
+          "as": "owner:ada",
+          "do": "owner.cancel_walk",
+          "input": {
+            "walk": "$walk_1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-starts_at-empty",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "",
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-starts_at-past",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-01T08:00:00Z",
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-starts_at-wrong-type",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": 12345,
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-minutes-empty",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-minutes-min",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-minutes-max",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 60
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-minutes-below",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 29
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-minutes-above",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 61
+          }
+        }
+      ]
+    },
+    {
+      "id": "explore/fields/walk-minutes-wrong-type",
+      "start": "2026-11-02T08:00:00Z",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "owner:bea": {
+          "name": "Bea",
+          "address": "17 Elm St"
+        },
+        "walker:cal": {
+          "name": "Cal"
+        }
+      },
+      "steps": [
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": "abc"
+          }
+        }
+      ]
+    }
+  ]
+}

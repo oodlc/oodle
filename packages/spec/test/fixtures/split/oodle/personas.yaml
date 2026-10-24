@@ -1,0 +1,5 @@
+# Who uses the app, and what each may do. Each capability becomes an action the simulation can drive.
+owner:
+  can: [book walks, cancel their own walks, rate a walker]
+walker:
+  can: [set availability, accept or decline walks, see their earnings]

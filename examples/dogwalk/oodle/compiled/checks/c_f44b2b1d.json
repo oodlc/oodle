@@ -1,0 +1,18 @@
+{
+  "for": {
+    "constraint": "No one sees another owner's address"
+  },
+  "text": "No one sees another owner's address",
+  "hash": "606ab53fecbbaffdc7711af9a22ba38f02c49dcbea51266ff4ce38bd5d42f411",
+  "by": "recorded",
+  "check": {
+    "kind": "never_shows_field",
+    "field": "address",
+    "viewers": [
+      "owner"
+    ],
+    "owners": [
+      "owner"
+    ]
+  }
+}

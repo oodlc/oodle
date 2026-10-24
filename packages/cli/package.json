@@ -1,0 +1,39 @@
+{
+  "name": "oodle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The oodle CLI",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@oodle/compile": "workspace:*",
+    "@oodle/diff": "workspace:*",
+    "@oodle/gaps": "workspace:*",
+    "@oodle/generator": "workspace:*",
+    "@oodle/sim": "workspace:*",
+    "@oodle/spec": "workspace:*",
+    "@oodle/sync": "workspace:*",
+    "@oodle/template": "workspace:*",
+    "@oodle/verify": "workspace:*",
+    "commander": "15.0.0",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "bin": {
+    "oodle": "./dist/bin.js"
+  }
+}

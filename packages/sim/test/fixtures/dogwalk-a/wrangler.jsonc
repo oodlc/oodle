@@ -1,0 +1,7 @@
+{
+  "name": "dogwalk-a",
+  "main": "src/index.tsx",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [{ "binding": "DB", "database_name": "dogwalk-a", "database_id": "local", "migrations_dir": "migrations" }],
+  "vars": { "OODLE_MODE": "prod" }
+}

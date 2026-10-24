@@ -1,0 +1,40 @@
+{
+  "for": {
+    "decision": "d_79650f7d"
+  },
+  "text": "Prices are shown in the owner's currency, two decimals",
+  "hash": "db27475136a254424aac21e80567d43f4c4a31e00a3798cc0138bd926a90ad6f",
+  "by": "recorded",
+  "check": {
+    "kind": "scenario",
+    "scenario": {
+      "id": "check/d_79650f7d",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        }
+      },
+      "steps": [
+        {
+          "at": "2026-11-02T08:00:00Z",
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          },
+          "expect": {
+            "screen_contains": [
+              "$20.00"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

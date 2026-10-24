@@ -1,0 +1,32 @@
+{
+  "name": "@oodle/inbox",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The remote inbox: a Cloudflare Worker serving the sync API, the UI API and the web app",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && pnpm run typecheck",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.web.json && tsc -p tsconfig.test.json && tsc -p tsconfig.node.json",
+    "dev": "vite build && wrangler dev",
+    "dev:web": "vite",
+    "deploy": "vite build && wrangler d1 migrations apply oodle-inbox --remote && wrangler deploy",
+    "seed:dev": "node scripts/seed.ts --local --demo"
+  },
+  "dependencies": {
+    "hono": "4.13.13",
+    "jose": "6.2.13",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.7",
+    "@cloudflare/workers-types": "5.20261022.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5",
+    "wrangler": "4.152.0"
+  }
+}

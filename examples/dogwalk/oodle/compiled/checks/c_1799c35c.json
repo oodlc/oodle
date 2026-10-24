@@ -1,0 +1,15 @@
+{
+  "for": {
+    "constraint": "An owner is never charged for a walk that didn't happen"
+  },
+  "text": "An owner is never charged for a walk that didn't happen",
+  "hash": "bbc23708a14edb544e7af108f470747661bd5709dab532ea16b53b51496f2311",
+  "by": "recorded",
+  "check": {
+    "kind": "never_matches",
+    "pattern": "(declined|cancelled)[^\\n]*charged \\$",
+    "viewers": [
+      "owner"
+    ]
+  }
+}

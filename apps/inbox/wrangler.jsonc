@@ -1,0 +1,31 @@
+// The inbox Worker. Production config: DEV_AUTH must never appear here (test/config.test.ts checks).
+// The local identity override goes in .dev.vars (see .dev.vars.example).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "oodle-inbox",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-15",
+  "assets": {
+    "directory": "./dist/web",
+    "binding": "ASSETS",
+    // Existing files are served directly. Unknown /app/* paths fall through to the Worker,
+    // which answers with the app's index (single-page app routing).
+    "not_found_handling": "none",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "oodle-inbox",
+      // Replace with the id `wrangler d1 create oodle-inbox` prints.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    // Your Zero Trust team domain and the Access application's audience (AUD) tag.
+    "ACCESS_TEAM_DOMAIN": "your-team.cloudflareaccess.com",
+    "ACCESS_AUD": "replace-with-access-aud-tag"
+  },
+  "observability": { "enabled": true }
+}

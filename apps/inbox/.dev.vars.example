@@ -1,0 +1,3 @@
+# Copy to .dev.vars for `wrangler dev`. Never put DEV_AUTH in wrangler.jsonc.
+DEV_AUTH=1
+DEV_EMAIL=you@example.com

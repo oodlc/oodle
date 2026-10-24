@@ -1,0 +1,88 @@
+{
+  "hash": "92510abefe804c5714611f6e3f82dc374ca86d2bba90ccf0ffd0ed3dac2938a5",
+  "actions": [
+    {
+      "id": "owner.book_walk",
+      "persona": "owner",
+      "capability": "book walks",
+      "verb": "book",
+      "entity": "walk",
+      "creates": true,
+      "inputs": [
+        "minutes",
+        "starts_at",
+        "walker"
+      ]
+    },
+    {
+      "id": "owner.cancel_walk",
+      "persona": "owner",
+      "capability": "cancel their own walks",
+      "verb": "cancel",
+      "entity": "walk",
+      "inputs": [
+        "walk"
+      ]
+    },
+    {
+      "id": "owner.rate_walker",
+      "persona": "owner",
+      "capability": "rate a walker",
+      "verb": "rate",
+      "inputs": []
+    },
+    {
+      "id": "walker.set_availability",
+      "persona": "walker",
+      "capability": "set availability",
+      "verb": "set",
+      "inputs": []
+    },
+    {
+      "id": "walker.accept_walk",
+      "persona": "walker",
+      "capability": "accept or decline walks",
+      "verb": "accept",
+      "entity": "walk",
+      "inputs": [
+        "walk"
+      ]
+    },
+    {
+      "id": "walker.decline_walk",
+      "persona": "walker",
+      "capability": "accept or decline walks",
+      "verb": "decline",
+      "entity": "walk",
+      "inputs": [
+        "walk"
+      ]
+    },
+    {
+      "id": "walker.see_earnings",
+      "persona": "walker",
+      "capability": "see their earnings",
+      "verb": "see",
+      "inputs": []
+    }
+  ],
+  "screens": [
+    {
+      "name": "home",
+      "params": [],
+      "shows": "the first screen a signed-in persona sees"
+    },
+    {
+      "name": "walks",
+      "params": [],
+      "shows": "the list of walks the signed-in persona can see"
+    },
+    {
+      "name": "walk",
+      "params": [
+        "walk"
+      ],
+      "shows": "one walk, by id"
+    }
+  ]
+}

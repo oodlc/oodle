@@ -1,0 +1,72 @@
+{
+  "for": {
+    "decision": "d_4f435b65"
+  },
+  "text": "Walks are listed by starts_at, soonest first",
+  "hash": "15da1d101a47fdb96bef0d26153937fcebcd529114d24da99e1bf1e5419fb264",
+  "by": "recorded",
+  "check": {
+    "kind": "scenario",
+    "scenario": {
+      "id": "check/d_4f435b65",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        },
+        "walker:tom": {
+          "name": "Tom"
+        },
+        "walker:uma": {
+          "name": "Uma"
+        }
+      },
+      "steps": [
+        {
+          "at": "2026-11-02T08:00:00Z",
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:uma",
+            "starts_at": "2026-11-05T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:tom",
+            "starts_at": "2026-11-04T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "owner:ada",
+          "look": {
+            "screen": "walks"
+          },
+          "expect": {
+            "screen_order": [
+              "Sam",
+              "Tom",
+              "Uma"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

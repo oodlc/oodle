@@ -1,0 +1,22 @@
+{
+  "name": "@oodle/template",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Hono + D1 app skeleton the generator starts from",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "files",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}

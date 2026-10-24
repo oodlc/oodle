@@ -1,0 +1,5 @@
+persona: owner
+steps:
+  - 'Ada opens the app, picks Sam for Tuesday 9:00, 30 minutes: she sees "Requested, $20"'
+  - 'Sam accepts: Ada sees "Accepted" and gets an email'
+  - 'Ada cancels on Monday at 18:00: she sees "Cancelled, no charge"'

@@ -16,6 +16,12 @@
         },
         "walker:sam": {
           "name": "Sam"
+        },
+        "walker:tom": {
+          "name": "Tom"
+        },
+        "walker:uma": {
+          "name": "Uma"
         }
       },
       "steps": [
@@ -24,7 +30,7 @@
           "as": "owner:ada",
           "do": "owner.book_walk",
           "input": {
-            "walker": "walker:sam",
+            "walker": "walker:uma",
             "starts_at": "2026-11-05T09:00:00Z",
             "minutes": 30
           }
@@ -42,7 +48,7 @@
           "as": "owner:ada",
           "do": "owner.book_walk",
           "input": {
-            "walker": "walker:sam",
+            "walker": "walker:tom",
             "starts_at": "2026-11-04T09:00:00Z",
             "minutes": 30
           }
@@ -54,9 +60,9 @@
           },
           "expect": {
             "screen_order": [
-              "Tue 3 Nov",
-              "Wed 4 Nov",
-              "Thu 5 Nov"
+              "Sam",
+              "Tom",
+              "Uma"
             ]
           }
         }

@@ -48,6 +48,7 @@ export function program(): Command {
     .description('check a build (an id, or a folder) against the spec')
     .option('--no-explore', 'run journeys and checks only, not the exploration plan')
     .option('--no-typecheck', "skip the build's own typecheck")
+    .option('--no-compile', 'use oodle/compiled as it is, and fail if it is stale, instead of compiling')
     .action(async (build, o) => run(() => verifyCommand(context(g()), build, o)));
 
   p.command('gaps')

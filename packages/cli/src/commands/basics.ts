@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { compile, readCompiled } from '@oodle/compile';
+import { type Compiled, compile, readCompiled } from '@oodle/compile';
 import { loadSpec, SPEC_DIR, specHash } from '@oodle/spec';
 import { summarize, type VerifyReport, verify } from '@oodle/verify';
 import { resolveBuild } from '../builds.ts';
@@ -101,9 +101,19 @@ export async function compiled(ctx: Ctx) {
   return readCompiled(ctx.root);
 }
 
-export async function verifyCommand(ctx: Ctx, buildArg: string | undefined, opts: { explore?: boolean; typecheck?: boolean }): Promise<number> {
+export async function verifyCommand(
+  ctx: Ctx,
+  buildArg: string | undefined,
+  opts: { explore?: boolean; typecheck?: boolean; compile?: boolean },
+): Promise<number> {
   const build = resolveBuild(ctx, buildArg);
-  const c = await compiled(ctx);
+  let c: Compiled;
+  if (opts.compile === false) {
+    // As committed: never compile (a build checking itself must not change its spec copy).
+    const stale = (await compile(ctx.root, { check: true })).stale;
+    if (stale.length) throw new CliError(`oodle/compiled is out of date (${stale.join('; ')}); run \`oodle compile\` first.`);
+    c = readCompiled(ctx.root);
+  } else c = await compiled(ctx);
   const report = await verify(build.dir, c, { explore: opts.explore, typecheck: opts.typecheck, intents: await intentChecks(ctx, build.dir) });
   saveReport(ctx, build, report);
   ctx.print(summarize(report));

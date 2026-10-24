@@ -6,9 +6,11 @@
 import { scriptedModel } from '../src/index.ts';
 
 const fixtures = { 'owner:ada': { name: 'Ada', address: '1 Elm St' }, 'walker:sam': { name: 'Sam' } };
+/** Three walkers, so walks can be told apart without depending on how a build writes dates. */
+const walkers = { ...fixtures, 'walker:tom': { name: 'Tom' }, 'walker:uma': { name: 'Uma' } };
 /** The item being compiled: the prompt's last section, after the spec it shows for context. */
 const subject = (prompt: string) => prompt.slice(prompt.lastIndexOf('## The '));
-const book = (starts_at: string) => ({ as: 'owner:ada', do: 'owner.book_walk', input: { walker: 'walker:sam', starts_at, minutes: 30 } });
+const book = (starts_at: string, walker = 'walker:sam') => ({ as: 'owner:ada', do: 'owner.book_walk', input: { walker, starts_at, minutes: 30 } });
 
 export const DOGWALK_ANSWERS = {
   'classify constraint': (ask: { prompt: string }) => ({
@@ -60,12 +62,12 @@ export const DOGWALK_ANSWERS = {
           kind: 'scenario',
           scenario: {
             id,
-            fixtures,
+            fixtures: walkers,
             steps: [
-              { at: '2026-11-02T08:00:00Z', ...book('2026-11-05T09:00:00Z') },
-              book('2026-11-03T09:00:00Z'),
-              book('2026-11-04T09:00:00Z'),
-              { as: 'owner:ada', look: { screen: 'walks' }, expect: { screen_order: ['Tue 3 Nov', 'Wed 4 Nov', 'Thu 5 Nov'] } },
+              { at: '2026-11-02T08:00:00Z', ...book('2026-11-05T09:00:00Z', 'walker:uma') },
+              book('2026-11-03T09:00:00Z', 'walker:sam'),
+              book('2026-11-04T09:00:00Z', 'walker:tom'),
+              { as: 'owner:ada', look: { screen: 'walks' }, expect: { screen_order: ['Sam', 'Tom', 'Uma'] } },
             ],
           },
         },

@@ -63,7 +63,8 @@ const SCENARIO_RULES = `## How a scenario is written
 - Times are ISO 8601 in UTC. Set "at" on the first step, and on any later step the prose times. Pick concrete dates whose weekdays match the prose.
 - A step observes the screen its action lands on. To observe something else, or as someone else, add "look": { "as": fixture, "screen": a screen name, "params": { param: value } }.
 - "expect" holds what the prose says the user sees: quoted texts go in screen_contains, exactly as quoted; "gets an email" is mail_to; "is refused" or "can't" is outcome "blocked"; "in this order" is screen_order.
-- Never invent expectations the prose doesn't state.`;
+- Never invent expectations the prose doesn't state.
+- Expect only what the spec or the fixtures fix: names, quoted texts, numbers. Never a format the spec leaves open (how a date or a time is written, punctuation, capitalisation): two good builds may differ there, and that is for the gaps check, not a failure. To check an order, give the records something fixed that tells them apart, like different people.`;
 
 const System = `You compile parts of an app's spec into scenarios for Oodle's simulation. You answer with JSON only, matching the schema you are given exactly.`;
 

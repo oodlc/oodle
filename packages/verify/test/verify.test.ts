@@ -81,7 +81,7 @@ describe('oodle verify', () => {
     expect(report.passed).toBe(false);
     const moved = report.findings.filter((f) => f.stage === 'decision');
     expect(moved.map((f) => f.subject)).toEqual(['Walks are listed by starts_at, soonest first']);
-    expect(moved[0]?.message).toMatch(/expected "Tue 3 Nov" before "Wed 4 Nov" before "Thu 5 Nov"/);
+    expect(moved[0]?.message).toMatch(/expected "Sam" before "Tom" before "Uma"/);
   });
 
   it('blocks a build whose driver misses part of the vocabulary', async () => {

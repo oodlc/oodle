@@ -162,7 +162,7 @@ function prepare(root: string, app: string, spec: Spec, opts: BuildOptions) {
     recursive: true,
     filter: (src) => {
       const rel = relative(join(root, SPEC_DIR), src);
-      return !rel.startsWith('gaps') && !rel.startsWith('intents') && rel !== 'compiled/checks' && !rel.startsWith('compiled/checks/');
+      return !rel.startsWith('gaps') && !rel.startsWith('intents');
     },
   });
   writeFileSync(join(specCopy, 'decisions.proposed.yaml'), '# Decisions you made where the spec is silent. See AGENTS.md.\n');
@@ -170,7 +170,11 @@ function prepare(root: string, app: string, spec: Spec, opts: BuildOptions) {
 
   const pkg = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'));
   pkg.dependencies['@oodle/runtime'] = `link:${packageDir('@oodle/runtime')}`;
-  pkg.scripts = { ...pkg.scripts, typecheck: 'tsc --noEmit', check: `node ${join(packageDir('oodle'), 'dist', 'bin.js')} --root . verify . --no-typecheck` };
+  pkg.scripts = {
+    ...pkg.scripts,
+    typecheck: 'tsc --noEmit',
+    check: `node ${join(packageDir('oodle'), 'dist', 'bin.js')} --root . verify . --no-typecheck --no-compile`,
+  };
   pkg.devDependencies = { '@cloudflare/workers-types': '5.20261022.1', typescript: '5.9.3' };
   writeFileSync(join(app, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
   writeFileSync(join(app, 'pnpm-workspace.yaml'), 'packages: []\n');

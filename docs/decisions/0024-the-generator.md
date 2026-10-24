@@ -28,6 +28,7 @@
 5. **Dependencies are installed by Oodle, not the agent,** before the run. `@oodle/runtime` is linked from this Oodle; `hono` is the template's pinned version.
 6. **Proposed decisions are sorted cheaply first.** The same id or text, or ≥ 0.85 word overlap about the same things, is a duplicate. Below 0.3 overlap, the proposal is new. Between those, a model judges same, contradicts or different. A proposal that contradicts a pinned decision becomes a `decision_moved` gap for a person and fails the build. New decisions join `decisions.yaml` only after the build passes verify, with `created_by_build`.
 7. **The gaps check needs two builds that pass verify.** A build that breaks the spec would show up as differences that aren't gaps.
+8. **In a gaps run, neither build changes the spec.** Build A's decisions would otherwise be pinned before build B runs, and B would build from a different spec. This happened on the first real run: build B flagged two of A's fresh decisions as moved. After the diff, the decisions both builds proposed independently (judged the same, as above) join the spec in A's words. The others stay out; where they matter, they showed up as gaps.
 
 ## Consequences
 

@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import { readCompiled, type Vocabulary } from '@oodle/compile';
 import { cluster, diffRuns } from '@oodle/diff';
 import { type Answer, agentAnswer, type Gap, raiseGaps, readGaps, writeGap } from '@oodle/gaps';
-import { type BuildResult, build, claudeAgent, saveManifest } from '@oodle/generator';
+import { type BuildResult, build, claudeAgent, type Manifest, saveManifest, sortProposals } from '@oodle/generator';
 import type { Scenario, ScenarioResult } from '@oodle/sim';
 import { type Decision, loadSpec, sha256, specHash, writeDecisions } from '@oodle/spec';
 import { AnswerRefused, applyAnswer, commit, noteSuperseded, recordApplied, uncommittedSpec, userEmail } from '@oodle/sync';
@@ -43,7 +43,14 @@ export interface BuiltAndVerified {
 }
 
 /** One build, verified; new decisions join the spec only if it passes. A moved decision becomes a gap and blocks. */
-export async function buildAndVerify(ctx: Ctx, opts: { seed: number; from?: string; force?: boolean; recordLatest?: boolean }): Promise<BuiltAndVerified> {
+/**
+ * `adopt: false` keeps a passing build's new decisions out of the spec: the gaps check builds twice
+ * from the same spec, so neither build may change it before the other has run.
+ */
+export async function buildAndVerify(
+  ctx: Ctx,
+  opts: { seed: number; from?: string; force?: boolean; recordLatest?: boolean; adopt?: boolean },
+): Promise<BuiltAndVerified> {
   const c = await ensureCompiled(ctx);
   const vocab = c.vocabulary as Vocabulary;
   ctx.print(`Building (seed ${opts.seed})…`);
@@ -76,7 +83,7 @@ export async function buildAndVerify(ctx: Ctx, opts: { seed: number; from?: stri
   if (!report.passed) return { build: result, report, added: [], ok: false };
 
   const fresh = m.proposedDecisions.fresh;
-  if (fresh.length) {
+  if (fresh.length && opts.adopt !== false) {
     const loaded = loadSpec(ctx.root);
     const known = new Set(loaded.spec.decisions.map((d) => d.id));
     const add = fresh.filter((d) => !known.has(d.id));
@@ -134,6 +141,7 @@ export async function gapsCommand(ctx: Ctx, opts: { journeysOnly?: boolean; scop
   const scenarios = [...c.journeys.map((j) => j.scenario), ...(opts.journeysOnly ? [] : (c.explore?.scenarios ?? []))] as Scenario[];
 
   let sides: { label: string; results: ScenarioResult[] }[];
+  const manifests: Manifest[] = [];
   if (opts.a && opts.b) {
     sides = [];
     for (const dir of [opts.a, opts.b]) {
@@ -143,7 +151,8 @@ export async function gapsCommand(ctx: Ctx, opts: { journeysOnly?: boolean; scop
   } else {
     sides = [];
     for (const seed of [1, 2]) {
-      const r = await buildAndVerify(ctx, { seed, recordLatest: seed === 1 });
+      const r = await buildAndVerify(ctx, { seed, recordLatest: seed === 1, adopt: false });
+      manifests.push(r.build.manifest);
       if (r.build.manifest.status !== 'built')
         throw new CliError(`Build ${r.build.buildId} didn't build (${r.build.manifest.status}); fix that before looking for gaps.`);
       // A build that breaks the spec would show up as differences; gaps are about what the spec leaves open.
@@ -189,6 +198,8 @@ export async function gapsCommand(ctx: Ctx, opts: { journeysOnly?: boolean; scop
     intentId,
   });
   noteSuperseded(ctx.root, raised.superseded);
+  const adopted = await adoptAgreed(ctx, manifests);
+  if (adopted.length) ctx.print(`Both builds made ${adopted.length} of the same decision${adopted.length === 1 ? '' : 's'}; added to oodle/decisions.yaml.`);
   const open = readGaps(ctx.root).filter((g) => g.status === 'open' && (intentId ? g.intent_id === intentId : true));
   const state = statePath(ctx);
   if (!open.length) {
@@ -202,6 +213,27 @@ export async function gapsCommand(ctx: Ctx, opts: { journeysOnly?: boolean; scop
   for (const g of open) ctx.print(`  ${g.id} [${g.kind}, ${g.tier}, ${g.route}] ${g.question}`);
   ctx.print(open.some((g) => g.route === 'agent') ? 'Settle the agent-routed ones with `oodle answer --auto`.' : '');
   return done(ctx, { agree: false, open: open.map(brief), settled: raised.settled.map((g) => g.id), superseded: raised.superseded }, EXIT.failed);
+}
+
+/**
+ * Decisions both builds proposed on their own are what the spec implies, not gaps: they join the
+ * spec, in build A's words. The rest stay out; where they matter, they showed up as gaps.
+ */
+async function adoptAgreed(ctx: Ctx, manifests: Manifest[]): Promise<string[]> {
+  const [a, b] = manifests;
+  if (!a || !b) return [];
+  const sorted = await sortProposals(
+    b.proposedDecisions.fresh.map((d) => ({ text: d.text, about: d.about })),
+    a.proposedDecisions.fresh,
+    { buildId: b.buildId, model: ctx.model() },
+  );
+  const loaded = loadSpec(ctx.root);
+  const known = new Set(loaded.spec.decisions.map((d) => d.id));
+  const agreed = [...new Set(sorted.duplicates.map((d) => d.of))]
+    .map((id) => a.proposedDecisions.fresh.find((d) => d.id === id))
+    .filter((d): d is Decision => !!d && !known.has(d.id));
+  if (agreed.length) writeDecisions(loaded, [...loaded.spec.decisions, ...agreed]);
+  return agreed.map((d) => d.text);
 }
 
 const statePath = (ctx: Ctx) => ctx.work('gaps-state.json');

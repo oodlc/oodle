@@ -11,15 +11,15 @@
  *   cheaper.
  */
 import { OUTBOX_HEADER, type Session } from '@oodle/runtime';
+import { Miniflare, supportedCompatibilityDate } from 'miniflare';
+import { type LoadedBuild, statements } from './bundle.ts';
+import type { Fixture, Observation, Scenario, ScenarioResult, Step } from './scenario.ts';
+import { viewOf } from './view.ts';
 
 interface Outbox {
   mail: Observation['mail'];
   outbound: { url: string; method: string }[];
 }
-import { Miniflare, supportedCompatibilityDate } from 'miniflare';
-import { type LoadedBuild, statements } from './bundle.ts';
-import type { Fixture, Observation, Scenario, ScenarioResult, Step } from './scenario.ts';
-import { viewOf } from './view.ts';
 
 const ORIGIN = 'http://app.oodle.test';
 export const DEFAULT_START = '2026-11-02T08:00:00.000Z';
@@ -70,7 +70,9 @@ export class Instance {
   private async request(path: string, init: RequestInit = {}, cookies?: Map<string, string>): Promise<Response> {
     const headers = new Headers(init.headers);
     if (cookies?.size) headers.set('cookie', [...cookies].map(([k, v]) => `${k}=${v}`).join('; '));
-    const res = await retryConnect(() => this.mf.dispatchFetch(new URL(path, ORIGIN).href, { ...init, headers, redirect: 'manual' } as never) as unknown as Promise<Response>);
+    const res = await retryConnect(
+      () => this.mf.dispatchFetch(new URL(path, ORIGIN).href, { ...init, headers, redirect: 'manual' } as never) as unknown as Promise<Response>,
+    );
     const outbox = res.headers.get(OUTBOX_HEADER);
     if (outbox) {
       const o = JSON.parse(decodeURIComponent(outbox)) as Outbox;

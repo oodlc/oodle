@@ -199,7 +199,10 @@ export const OUTBOX_HEADER = 'x-oodle-outbox';
 async function seedUsers(db: D1Like, users: User[]) {
   await db.prepare(USERS_SQL).bind().run();
   for (const u of users) {
-    await db.prepare('INSERT INTO users (id, persona, name, email, data) VALUES (?, ?, ?, ?, ?)').bind(u.id, u.persona, u.name, u.email, JSON.stringify(u.data ?? {})).run();
+    await db
+      .prepare('INSERT INTO users (id, persona, name, email, data) VALUES (?, ?, ?, ?, ?)')
+      .bind(u.id, u.persona, u.name, u.email, JSON.stringify(u.data ?? {}))
+      .run();
   }
 }
 
@@ -212,7 +215,9 @@ async function control(c: Context<OodleEnv>, what: string) {
         const db = c.env.DB;
         // Newest first, so a table is dropped before the tables its foreign keys point at.
         const { results } = await db
-          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY rowid DESC")
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY rowid DESC",
+          )
           .bind()
           .all<{ name: string }>();
         for (const t of results) await db.prepare(`DROP TABLE IF EXISTS "${t.name}"`).bind().run();

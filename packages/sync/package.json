@@ -17,5 +17,9 @@
     "build": "tsup && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oodle/gaps": "workspace:*",
+    "@oodle/spec": "workspace:*"
   }
 }

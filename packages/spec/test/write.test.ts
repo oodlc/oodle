@@ -1,7 +1,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { type Decision, loadSpec, specHash, writeConstraints, writeDecisions } from '../src/index.ts';
+import { appendToList, type Decision, loadSpec, specHash, writeConstraints, writeDecisions } from '../src/index.ts';
 import { copyProject, DOGWALK, edit, README_EXAMPLE, read } from './helpers.ts';
 
 describe('writeDecisions', () => {
@@ -100,5 +100,49 @@ describe('writeConstraints', () => {
     expect(after).toContain('- text: Booking answers within 300 ms at p95 in production # checked in production, reported only\n  check: production\n');
     expect(after.split('\n')[0]).toBe(before.split('\n')[0]);
     expect(loadSpec(root).spec.constraints.find((c) => c.check)?.check).toBe('production');
+  });
+});
+
+describe('appendToList', () => {
+  it('adds a domain rule under the last one, with a comment, touching nothing else', () => {
+    const root = copyProject(DOGWALK);
+    const before = read(root, 'domain.yaml');
+    appendToList(
+      loadSpec(root),
+      'domain',
+      ['walk', 'rules'],
+      'An owner can cancel only their own walks',
+      'from g_1234abcd, answered by person:ada@example.com',
+    );
+    const after = read(root, 'domain.yaml');
+    expect(after).toBe(`${before}    # from g_1234abcd, answered by person:ada@example.com\n    - An owner can cancel only their own walks\n`);
+    expect(loadSpec(root).spec.domain.walk?.rules).toHaveLength(3);
+  });
+
+  it("adds to a persona's flow-style list, or starts one", () => {
+    const root = copyProject(README_EXAMPLE);
+    appendToList(loadSpec(root), 'personas', ['owner', 'cannot'], "cancel another owner's walks");
+    expect(read(root, 'spec.yaml')).toContain(
+      `  owner:  { can: [book walks, cancel their own walks, rate a walker], cannot: [cancel another owner's walks] }\n`,
+    );
+    appendToList(loadSpec(root), 'personas', ['owner', 'cannot'], 'see walker earnings');
+    expect(loadSpec(root).spec.personas.owner?.cannot).toEqual(["cancel another owner's walks", 'see walker earnings']);
+  });
+
+  it("starts a block-style list in a persona's block map", () => {
+    const root = copyProject(DOGWALK);
+    appendToList(loadSpec(root), 'personas', ['walker', 'cannot'], "see owners' addresses before accepting");
+    expect(read(root, 'personas.yaml')).toMatch(
+      /walker:\n {2}can: \[set availability, accept or decline walks, see their earnings\]\n {2}cannot:\n {4}- "?see owners' addresses before accepting"?\n$/,
+    );
+  });
+
+  it('comments a new constraint', () => {
+    const root = copyProject(DOGWALK);
+    const loaded = loadSpec(root);
+    writeConstraints(loaded, [...loaded.spec.constraints, { text: "An owner can't cancel another owner's walk" }], {
+      "An owner can't cancel another owner's walk": 'from g_1, answered by person:ada@example.com',
+    });
+    expect(read(root, 'constraints.yaml')).toMatch(/# from g_1, answered by person:ada@example.com\n- An owner can't cancel another owner's walk\n$/);
   });
 });

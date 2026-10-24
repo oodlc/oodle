@@ -28,6 +28,18 @@ export const DOGWALK_B: Edit[] = [
   { why: 'wording: the empty list says something else', file: 'src/index.tsx', from: '<p>No walks yet.</p>', to: '<p>Nothing booked yet.</p>' },
 ];
 
+/** The cancel-fee intent, implemented: after the free window, cancelling costs half the price. */
+export const CANCEL_FEE: Edit[] = [
+  {
+    why: 'late cancellations pay 50%',
+    file: 'src/index.tsx',
+    from: `  if (rt(c).now().getTime() > Date.parse(w.starts_at) - FREE_CANCEL_MS) return message(c, 409, "It's too late to cancel this walk.");
+  await db(c).prepare("UPDATE walks SET status = 'cancelled', charged_cents = 0 WHERE id = ?").bind(w.id).run();`,
+    to: `  const fee = rt(c).now().getTime() > Date.parse(w.starts_at) - FREE_CANCEL_MS ? Math.round(w.price_cents / 2) : 0;
+  await db(c).prepare("UPDATE walks SET status = 'cancelled', charged_cents = ? WHERE id = ?").bind(fee, w.id).run();`,
+  },
+];
+
 /** A copy of dogwalk-a with edits applied, in a temporary folder. */
 export function variant(edits: Edit[]): string {
   const dir = mkdtempSync(join(tmpdir(), 'oodle-fixture-'));

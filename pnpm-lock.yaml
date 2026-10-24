@@ -224,12 +224,24 @@ importers:
       '@oodle/compile':
         specifier: workspace:*
         version: link:../compile
+      '@oodle/diff':
+        specifier: workspace:*
+        version: link:../diff
+      '@oodle/gaps':
+        specifier: workspace:*
+        version: link:../gaps
+      '@oodle/generator':
+        specifier: workspace:*
+        version: link:../generator
       '@oodle/sim':
         specifier: workspace:*
         version: link:../sim
       '@oodle/spec':
         specifier: workspace:*
         version: link:../spec
+      '@oodle/sync':
+        specifier: workspace:*
+        version: link:../sync
       '@oodle/template':
         specifier: workspace:*
         version: link:../template
@@ -292,7 +304,32 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  packages/generator: {}
+  packages/generator:
+    dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: 0.3.310
+        version: 0.3.310(@anthropic-ai/sdk@1.2.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.1(supports-color@10.2.2)(zod@4.6.7))(zod@4.6.7)
+      '@oodle/compile':
+        specifier: workspace:*
+        version: link:../compile
+      '@oodle/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@oodle/spec':
+        specifier: workspace:*
+        version: link:../spec
+      '@oodle/template':
+        specifier: workspace:*
+        version: link:../template
+      '@oodle/verify':
+        specifier: workspace:*
+        version: link:../verify
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/runtime:
     devDependencies:
@@ -330,7 +367,14 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  packages/sync: {}
+  packages/sync:
+    dependencies:
+      '@oodle/gaps':
+        specifier: workspace:*
+        version: link:../gaps
+      '@oodle/spec':
+        specifier: workspace:*
+        version: link:../spec
 
   packages/template: {}
 

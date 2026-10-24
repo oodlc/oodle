@@ -10,7 +10,12 @@
  *   order. Reusing an instance after a reset is as good as a fresh one (decision 0021) and much
  *   cheaper.
  */
-import type { Session } from '@oodle/runtime';
+import { OUTBOX_HEADER, type Session } from '@oodle/runtime';
+
+interface Outbox {
+  mail: Observation['mail'];
+  outbound: { url: string; method: string }[];
+}
 import { Miniflare, supportedCompatibilityDate } from 'miniflare';
 import { type LoadedBuild, statements } from './bundle.ts';
 import type { Fixture, Observation, Scenario, ScenarioResult, Step } from './scenario.ts';
@@ -29,6 +34,8 @@ export interface SimOptions {
 /** One running instance of a build. */
 export class Instance {
   private escapes: { url: string; method: string }[] = [];
+  /** What the app captured, from response headers, since the step began. */
+  private outbox: Outbox = { mail: [], outbound: [] };
   private constructor(
     readonly build: LoadedBuild,
     private readonly mf: Miniflare,
@@ -63,7 +70,13 @@ export class Instance {
   private async request(path: string, init: RequestInit = {}, cookies?: Map<string, string>): Promise<Response> {
     const headers = new Headers(init.headers);
     if (cookies?.size) headers.set('cookie', [...cookies].map(([k, v]) => `${k}=${v}`).join('; '));
-    const res = (await this.mf.dispatchFetch(new URL(path, ORIGIN).href, { ...init, headers, redirect: 'manual' } as never)) as unknown as Response;
+    const res = await retryConnect(() => this.mf.dispatchFetch(new URL(path, ORIGIN).href, { ...init, headers, redirect: 'manual' } as never) as unknown as Promise<Response>);
+    const outbox = res.headers.get(OUTBOX_HEADER);
+    if (outbox) {
+      const o = JSON.parse(decodeURIComponent(outbox)) as Outbox;
+      this.outbox.mail.push(...o.mail);
+      this.outbox.outbound.push(...o.outbound);
+    }
     if (cookies) {
       for (const c of res.headers.getSetCookie?.() ?? []) {
         const [pair = ''] = c.split(';');
@@ -74,29 +87,12 @@ export class Instance {
     return res;
   }
 
-  /** Starts a scenario: empty database with migrations, runtime state reset, fixtures seeded. */
+  /** Starts a scenario, in one request: empty database with the build's migrations, runtime state reset, fixtures seeded. */
   private async reset(scenario: Scenario) {
-    const db = await this.mf.getD1Database(this.build.wrangler.d1_databases?.[0]?.binding ?? 'DB');
-    // Newest first, so a table is dropped before the tables its foreign keys point at.
-    const tables = await db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY rowid DESC",
-      )
-      .all<{ name: string }>();
-    for (const t of tables.results) await db.prepare(`DROP TABLE IF EXISTS "${t.name}"`).run();
-    for (const [name, sql] of this.build.migrations) {
-      for (const stmt of statements(sql)) {
-        try {
-          await db.prepare(stmt).run();
-        } catch (e) {
-          throw new Error(`migration ${name} failed: ${(e as Error).message}\n${stmt}`);
-        }
-      }
-    }
     this.escapes = [];
-    await this.expectOk('/__oodle/reset', { method: 'POST', body: JSON.stringify({ seed: this.seed, clock: scenario.start ?? DEFAULT_START }) });
+    const sql = this.build.migrations.flatMap(([, text]) => statements(text));
     const users = Object.entries(scenario.fixtures).map(([key, f]) => userOf(key, f));
-    await this.expectOk('/__oodle/users', { method: 'POST', body: JSON.stringify(users) });
+    await this.expectOk('/__oodle/reset', { method: 'POST', body: JSON.stringify({ seed: this.seed, clock: scenario.start ?? DEFAULT_START, sql, users }) });
   }
 
   private async expectOk(path: string, init: RequestInit) {
@@ -159,6 +155,7 @@ export class Instance {
     created: Map<string, string[]>,
   ): Promise<Observation> {
     if (step.at) await this.expectOk('/__oodle/clock', { method: 'POST', body: JSON.stringify({ at: step.at }) });
+    this.outbox = { mail: [], outbound: [] };
     const observer = step.look?.as ?? step.as;
     const obs: Observation = { scenario: scenario.id, step: index, as: observer, status: 0, view: viewOf(''), mail: [], outbound: [] };
     let landing: string | undefined;
@@ -202,6 +199,22 @@ export class Instance {
     obs.mail = outbox.mail;
     obs.outbound = outbox.outbound.map((o) => ({ host: new URL(o.url).host, method: o.method }));
     return obs;
+  }
+}
+
+/**
+ * Each request to workerd is a new local connection. Under heavy parallel use (many builds verified
+ * at once) the OS can run out of ephemeral ports for a moment; waiting and trying again is all it takes.
+ */
+async function retryConnect<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const code = (e as { cause?: { code?: string } }).cause?.code;
+      if (attempt >= 30 || !['EADDRNOTAVAIL', 'ECONNRESET', 'ECONNREFUSED', 'EADDRINUSE'].includes(code ?? '')) throw e;
+      await new Promise((r) => setTimeout(r, 50 + attempt * 50));
+    }
   }
 }
 

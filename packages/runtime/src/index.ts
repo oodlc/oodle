@@ -53,7 +53,9 @@ export interface OodleEnv {
 
 /** The part of D1 the runtime uses. */
 export interface D1Like {
-  prepare(sql: string): { bind(...values: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown> } };
+  prepare(sql: string): {
+    bind(...values: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<unknown>; all<T>(): Promise<{ results: T[] }> };
+  };
 }
 
 export interface Runtime {
@@ -163,11 +165,16 @@ function prodRuntime(c: Context<OodleEnv>): Runtime {
  * The runtime's middleware. In every mode it reads the persona session cookie and loads the user.
  * In the simulation only, it answers the harness's routes under `/__oodle/` (they are 404 in prod):
  *
- * - `POST /__oodle/reset {seed, clock}`: a new scenario: counters, PRNG, outbox and clock start over.
+ * - `POST /__oodle/reset {seed, clock, sql?, users?}`: a new scenario: counters, PRNG, outbox and
+ *   clock start over; with `sql`, every table is dropped and the statements (the build's
+ *   migrations) run; `users` are seeded. One request, so a scenario starts cheaply.
  * - `POST /__oodle/clock {at}`: the time the next requests see.
  * - `POST /__oodle/users [User…]`: seeds persona users.
  * - `GET /__oodle/login?user=ada`: signs in as a persona user.
  * - `POST /__oodle/outbox`: returns, and empties, the mail and outbound requests captured so far.
+ *
+ * In the simulation, every response also carries what its request captured, in the
+ * `x-oodle-outbox` header, so the harness rarely needs to ask.
  */
 export function oodle(): MiddlewareHandler<OodleEnv> {
   return async (c, next) => {
@@ -187,11 +194,37 @@ export function oodle(): MiddlewareHandler<OodleEnv> {
   };
 }
 
+export const OUTBOX_HEADER = 'x-oodle-outbox';
+
+async function seedUsers(db: D1Like, users: User[]) {
+  await db.prepare(USERS_SQL).bind().run();
+  for (const u of users) {
+    await db.prepare('INSERT INTO users (id, persona, name, email, data) VALUES (?, ?, ?, ?, ?)').bind(u.id, u.persona, u.name, u.email, JSON.stringify(u.data ?? {})).run();
+  }
+}
+
 async function control(c: Context<OodleEnv>, what: string) {
   switch (`${c.req.method} ${what}`) {
     case 'POST reset': {
-      const { seed = 0, clock = SIM_START } = await c.req.json<{ seed?: number; clock?: string }>();
+      const { seed = 0, clock = SIM_START, sql, users } = await c.req.json<{ seed?: number; clock?: string; sql?: string[]; users?: User[] }>();
       sim = fresh(seed, Date.parse(clock));
+      if (sql && c.env.DB) {
+        const db = c.env.DB;
+        // Newest first, so a table is dropped before the tables its foreign keys point at.
+        const { results } = await db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY rowid DESC")
+          .bind()
+          .all<{ name: string }>();
+        for (const t of results) await db.prepare(`DROP TABLE IF EXISTS "${t.name}"`).bind().run();
+        for (const [i, s] of sql.entries()) {
+          try {
+            await db.prepare(s).bind().run();
+          } catch (e) {
+            return c.json({ error: `statement ${i + 1} failed: ${(e as Error).message}`, statement: s }, 500);
+          }
+        }
+      }
+      if (users?.length && c.env.DB) await seedUsers(c.env.DB, users);
       return c.body(null, 204);
     }
     case 'POST clock': {
@@ -202,14 +235,8 @@ async function control(c: Context<OodleEnv>, what: string) {
       return c.body(null, 204);
     }
     case 'POST users': {
-      const users = await c.req.json<User[]>();
       if (!c.env.DB) return c.json({ error: 'no DB binding' }, 500);
-      await c.env.DB.prepare(USERS_SQL).bind().run();
-      for (const u of users) {
-        await c.env.DB.prepare('INSERT INTO users (id, persona, name, email, data) VALUES (?, ?, ?, ?, ?)')
-          .bind(u.id, u.persona, u.name, u.email, JSON.stringify(u.data ?? {}))
-          .run();
-      }
+      await seedUsers(c.env.DB, await c.req.json<User[]>());
       return c.body(null, 204);
     }
     case 'GET login': {

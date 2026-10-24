@@ -58,6 +58,8 @@ export interface IntentChecks {
   findings?: Finding[];
   /** Journeys that must exist and pass. */
   journeys?: string[];
+  /** When set, outbound requests may only go to these hosts (an intent ruled out new ones). */
+  allowedHosts?: string[];
 }
 
 export interface VerifyOptions {
@@ -112,6 +114,12 @@ export async function verify(buildDir: string, compiled: Compiled, opts: VerifyO
   const byId = new Map(results.map((r) => [r.scenario, r]));
 
   for (const r of results) for (const e of r.escapes) block('sealed', r.scenario, `${e.method} ${e.url} went around rt(c).fetch; the simulation is sealed`);
+  if (opts.intents?.allowedHosts) {
+    const allowed = new Set(opts.intents.allowedHosts);
+    const fresh = new Set(results.flatMap((r) => r.observations.flatMap((o) => o.outbound.map((x) => x.host))).filter((h) => !allowed.has(h)));
+    for (const h of fresh)
+      block('intent', 'new_outbound_hosts', `requests to ${h}, a host the last passing build didn't call, which a merged intent rules out`);
+  }
 
   for (const j of compiled.journeys) {
     const result = byId.get(j.scenario.id);
@@ -211,4 +219,19 @@ export function summarize(report: VerifyReport): string {
   );
   for (const f of report.findings) lines.push(`  ${f.blocking ? '✗' : '!'} [${f.stage}] ${f.subject}: ${f.message}`);
   return lines.join('\n');
+}
+
+/**
+ * What one observation breaks: the expectations of its own step, when the scenario is a journey or
+ * a check, and every property check. Used by the gaps check to tell a gap where one build breaks
+ * the spec (declared) from one where the spec is silent (decided).
+ */
+export function stepProblems(compiled: Compiled, scenario: Scenario, index: number, obs: Observation): string[] {
+  const out = unmet(scenario.steps[index]?.expect, obs, scenario.fixtures).filter((p) => p !== obs.error);
+  for (const c of compiled.checks) {
+    if (c.check.kind !== 'never_shows_field' && c.check.kind !== 'never_matches') continue;
+    const problems = evaluateCheck(c, new Map(), [{ o: obs, fixtures: scenario.fixtures }]);
+    for (const p of problems ?? []) out.push(`${c.text}: ${p}`);
+  }
+  return out;
 }

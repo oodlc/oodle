@@ -7,9 +7,9 @@
  *   2  wrong usage
  *   3  needs a person: the message says what, and where (the inbox, when there is one)
  */
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { agentModel, type Model } from '@oodle/compile';
+import { agentModel, type Model, scriptedModel } from '@oodle/compile';
 import { type Config, loadConfig, SPEC_DIR } from '@oodle/spec';
 
 export const EXIT = { ok: 0, failed: 1, usage: 2, needsPerson: 3 } as const;
@@ -68,7 +68,7 @@ export function context(opts: { root?: string; json?: boolean }, needSpec = true
     config,
     tty: !!process.stdin.isTTY && !!process.stdout.isTTY && !process.env.OODLE_AGENT,
     model: () => {
-      model ??= agentModel({ model: config.model });
+      model ??= process.env.OODLE_SCRIPTED_MODEL ? scripted(process.env.OODLE_SCRIPTED_MODEL) : agentModel({ model: config.model });
       return model;
     },
     work: (...parts) => {
@@ -86,4 +86,9 @@ export function context(opts: { root?: string; json?: boolean }, needSpec = true
 export function done(ctx: Ctx, data: unknown, code: number = EXIT.ok): number {
   if (ctx.json) process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
   return code;
+}
+
+/** Recorded model answers, for tests and demos: OODLE_SCRIPTED_MODEL is a JSON file of `{ "<label prefix>": answer }`. */
+function scripted(path: string): Model {
+  return scriptedModel(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>, 'scripted');
 }

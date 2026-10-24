@@ -20,8 +20,12 @@
   },
   "dependencies": {
     "@oodle/compile": "workspace:*",
+    "@oodle/diff": "workspace:*",
+    "@oodle/gaps": "workspace:*",
+    "@oodle/generator": "workspace:*",
     "@oodle/sim": "workspace:*",
     "@oodle/spec": "workspace:*",
+    "@oodle/sync": "workspace:*",
     "@oodle/template": "workspace:*",
     "@oodle/verify": "workspace:*",
     "commander": "15.0.0",

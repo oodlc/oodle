@@ -2,6 +2,8 @@
 
 # OODLC · Open Outcome Delivery Lifecycle
 
+> **Oodle is being reset.** People will manage the spec and merge the intent, not the code; code is generated and checked against it. Read [VISION.md](VISION.md) and [0019](docs/decisions/0019-reset-the-spec-is-the-product.md). What follows describes v0, kept as tag `v0-archive`.
+
 **OODLC** (say "oodle-see") is an open framework for delivering outcomes, not code. **Oodle** is its CLI: CI that protects outcomes and watches behavior.
 
 Agents make code cheap and replaceable. What has to survive every rewrite is what the customer experiences. In OODLC you declare those **outcomes**, and Oodle protects them: every change runs against them in a simulated world, and Oodle reports an **outcome diff** instead of a wall of green checks. Everything else the system does is **behavior**. Oodle notices it and tells you when it drifts, but never blocks on it.

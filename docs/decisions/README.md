@@ -22,6 +22,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0016](0016-outcomes-check-headers-text-and-host.md) | Outcomes check headers and text, set the host, and cite outside specs | Proposed |
 | [0017](0017-workers-in-process.md) | Cloudflare Workers run in process, with D1 as SQLite | Proposed |
 | [0018](0018-the-catalog-in-a-browser.md) | The catalog in a browser: a local studio over the oodlc/ folder | Proposed |
+| [0019](0019-reset-the-spec-is-the-product.md) | Reset: people manage the spec, code is generated and checked against it | Proposed |
 
 ## When to write one
 

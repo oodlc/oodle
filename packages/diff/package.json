@@ -17,5 +17,12 @@
     "build": "tsup && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oodle/sim": "workspace:*",
+    "@oodle/spec": "workspace:*"
+  },
+  "devDependencies": {
+    "@oodle/compile": "workspace:*"
   }
 }

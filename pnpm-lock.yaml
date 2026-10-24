@@ -220,9 +220,39 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  packages/diff: {}
+  packages/diff:
+    dependencies:
+      '@oodle/sim':
+        specifier: workspace:*
+        version: link:../sim
+      '@oodle/spec':
+        specifier: workspace:*
+        version: link:../spec
+    devDependencies:
+      '@oodle/compile':
+        specifier: workspace:*
+        version: link:../compile
 
-  packages/gaps: {}
+  packages/gaps:
+    dependencies:
+      '@oodle/compile':
+        specifier: workspace:*
+        version: link:../compile
+      '@oodle/diff':
+        specifier: workspace:*
+        version: link:../diff
+      '@oodle/sim':
+        specifier: workspace:*
+        version: link:../sim
+      '@oodle/spec':
+        specifier: workspace:*
+        version: link:../spec
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/generator: {}
 

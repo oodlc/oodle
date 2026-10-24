@@ -27,10 +27,37 @@ const ProposalFile = z
   )
   .nullable();
 
+/**
+ * Agents write this file by hand, and don't always quote: `- text: Shows "Total: $40"` isn't valid
+ * YAML. When it doesn't parse, each `- text:` line (and the `about:` after it) is read as written.
+ */
+function readLoosely(text: string): Proposal[] {
+  const out: Proposal[] = [];
+  for (const line of text.split('\n')) {
+    const item = /^\s*-\s+(?:text:\s*)?(.+?)\s*$/.exec(line);
+    const about = /^\s+about:\s*\[(.*)\]\s*$/.exec(line);
+    if (about && out.length)
+      (out[out.length - 1] as Proposal).about = (about[1] ?? '')
+        .split(',')
+        .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean);
+    else if (item && !line.trim().startsWith('#')) out.push({ text: (item[1] as string).replace(/^(['"])(.*)\1$/, '$2'), about: [] });
+  }
+  return out;
+}
+
 export function readProposals(app: string): { proposals: Proposal[]; problem?: string } {
   const path = join(app, PROPOSED);
   if (!existsSync(path)) return { proposals: [] };
-  const r = ProposalFile.safeParse(parse(readFileSync(path, 'utf8')));
+  const text = readFileSync(path, 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = parse(text);
+  } catch {
+    const loose = readLoosely(text);
+    return loose.length ? { proposals: loose } : { proposals: [], problem: `${PROPOSED} isn't YAML, and no "- text:" lines could be read from it` };
+  }
+  const r = ProposalFile.safeParse(parsed);
   if (!r.success) return { proposals: [], problem: `${PROPOSED}: ${r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}` };
   return { proposals: (r.data ?? []).map((p) => ({ text: p.text.trim(), about: p.about })) };
 }

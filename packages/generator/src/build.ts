@@ -93,17 +93,23 @@ export async function build(root: string, opts: BuildOptions): Promise<BuildResu
       return { buildId, dir, app, manifest, reused: true };
   }
 
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(app, { recursive: true });
-  if (opts.from)
-    cpSync(join(dirname(dir), opts.from, 'app'), app, { recursive: true, filter: (src) => !/[/\\](node_modules|\.oodle|\.wrangler)([/\\]|$)/.test(src) });
-  else copyTemplate(app);
-  prepare(root, app, spec, opts);
-
-  const before = snapshot(join(app, SPEC_DIR));
   const transcript = join(dir, 'transcript.jsonl');
-  writeFileSync(transcript, '');
-  const agent = await opts.runner({ cwd: app, prompt: PROMPT, transcript, model: opts.agentModel });
+  // A build whose agent finished but whose checks never ran (Oodle stopped) is resumed, not paid for again.
+  const finished = !opts.force && !existsSync(manifestPath) ? finishedRun(transcript) : undefined;
+  let agent: AgentOutcome;
+  if (finished) agent = finished;
+  else {
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(app, { recursive: true });
+    if (opts.from)
+      cpSync(join(dirname(dir), opts.from, 'app'), app, { recursive: true, filter: (src) => !/[/\\](node_modules|\.oodle|\.wrangler)([/\\]|$)/.test(src) });
+    else copyTemplate(app);
+    prepare(root, app, spec, opts);
+    writeFileSync(transcript, '');
+    agent = await opts.runner({ cwd: app, prompt: PROMPT, transcript, model: opts.agentModel });
+  }
+  // The spec copy must still be what the project's spec is, file for file.
+  const before = snapshot(join(root, SPEC_DIR), copied);
 
   const problems: string[] = [];
   if (!agent.ok) problems.push(`the agent stopped: ${agent.error ?? 'unknown'}`);
@@ -160,10 +166,7 @@ function prepare(root: string, app: string, spec: Spec, opts: BuildOptions) {
   rmSync(specCopy, { recursive: true, force: true });
   cpSync(join(root, SPEC_DIR), specCopy, {
     recursive: true,
-    filter: (src) => {
-      const rel = relative(join(root, SPEC_DIR), src);
-      return !rel.startsWith('gaps') && !rel.startsWith('intents');
-    },
+    filter: (src) => copied(relative(join(root, SPEC_DIR), src)),
   });
   writeFileSync(join(specCopy, 'decisions.proposed.yaml'), '# Decisions you made where the spec is silent. See AGENTS.md.\n');
   writeFileSync(join(app, 'AGENTS.md'), agentsMd(spec, opts.vocab, { ruledOut: opts.ruledOut }));
@@ -191,15 +194,50 @@ function loadSpecSafe(app: string, problems: string[]): Spec | undefined {
   }
 }
 
-/** Every file under a folder, by relative path, with a hash of its content. */
-function snapshot(dir: string): Map<string, string> {
+/** What of oodle/ a build gets: everything but gaps and intents (they are people's business, not the generator's). */
+const copied = (rel: string) => !rel.startsWith('gaps') && !rel.startsWith('intents');
+
+/** The outcome of an agent run that finished, from its transcript, if it did. */
+function finishedRun(transcript: string): AgentOutcome | undefined {
+  if (!existsSync(transcript)) return undefined;
+  const last = readFileSync(transcript, 'utf8')
+    .trim()
+    .split('\n')
+    .reverse()
+    .map((l) => {
+      try {
+        return JSON.parse(l) as {
+          type?: string;
+          subtype?: string;
+          num_turns?: number;
+          total_cost_usd?: number;
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+      } catch {
+        return {};
+      }
+    })
+    .find((m) => m.type === 'result');
+  if (!last) return undefined;
+  return {
+    ok: last.subtype === 'success',
+    ...(last.subtype === 'success' ? {} : { error: last.subtype }),
+    turns: last.num_turns ?? 0,
+    costUsd: last.total_cost_usd ?? 0,
+    inputTokens: last.usage?.input_tokens ?? 0,
+    outputTokens: last.usage?.output_tokens ?? 0,
+  };
+}
+
+/** Every file under a folder (those `keep` accepts), by relative path, with a hash of its content. */
+function snapshot(dir: string, keep: (rel: string) => boolean = () => true): Map<string, string> {
   const out = new Map<string, string>();
   const walk = (d: string) => {
     if (!existsSync(d)) return;
     for (const name of readdirSync(d)) {
       const p = join(d, name);
       if (statSync(p).isDirectory()) walk(p);
-      else out.set(relative(dir, p), createHash('sha256').update(readFileSync(p)).digest('hex'));
+      else if (keep(relative(dir, p))) out.set(relative(dir, p), createHash('sha256').update(readFileSync(p)).digest('hex'));
     }
   };
   walk(dir);

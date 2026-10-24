@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readCompiled, scriptedModel } from '@oodle/compile';
@@ -27,7 +27,7 @@ const fakeAgent =
       join(cwd, 'oodle/decisions.proposed.yaml'),
       '- text: Walks are listed by starts_at, soonest first\n  about: [entity:walk, screen:walks]\n- text: An owner with no walks sees "No walks yet."\n  about: [screen:walks]\n',
     );
-    writeFileSync(transcript, '{"type":"fake"}\n');
+    writeFileSync(transcript, '{"type":"fake"}\n{"type":"result","subtype":"success","num_turns":1,"total_cost_usd":0}\n');
     extra(cwd);
     return { ok: true, turns: 1, costUsd: 0, inputTokens: 0, outputTokens: 0 };
   };
@@ -119,6 +119,18 @@ describe('oodle build', () => {
   });
 });
 
+describe('resuming', () => {
+  it('finishes a build whose agent finished but whose checks never ran, without running the agent again', async () => {
+    const root = project();
+    const first = await run(root, fakeAgent());
+    rmSync(join(first.dir, 'manifest.json'));
+    const again = await run(root, async () => {
+      throw new Error('the agent should not run again');
+    });
+    expect(again.manifest).toMatchObject({ status: 'built', problems: [], agent: { ok: true, turns: 1 } });
+  });
+});
+
 describe('proposed decisions', () => {
   const pinned = loadSpec(EXAMPLE).spec.decisions;
 
@@ -183,5 +195,24 @@ describe('AGENTS.md', () => {
     expect(md).toContain('- Walks are listed by starts_at, soonest first');
     expect(md).toContain('- Runs on Cloudflare Workers with D1');
     expect(md).toContain('## Ruled out by merged intents\n\n- new dependencies');
+  });
+});
+
+describe('reading proposals an agent wrote', () => {
+  it('copes with YAML an agent forgot to quote', async () => {
+    const { readProposals } = await import('../src/index.ts');
+    const app = mkdtempSync(join(tmpdir(), 'oodle-prop-'));
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(app, 'oodle'));
+    writeFileSync(
+      join(app, 'oodle/decisions.proposed.yaml'),
+      '- text: The Earnings screen shows "Total earned: $40.00" and one line per done walk\n  about: [screen:earnings, entity:walk]\n- text: "Walks are listed soonest first"\n',
+    );
+    expect(readProposals(app)).toEqual({
+      proposals: [
+        { text: 'The Earnings screen shows "Total earned: $40.00" and one line per done walk', about: ['screen:earnings', 'entity:walk'] },
+        { text: 'Walks are listed soonest first', about: [] },
+      ],
+    });
   });
 });

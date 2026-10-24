@@ -52,4 +52,4 @@ Not in two rounds.
 ## Where generated code lives
 
 - For now, `.oodle/builds/<id>/`, with `oodle export` to copy one out.
-- Nothing yet argues for committing it. Builds are reproducible from the spec only in what the checks pin. The four apps are about the same size (630 to 750 lines in 2 to 4 source files), but split code and tables differently: one keeps ratings and availability in their own tables, another in the walks table.
+- Nothing yet argues for committing it. Builds are reproducible from the spec only in what the checks pin. The four apps are about the same size (630 to 750 lines in 2 to 4 source files), but split code and tables differently: two made separate tables for ratings and availability, two made a walks table only.

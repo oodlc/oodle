@@ -9,6 +9,8 @@ Design decisions that shape Oodle, written down so contributors can see why thin
 | [0021](0021-the-simulation.md) | The simulation: Miniflare instances reset between scenarios, controlled through sim-only routes | Proposed |
 | [0022](0022-compile-and-verify.md) | Compile and verify: a derived vocabulary, four kinds of check, one model client | Proposed |
 | [0023](0023-gaps-from-two-builds.md) | Gaps: differences grouped by cause, questions that say what they write | Proposed |
+| [0030](0030-the-inbox-runs-as-one-worker.md) | The inbox runs as one Worker: plain Vite assets, a small router, seeding by SQL | Proposed |
+| [0031](0031-what-the-inbox-accepts-and-who-wins.md) | What the inbox accepts from tokens, and who wins when people disagree | Proposed |
 
 Records 0001 to 0018 describe v0 and are at tag [`v0.19.0`](https://github.com/oodlc/oodle/tree/v0.19.0/docs/decisions). Numbering continues from 0019.
 

@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://oodlc.com/schema/v0/catalog.json
-version: 0
-intents:
-  - id: pay-the-right-price
-    statement: Customers pay the price they were shown, once, and get proof of it
-  - id: get-money-back
-    statement: A refunded customer actually gets their money back

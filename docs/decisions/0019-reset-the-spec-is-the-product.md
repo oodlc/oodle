@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-24
 - **Deciders:** Jean-Philippe LeBlanc (maintainer)
-- **Supersedes, once accepted:** 0001 to 0018, as a set. They describe v0 and stay readable at tag `v0-archive`.
+- **Supersedes, once accepted:** 0001 to 0018, as a set. They describe v0 and stay readable at tag `v0.19.0`.
 
 ## Context
 
@@ -24,7 +24,7 @@ The direction now is different: people manage intent, personas, what the app hol
 4. **Merge the intent, not the code.** Every change is an intent (what should change, why, what has to stay true and what it rules out, how we'll know it worked), approved and merged before any code exists. The gaps check runs on the intent before it is approved. Once it merges, the build ships if the checks that come from it pass. No person reads the code diff to let it ship. This takes v0's change files (0012) from one feature to the way every change happens.
 5. **The stack and non-functional requirements are constraints**, each saying whether it is checked on every build, checked in production (reported only), or only given to the generator.
 6. **The tree is rebuilt from one thin slice**: interview, build, verify and gaps for one example app, on one stack (Hono on Cloudflare Workers with D1). Code is ported from the archive only when the slice needs it.
-7. **Until that slice works, this branch changes no code.** VISION.md and this record are the whole change. Clearing the old tree is a separate pull request, after this one is accepted.
+7. **The tree is cleared in the same change.** What remains is VISION.md, this record, a short README and the license. The first slice starts from an empty repository.
 
 ## Options considered
 
@@ -47,9 +47,10 @@ The direction now is different: people manage intent, personas, what the app hol
 
 ## Consequences
 
-- The README points to VISION.md until the new tree replaces it.
+- The source, tests, examples, workflows, GitHub Action, Claude Code plugin and records 0001 to 0018 leave the tree. They stay at `v0.19.0` (and `v0-archive`).
+- With no workflows left, nothing runs in CI until the first slice adds its own.
 - When the first release of the new line ships, the 0.x versions of `@oodlc/oodle` on npm are deprecated with a message pointing to it. The GitHub Action's `v0` tag stays on 0.19.0.
-- Decision records restart from this one. Records 0001 to 0018 are marked Superseded by 0019 when this is accepted.
+- Decision records continue from this one. Records 0001 to 0018 are superseded as a set and not edited; they stay at `v0.19.0`.
 
 ## Revisit if
 

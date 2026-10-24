@@ -1,4 +1,0 @@
-version: 0
-intents:
-  - id: shop
-    statement: Customers can buy, and see only what is theirs.

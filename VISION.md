@@ -1,6 +1,6 @@
 # Oodle: you manage the spec, the code is generated
 
-**Status:** draft for discussion. Nothing here is built yet. Oodle v0 (0.19.0) is kept as tag `v0-archive`; [0019](docs/decisions/0019-reset-the-spec-is-the-product.md) records why it was reset.
+**Status:** draft for discussion. Nothing here is built yet. Oodle v0 is kept at tag `v0.19.0` (and `v0-archive`); [0019](docs/decisions/0019-reset-the-spec-is-the-product.md) records why it was reset.
 
 ## The idea
 

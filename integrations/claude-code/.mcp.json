@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "oodle": {
-      "command": "npx",
-      "args": ["--no-install", "oodle", "mcp"]
-    }
-  }
-}

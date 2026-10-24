@@ -1,0 +1,21 @@
+{
+  "name": "@oodle/diff",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Normalizes and diffs observations, and computes gap signatures",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}

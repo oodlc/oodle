@@ -1,0 +1,21 @@
+{
+  "name": "@oodle/generator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drives Claude Code headless to build an app from the spec",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@oodle/sync",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sync client for the inbox, and the answer applier",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}

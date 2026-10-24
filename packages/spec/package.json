@@ -1,0 +1,21 @@
+{
+  "name": "@oodle/spec",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zod schemas, loader, validator, tier guard and writers for the Oodle spec",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}

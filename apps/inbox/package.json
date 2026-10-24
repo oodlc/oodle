@@ -1,0 +1,12 @@
+{
+  "name": "@oodle/inbox",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The remote inbox: a Cloudflare Worker serving the sync API, the UI API and the web app",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}

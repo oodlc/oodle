@@ -1,0 +1,162 @@
+{
+  "gaps": [
+    {
+      "id": "g_7f3a91c2",
+      "content_hash": "ch_7f3a91c2_1",
+      "body": {
+        "id": "g_7f3a91c2",
+        "status": "applied",
+        "kind": "sort_order",
+        "tier": "decided",
+        "tier_reason": "Any order is consistent with the declared tier; nothing a person said is at stake.",
+        "route": "agent",
+        "spec_hash": "9c1e44ab0d2f",
+        "found_in": ["build:9c1e44ab-1", "build:9c1e44ab-2"],
+        "about": ["entity:walk", "screen:walks", "action:owner.list_walks"],
+        "question": "Two builds disagreed on how walks are listed. Which order should owners see?",
+        "evidence": {
+          "scenario": "explore/collections/walks-7",
+          "a": { "summary": "Newest first", "sample": ["Thu 9:00", "Wed 9:00", "Tue 9:00"] },
+          "b": { "summary": "Soonest first by start time", "sample": ["Tue 9:00", "Wed 9:00", "Thu 9:00"] }
+        },
+        "options": [
+          { "id": "a", "label": "Newest first", "becomes": { "decision": "Walks are listed newest first" } },
+          { "id": "b", "label": "Soonest first", "becomes": { "decision": "Walks are listed by starts_at, soonest first" } },
+          { "id": "dont_care", "label": "Either is fine" }
+        ],
+        "answer": { "option": "b", "reason": "Owners book ahead, so the next walk matters most." },
+        "answered_by": "agent:claude@local",
+        "answered_at": "2026-11-02T10:04:00Z",
+        "applied_in": "4be1c09"
+      }
+    },
+    {
+      "id": "g_2c81d0e5",
+      "content_hash": "ch_2c81d0e5_1",
+      "body": {
+        "id": "g_2c81d0e5",
+        "status": "open",
+        "kind": "permission",
+        "tier": "declared",
+        "tier_reason": "Permissions are declared: personas say who may do what.",
+        "route": "human",
+        "spec_hash": "9c1e44ab0d2f",
+        "found_in": ["build:9c1e44ab-1", "build:9c1e44ab-2"],
+        "about": ["entity:walk", "action:walker.cancel_walk", "persona:walker"],
+        "question": "Sam (a walker) tried to cancel a walk Ada booked. One build let him, the other refused. May a walker cancel a walk?",
+        "evidence": {
+          "scenario": "explore/permissions/walker-cancel_walk",
+          "a": { "summary": "The walk is cancelled", "sample": ["Cancelled", "Ada gets an email: \"Sam cancelled your walk on Tuesday 9:00\""] },
+          "b": { "summary": "Refused", "sample": ["You can't cancel this walk"] }
+        },
+        "options": [
+          {
+            "id": "a",
+            "label": "Yes, a walker can cancel a walk they accepted",
+            "becomes": { "decision": "A walker can cancel a walk they accepted; the owner is emailed" }
+          },
+          { "id": "b", "label": "No, only the owner can cancel", "becomes": { "decision": "Only the owner who booked a walk can cancel it" } }
+        ],
+        "answer": null,
+        "answered_by": null,
+        "answered_at": null,
+        "applied_in": null
+      }
+    },
+    {
+      "id": "g_9d04b7aa",
+      "content_hash": "ch_9d04b7aa_1",
+      "body": {
+        "id": "g_9d04b7aa",
+        "status": "open",
+        "kind": "wording",
+        "tier": "decided",
+        "tier_reason": "Copy owners read; this project routes wording to people.",
+        "route": "human",
+        "spec_hash": "9c1e44ab0d2f",
+        "found_in": ["build:9c1e44ab-1", "build:9c1e44ab-2"],
+        "about": ["entity:walk", "screen:walk", "journey:first-booking"],
+        "question": "After Ada books Sam for Tuesday 9:00, the two builds say it differently. Which should she see?",
+        "evidence": {
+          "scenario": "journey/first-booking#1",
+          "a": { "summary": "Short", "sample": ["Requested, $20"] },
+          "b": { "summary": "With the walker and time", "sample": ["Walk with Sam requested for Tue 9:00 · $20.00"] }
+        },
+        "options": [
+          { "id": "a", "label": "Requested, $20", "becomes": { "decision": "After booking, the owner sees \"Requested, <price>\"" } },
+          {
+            "id": "b",
+            "label": "Walk with Sam requested for Tue 9:00 · $20.00",
+            "becomes": {
+              "decision": "After booking, the owner sees the walker, the time and the price",
+              "replaces": "Prices are shown in the owner's currency, two decimals"
+            }
+          },
+          { "id": "dont_care", "label": "Either is fine" }
+        ],
+        "answer": null,
+        "answered_by": null,
+        "answered_at": null,
+        "applied_in": null
+      }
+    },
+    {
+      "id": "g_51e6c3f0",
+      "content_hash": "ch_51e6c3f0_1",
+      "body": {
+        "id": "g_51e6c3f0",
+        "status": "open",
+        "kind": "rule",
+        "tier": "declared",
+        "tier_reason": "It is about a domain rule the intent changes.",
+        "route": "human",
+        "spec_hash": "a71f02c9e3b4",
+        "found_in": ["build:a71f02c9-1", "build:a71f02c9-2"],
+        "about": ["entity:walk", "action:owner.cancel_walk"],
+        "question": "Ada cancels her $20 walk 90 minutes before it starts. One build charges $10, the other charges $10 only after the walker confirms they were on their way. Which is right?",
+        "evidence": {
+          "scenario": "explore/rules/walk-cancel-1h30",
+          "a": { "summary": "Charged at once", "sample": ["Cancelled, $10.00 charged"] },
+          "b": { "summary": "Charged once the walker confirms", "sample": ["Cancelled. You may be charged $10.00"] }
+        },
+        "options": [
+          { "id": "a", "label": "Charge the 50% fee at once", "becomes": { "decision": "A late cancellation is charged 50% when the owner cancels" } },
+          {
+            "id": "b",
+            "label": "Charge only after the walker confirms",
+            "becomes": { "decision": "A late cancellation fee is charged only after the walker confirms" }
+          }
+        ],
+        "answer": null,
+        "answered_by": null,
+        "answered_at": null,
+        "applied_in": null,
+        "intent_id": "i_cancel_fee"
+      }
+    }
+  ],
+  "intents": [
+    {
+      "id": "i_cancel_fee",
+      "content_hash": "ih_cancel_fee_1",
+      "body": {
+        "id": "i_cancel_fee",
+        "title": "Charge half price for late cancellations",
+        "status": "in_review",
+        "why": "Walkers lose income on late cancellations.",
+        "changes": [
+          {
+            "op": "replace_rule",
+            "entity": "walk",
+            "from": "An owner can cancel for free until 2 hours before starts_at",
+            "to": "An owner can cancel for free until 2 hours before starts_at; after that they pay 50%"
+          }
+        ],
+        "keeps": { "journeys": ["first-booking"], "constraints": ["An owner is never charged for a walk that didn't happen"] },
+        "rules_out": ["new_dependencies", "new_outbound_hosts", "new_routes"],
+        "done_when": { "journeys": ["late-cancellation"], "evals": [] },
+        "approvals": []
+      }
+    }
+  ]
+}

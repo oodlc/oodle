@@ -1,35 +1,19 @@
 # Decision records
 
-Design decisions that shape OODLC and Oodle, written down so contributors can see why things are the way they are, and what would change our minds.
+Design decisions that shape Oodle, written down so contributors can see why things are the way they are, and what would change our minds.
 
 | # | Decision | Status |
 | --- | --- | --- |
-| [0001](0001-outcomes-and-behaviors.md) | Outcomes are declared, behaviors are observed | Accepted |
-| [0002](0002-constraints-hold-on-every-run.md) | Constraints hold on every run | Accepted |
-| [0003](0003-one-visible-oodlc-folder.md) | Everything lives in one visible oodlc/ folder | Accepted |
-| [0004](0004-conditions-carry-expectations.md) | Conditions can carry their own expectations, and Oodle ships a security pack | Proposed |
-| [0005](0005-sealed-simulation.md) | The simulation is sealed: reaching the real network is a violation | Proposed |
-| [0006](0006-proposals-and-propose-only-agents.md) | Agents propose, humans approve: `status: proposed` and propose-only writes | Proposed |
-| [0007](0007-approvals-in-ci.md) | A change to a promise is approved in the pull request, bound to exactly what changed | Proposed |
-| [0008](0008-nextjs-through-its-own-route-module.md) | Next.js route handlers run through Next's own route module | Proposed |
-| [0009](0009-a-real-database-in-the-simulation.md) | The simulation includes a real Postgres, and what the app writes to it is behavior | Proposed |
-| [0010](0010-capabilities-and-the-inventory.md) | The inventory explains the system: capabilities, actors, experiences and unknowns | Proposed |
-| [0011](0011-explain-what-oodle-cannot-run.md) | A project with no app explains a system Oodle can't run | Proposed |
-| [0012](0012-changes-merge-intent-before-code.md) | Changes: the intent merges before the code | Proposed |
-| [0013](0013-terms.md) | Terms: one meaning per word | Proposed |
-| [0014](0014-evidence-grades.md) | Evidence is graded observed or inferred, and coverage is not absence | Proposed |
-| [0015](0015-stubs-and-bodies-from-traffic.md) | Stubs and request bodies are proposed from traffic, scrubbed, and accepted by a person | Proposed |
-| [0016](0016-outcomes-check-headers-text-and-host.md) | Outcomes check headers and text, set the host, and cite outside specs | Proposed |
-| [0017](0017-workers-in-process.md) | Cloudflare Workers run in process, with D1 as SQLite | Proposed |
-| [0018](0018-the-catalog-in-a-browser.md) | The catalog in a browser: a local studio over the oodlc/ folder | Proposed |
 | [0019](0019-reset-the-spec-is-the-product.md) | Reset: people manage the spec, code is generated and checked against it | Proposed |
+
+Records 0001 to 0018 describe v0 and are at tag [`v0.19.0`](https://github.com/oodlc/oodle/tree/v0.19.0/docs/decisions). Numbering continues from 0019.
 
 ## When to write one
 
-Write a record when a change alters what blocks a merge, what the catalog means, or the shape of the schema, or when reasonable people would choose differently. Bug fixes and refactors don't need one.
+Write a record when a change alters what blocks a build, what the spec means, or its shape, or when reasonable people would choose differently.
 
 ## How
 
-1. Copy [`template.md`](template.md) to the next number, e.g. `0003-short-title.md`.
-2. Open it as **Proposed** in the same PR as the change, or ahead of it to discuss.
+1. Copy [`template.md`](template.md) to the next number.
+2. Open it as **Proposed**, in the same pull request as the change or ahead of it.
 3. Once merged it becomes **Accepted**. Records are not edited after that. To change a decision, write a new record that marks the old one **Superseded by 00NN**.

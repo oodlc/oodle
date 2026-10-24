@@ -98,3 +98,19 @@ describe('applyAnswer', () => {
     expect(log(root)).toHaveLength(commits);
   });
 });
+
+describe('a refused answer', () => {
+  it('writes nothing', () => {
+    const root = repo();
+    const mixed = {
+      ...WORDING,
+      id: 'g_00000009',
+      options: [{ id: 'a', label: 'x', becomes: { decision: 'Owners see "Only walkers can do this."', cannot: { persona: 'owner', text: 'decline walks' } } }],
+    };
+    withGaps(root, mixed);
+    const before = readFileSync(join(root, 'oodle/decisions.yaml'), 'utf8');
+    expect(() => applyAnswer(root, mixed.id, { option: 'a', reason: 'x' }, 'agent:claude@local')).toThrow(/only a person may do/);
+    expect(readFileSync(join(root, 'oodle/decisions.yaml'), 'utf8')).toBe(before);
+    expect(readGap(root, mixed.id)?.status).toBe('open');
+  });
+});

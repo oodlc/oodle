@@ -155,22 +155,27 @@ export function templateQuestion(sig: GapSignature, vocab?: Vocabulary): Questio
 
 const describeLast = (e: GapSignature['evidence']) => `${e.scenario.split('/').pop()}`;
 
-const Worded = z.strictObject({
-  question: z.string().describe('one question, in the spec’s own words, with real example values'),
-  a: z.string().describe('what build A does, in a few words a user would use'),
-  b: z.string().describe('what build B does'),
-  options: z
-    .array(
-      z.strictObject({
-        id: z.enum(['a', 'b']),
-        label: z.string(),
-        becomes: Becomes.describe(
-          'what the answer writes: a decision (most gaps), or for permissions and domain rules a constraint, a rule, or a persona cannot',
-        ),
-      }),
-    )
-    .length(2),
-});
+/**
+ * What the model may answer with. Only permission and rule gaps are declared-tier, so only their
+ * options may write a constraint, a rule or a persona's cannot; every other option is a decision.
+ */
+const wordedSchema = (declared: boolean) =>
+  z.strictObject({
+    question: z.string().describe('one question, in the spec’s own words, with real example values'),
+    a: z.string().describe('what build A does, in a few words a user would use'),
+    b: z.string().describe('what build B does'),
+    options: z
+      .array(
+        z.strictObject({
+          id: z.enum(['a', 'b']),
+          label: z.string(),
+          becomes: declared
+            ? Becomes.describe("what the answer writes: a constraint, a rule ({entity, text}) or a persona's cannot ({persona, text})")
+            : z.strictObject({ decision: z.string() }).describe('the decision the answer writes'),
+        }),
+      )
+      .length(2),
+  });
 
 /** One model call per gap, given the evidence. Falls back to the template if the answer doesn't fit. */
 export async function writeQuestion(sig: GapSignature, ctx: { spec: Spec; vocab: Vocabulary; scenarioText: string }, model?: Model): Promise<Question> {
@@ -193,7 +198,7 @@ Build A: ${e.a.summary}: ${e.a.sample.map((s) => `"${s}"`).join(', ')}
 Build B: ${e.b.summary}: ${e.b.sample.map((s) => `"${s}"`).join(', ')}
 
 Write the question, describe each side in plain words, and give option "a" (what A does) and option "b" (what B does), each with what it becomes in the spec. For a permission or a domain rule, "becomes" is a constraint, a rule ({entity, text}) or a persona's cannot ({persona, text}, where text is what they can't do, as it would read after "cannot": "cancel another owner's walks"); otherwise it is a decision, phrased so a non-engineer can agree or disagree with it (for example "Walks are listed by starts_at, soonest first"). Never mention routes, status codes or code.`,
-      schema: Worded,
+      schema: wordedSchema(sig.pattern === 'permission' || sig.pattern === 'rule'),
     });
     const options: Option[] = worded.options.map((o) => ({ id: o.id, label: o.label, becomes: o.becomes }));
     if (fallback.options.some((o) => o.id === 'dont_care')) options.push(DONT_CARE);

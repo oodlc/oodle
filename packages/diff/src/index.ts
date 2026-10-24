@@ -36,6 +36,11 @@ export interface Difference {
   entity?: string;
   a: SideSummary;
   b: SideSummary;
+  /**
+   * The words only one side shows, with names, dates and numbers blanked: what the difference is,
+   * wherever it shows up. "Signed in as Ada" on every screen is one difference, not one per screen.
+   */
+  delta: { a: string[]; b: string[] };
 }
 
 export interface SideSummary {
@@ -99,14 +104,37 @@ const minus = (xs: string[], ys: string[]) => {
   });
 };
 const sameItems = (a: string[], b: string[]) => a.length === b.length && minus(a, b).length === 0;
-/** Digits and the order they come in: "$20.00" and "$20" share them, "Tue 3 Nov" and "3/11" too. */
-const digits = (xs: string[]) =>
-  xs
-    .join(' ')
-    .match(/\d+/g)
-    ?.map((d) => String(Number(d)))
-    .join(' ') ?? '';
 const take = (xs: string[], n = 3) => xs.slice(0, n);
+
+const DATE_WORDS =
+  /^(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|am|pm|utc)$/i;
+const letterWords = (xs: string[]) =>
+  new Set(
+    xs
+      .join(' ')
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter((w) => w && !DATE_WORDS.test(w)),
+  );
+/** The same words with numbers in them, written differently: "Wed 4 Nov, 09:00" and "2026-11-04 09:00". A format, not a wording. */
+function sameWords(a: string[], b: string[]): boolean {
+  if (!/\d/.test(a.join('')) || !/\d/.test(b.join(''))) return false;
+  const [x, y] = [letterWords(a), letterWords(b)];
+  return x.size === y.size && [...x].every((w) => y.has(w));
+}
+
+/** Words only one side has, with names, dates and numbers blanked. */
+function deltaOf(a: string[], b: string[], names: RegExp | undefined) {
+  const tokens = (xs: string[]) =>
+    xs
+      .join(' ')
+      .replace(names ?? /$^/, '⟨name⟩')
+      .split(/\s+/)
+      .map((w) => (DATE_WORDS.test(w.replace(/[^a-z]/gi, '')) ? '⟨date⟩' : w.replace(/\d+/g, '#')))
+      .filter(Boolean);
+  const [ta, tb] = [tokens(a), tokens(b)];
+  return { a: [...new Set(minus(ta, tb))].sort(), b: [...new Set(minus(tb, ta))].sort() };
+}
 
 /** How two lists of texts differ, as a pattern and a summary of each side. */
 function compareTexts(a: string[], b: string[], list: boolean): { pattern: Pattern; a: SideSummary; b: SideSummary } | undefined {
@@ -125,7 +153,7 @@ function compareTexts(a: string[], b: string[], list: boolean): { pattern: Patte
       b: { summary: onlyB.length ? 'shows more' : 'shows less', sample: take(onlyB) },
     };
   }
-  const pattern: Pattern = digits(onlyA) !== '' && digits(onlyA) === digits(onlyB) ? 'format' : 'wording';
+  const pattern: Pattern = sameWords(onlyA, onlyB) ? 'format' : 'wording';
   return { pattern, a: { summary: pattern, sample: take(onlyA) }, b: { summary: pattern, sample: take(onlyB) } };
 }
 
@@ -138,6 +166,8 @@ const singular = (word: string, entities: string[]) => entities.find((e) => word
 /** Every user-visible difference between two sides' runs of the same scenarios. */
 export function diffRuns(ctx: DiffContext, a: ScenarioResult[], b: ScenarioResult[]): Difference[] {
   const scenarios = new Map(ctx.scenarios.map((s) => [s.id, s]));
+  const fixtureNames = [...new Set(ctx.scenarios.flatMap((s) => Object.values(s.fixtures).map((f) => String(f.name))))].filter(Boolean);
+  const names = fixtureNames.length ? new RegExp(`\\b(${fixtureNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'g') : undefined;
   const bById = new Map(b.map((r) => [r.scenario, r]));
   const out: Difference[] = [];
   for (const ra of a) {
@@ -162,7 +192,8 @@ export function diffRuns(ctx: DiffContext, a: ScenarioResult[], b: ScenarioResul
         where,
         ...(entity ? { entity } : {}),
       };
-      const push = (field: Field, d: { pattern: Pattern; a: SideSummary; b: SideSummary } | undefined) => d && out.push({ ...base, field, ...d });
+      const push = (field: Field, d: { pattern: Pattern; a: SideSummary; b: SideSummary } | undefined) =>
+        d && out.push({ ...base, field, ...d, delta: deltaOf(d.a.sample, d.b.sample, names) });
 
       if (!!x.blocked !== !!y.blocked) {
         const pattern: Pattern = ra.scenario.includes('/permissions/') ? 'permission' : 'rule';
@@ -223,12 +254,12 @@ export function diffRuns(ctx: DiffContext, a: ScenarioResult[], b: ScenarioResul
 /** Patterns whose one cause shows up with different samples in different scenarios. */
 const BY_PLACE = new Set<Pattern>(['sort_order', 'pagination', 'permission', 'rule']);
 
-const shape = (s: SideSummary) => ({ summary: s.summary, sample: s.sample.map((x) => x.replace(/\d+/g, '#')) });
-
 export function signatureOf(d: Difference): string {
+  // A refusal or an order is about one place; a wording, a format or an extra element is the same
+  // choice wherever it shows, so it is signed by what differs, not where.
   const key = BY_PLACE.has(d.pattern)
     ? { pattern: d.pattern, where: d.where, entity: d.entity ?? null, actor: d.pattern === 'permission' ? d.actor.slice(0, d.actor.indexOf(':')) : null }
-    : { pattern: d.pattern, where: d.where, entity: d.entity ?? null, field: d.field, a: shape(d.a), b: shape(d.b) };
+    : { pattern: d.pattern, delta: d.delta };
   return `g_${sha256(stableStringify(key)).slice(0, 8)}`;
 }
 

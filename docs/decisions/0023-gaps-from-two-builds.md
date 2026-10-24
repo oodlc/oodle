@@ -11,9 +11,9 @@ The gaps check builds the app twice, runs both builds through the same scenarios
 ## Decision
 
 1. **Normalize ids only.** Each side's generated ids become symbols by first appearance within a scenario. Text is otherwise compared as the view model reads it: whitespace collapsed, case kept.
-2. **Patterns.** `sort_order` (same items, other order), `pagination` (one list is a cut of the other, five items or more), `extra_element` (one side only adds), `format` (the texts differ but their numbers are the same), `wording` (the rest), `permission` (refused on one side only, in a permissions scenario), `rule` (refused on one side only, elsewhere) and `other` (a step failed on one side).
+2. **Patterns.** `sort_order` (same items, other order), `pagination` (one list is a cut of the other, five items or more), `extra_element` (one side only adds), `format` (the same words, with numbers, written differently: "Wed 4 Nov, 09:00" and "2026-11-04 09:00"), `wording` (the rest), `permission` (refused on one side only, in a permissions scenario), `rule` (refused on one side only, elsewhere) and `other` (a step failed on one side).
 3. **A refusal absorbs what follows.** Once an action is refused on one side only, every later difference in that scenario folds into it.
-4. **Two grains of signature.** Sort order, pagination, permission and rule gaps are signed by pattern, place (`screen:walks`, `action:owner.cancel_walk`) and entity, plus the acting persona for permissions, because the same cause shows different samples in different scenarios. Wording, format and extra elements are also signed by what each side shows, with digits blanked, so two different wordings on one screen are two questions. The id is `g_` plus 8 hex characters of the hash.
+4. **Two grains of signature.** Sort order, pagination, permission and rule gaps are signed by pattern, place (`screen:walks`, `action:owner.cancel_walk`) and entity, plus the acting persona for permissions, because the same cause shows different samples in different scenarios. Wording, format and extra elements are signed by pattern and by the words only one side shows, with names, weekdays, months and digits blanked, and not by place: the same choice ("Signed in as Ada" at the top of every screen, a date format) is one question wherever it shows up. On the first real run, signing these by place and sample gave 85 questions for two builds; signing by what differs gave 24. The id is `g_` plus 8 hex characters of the hash.
 5. **What an answer writes** (`options[].becomes`) is one of:
    - a `decision`;
    - a `constraint`;
@@ -21,7 +21,7 @@ The gaps check builds the app twice, runs both builds through the same scenarios
    - a persona's `cannot` (`{persona, text}`).
 
    Only the first is decided-tier. The other three exist so that permission and rule gaps, which are declared-tier, can be answered by a person in one click.
-6. **The question is worded by a model when there is one**, and by a template otherwise, so the gaps check works offline. A model answer that doesn't fit the schema falls back to the template.
+6. **The question is worded by a model when there is one**, and by a template otherwise, so the gaps check works offline. A model answer that doesn't fit the schema falls back to the template. Only permission and rule questions may offer declared-tier answers; the schema for every other question allows decisions only.
 7. **Tier rules**:
    - permission and rule gaps are declared;
    - a gap where one side breaks a journey expectation or a compiled constraint is declared;

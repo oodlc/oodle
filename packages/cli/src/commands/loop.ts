@@ -265,15 +265,23 @@ export async function answerCommand(
     const mine = open.filter((g) => g.route === 'agent');
     const shas: { gap: string; sha: string }[] = [];
     const settled: { id: string; option?: string; reason?: string }[] = [];
+    const refused: { id: string; why: string }[] = [];
     for (const g of mine) {
       const answer = await agentAnswer(g, { spec: loadSpec(ctx.root).spec, vocab }, ctx.model());
-      const out = applyAnswer(ctx.root, g.id, answer, `agent:${ctx.model().name}@local`);
-      if (out.sha) shas.push({ gap: g.id, sha: out.sha });
-      settled.push({ id: g.id, option: answer.option, reason: answer.reason });
-      ctx.print(`  ✓ ${g.id}: ${g.options.find((o) => o.id === answer.option)?.label} (${answer.reason})`);
+      try {
+        const out = applyAnswer(ctx.root, g.id, answer, `agent:${ctx.model().name}@local`);
+        if (out.sha) shas.push({ gap: g.id, sha: out.sha });
+        settled.push({ id: g.id, option: answer.option, reason: answer.reason });
+        ctx.print(`  ✓ ${g.id}: ${g.options.find((o) => o.id === answer.option)?.label} (${answer.reason})`);
+      } catch (e) {
+        if (!(e instanceof AnswerRefused)) throw e;
+        // The option the agent chose writes something only a person may; leave the gap to people.
+        refused.push({ id: g.id, why: e.message });
+        ctx.print(`  ? ${g.id}: ${e.message}`);
+      }
     }
     recordApplied(ctx.root, shas);
-    const people = open.filter((g) => g.route === 'human');
+    const people = [...open.filter((g) => g.route === 'human'), ...mine.filter((g) => refused.some((r) => r.id === g.id))];
     if (people.length) {
       for (const g of people) ctx.print(`  ? ${g.id} needs a person: ${g.question}`);
       const err = new NeedsPerson(`${people.length} gap${people.length === 1 ? '' : 's'} routed to people (${people.map((g) => g.id).join(', ')})`, ctx.config);

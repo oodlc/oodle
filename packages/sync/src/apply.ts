@@ -58,6 +58,13 @@ export function applyAnswer(root: string, gapId: string, answer: Answer, answere
   const declared = (what: string) => {
     if (!isPerson(answeredBy)) throw new AnswerRefused(`${what} changes the declared tier, which only a person may do; ${answeredBy} is not a person.`);
   };
+  // Refuse before writing anything, so a refused answer leaves the spec as it was.
+  const b0 = option?.becomes;
+  if (b0?.constraint) declared('A constraint');
+  if (b0?.rule) declared('A domain rule');
+  if (b0?.cannot) declared("A persona's cannot");
+  if (!option && answer.text && (answer.target === 'constraint' || answer.target === 'domain_rule'))
+    declared(answer.target === 'constraint' ? 'A constraint' : 'A domain rule');
   const entity = () => gap.about.find((a) => a.startsWith('entity:'))?.slice(7) ?? Object.keys(loaded.spec.domain)[0];
 
   /** Adds a decision, or replaces the one this gap (or `replaces`) points at, keeping its id. */

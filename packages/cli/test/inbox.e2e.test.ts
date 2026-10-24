@@ -6,12 +6,12 @@
  * Needs the inbox's web build (apps/inbox/dist/web), which `pnpm -r build` makes.
  */
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readGaps } from '@oodle/gaps';
-import { loadSpec } from '@oodle/spec';
+import { loadSpec, readIntents } from '@oodle/spec';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootstrapSql } from '../../../apps/inbox/src/shared/seed.ts';
 import { DOGWALK_A, DOGWALK_B, variant } from '../../sim/test/fixtures/variants.ts';
@@ -139,6 +139,32 @@ describe.skipIf(!ready)('the inbox, end to end', () => {
       expect((await oodle(root, 'sync')).out.pushed.applied).toBe(1);
       const detail = (await (await ui(`/gaps/${permission?.id}`)).json()) as { gap: { status: string; answer: { applied_sha: string } } };
       expect(detail.gap.answer.applied_sha).toBe(sha);
+
+      // An intent goes up for review; a person approves it in the inbox; sync records the approval on it.
+      mkdirSync(join(root, 'oodle/intents'), { recursive: true });
+      writeFileSync(
+        join(root, 'oodle/intents/2026-11-cancel-fee.yaml'),
+        'id: i_cancel_fee\ntitle: Charge half price for late cancellations\nstatus: in_review\nwhy: Walkers lose income on late cancellations.\nchanges:\n  - op: add_rule\n    entity: walk\n    rule: After the free window, an owner who cancels pays 50%\nrules_out: [new_dependencies]\n',
+      );
+      git(root, 'add', '.');
+      git(root, 'commit', '-q', '-m', 'intent');
+      expect((await oodle(root, 'sync')).out.pushed.intents).toBe(1);
+      const intents = (await (await ui('/intents?status=in_review')).json()) as { intents: { id: string; content_hash: string }[] };
+      expect(intents.intents.map((i) => i.id)).toEqual(['i_cancel_fee']);
+      const review = await ui('/intents/i_cancel_fee/review', {
+        method: 'POST',
+        body: JSON.stringify({ decision: 'approve', note: 'Fair to walkers', content_hash: intents.intents[0]?.content_hash }),
+      });
+      expect(review.ok).toBe(true);
+      expect((await oodle(root, 'sync')).out.pulled.approvals).toBe(1);
+      const intent = readIntents(root)[0]?.intent;
+      expect(intent).toMatchObject({
+        status: 'approved',
+        approvals: [{ by: 'person:ada@example.com', via: 'inbox', decision: 'approve', note: 'Fair to walkers' }],
+      });
+      expect(git(root, 'log', '--format=%s', '-1')).toBe('oodle: approval of i_cancel_fee from the inbox (person:ada@example.com)');
+      expect((await oodle(root, 'intent', 'merge', 'i_cancel_fee')).code).toBe(0);
+      expect(loadSpec(root).spec.domain.walk?.rules.at(-1)).toBe('After the free window, an owner who cancels pays 50%');
     } finally {
       delete process.env.OODLE_TOKEN;
       delete process.env.OODLE_SCRIPTED_MODEL;

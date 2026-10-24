@@ -5,6 +5,7 @@ Design decisions that shape Oodle, written down so contributors can see why thin
 | # | Decision | Status |
 | --- | --- | --- |
 | [0019](0019-reset-the-spec-is-the-product.md) | Reset: people manage the spec, code is generated and checked against it | Proposed |
+| [0020](0020-the-spec-on-disk.md) | The spec on disk: two layouts, one hash, writers that change only what they mean to | Proposed |
 
 Records 0001 to 0018 describe v0 and are at tag [`v0.19.0`](https://github.com/oodlc/oodle/tree/v0.19.0/docs/decisions). Numbering continues from 0019.
 

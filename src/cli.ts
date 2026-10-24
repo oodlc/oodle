@@ -26,6 +26,7 @@ import { changeBrief, foldChange, originOf } from './changes.ts';
 import { questions, runInterview } from './interview.ts';
 import { draftPrompt } from './draft.ts';
 import { serveMcp } from './mcp.ts';
+import { serveUi } from './ui.ts';
 import { runHook, HOOKS } from './hooks.ts';
 import { completion, SHELLS, type Shell } from './completion.ts';
 import { findProject, display } from './project.ts';
@@ -349,6 +350,23 @@ const COMMANDS: Command[] = [
       ['oodle mcp services/checkout', 'Serve one project'],
     ],
     run: cmdMcp,
+  },
+  {
+    name: 'ui',
+    summary: 'Look after the catalog in a browser: the system map, proposals, questions and runs',
+    description:
+      'Serves one local page for the oodlc/ folder: the system map (intents, the capabilities that serve them, whether their outcomes hold), every outcome under every condition from the last run, the proposals and open questions waiting for a person, changes, terms and lint. It follows the files: an edit in your editor or by an agent shows up at once. Answers and approvals are written into oodlc/ as ordinary edits, keeping comments and layout, so git and review see them. Only a person approves: started from a terminal, the page can approve proposals and confirm capabilities; started without one, it answers with an agent\'s rights and approves nothing. It listens on 127.0.0.1 only, behind a token in the link it prints. See docs/decisions/0018.',
+    args: [PROJECT_ARG],
+    flags: [
+      { name: 'port', short: 'p', type: 'string', value: 'n', complete: 'none', description: 'Port to listen on. Default: 4127, or a free one if that is taken' },
+      { name: 'no-open', type: 'boolean', description: 'Print the link without opening a browser' },
+    ],
+    formats: ['text'],
+    examples: [
+      ['oodle ui', 'Open the catalog in your browser'],
+      ['oodle ui services/checkout --port 5000 --no-open', 'One project, on a port you choose'],
+    ],
+    run: cmdUi,
   },
   {
     name: 'hook',
@@ -928,6 +946,33 @@ async function cmdMcp(ctx: Ctx): Promise<number> {
   settings.quiet = true;
   await serveMcp(dir, VERSION);
   return EXIT.ok;
+}
+
+async function cmdUi(ctx: Ctx): Promise<number> {
+  const dir = findProject(ctx.args[0], 'ui');
+  const asked = ctx.flags.port === undefined ? undefined : Number(ctx.flags.port);
+  if (asked !== undefined && !(Number.isInteger(asked) && asked >= 0 && asked < 65536)) throw usageError(`--port must be a port number, not "${ctx.flags.port}"`);
+  // The same signal `oodle interview` takes for "someone is there" (0010).
+  const byPerson = !!process.stdin.isTTY && !!process.stdout.isTTY;
+  const ui = await serveUi(dir, { port: asked ?? UI_PORT, byPerson, version: VERSION }).catch((err) => {
+    if (asked === undefined && err.code === 'EADDRINUSE') return serveUi(dir, { port: 0, byPerson, version: VERSION });
+    if (err.code === 'EADDRINUSE') throw usageError(`Port ${asked} is taken`, 'Pick another with --port, or leave it out for a free one.');
+    throw err;
+  });
+  heading('ui', dir);
+  console.log(`  ${o.bold(ui.url)}`);
+  console.log(`  ${o.dim(byPerson ? 'you can approve and confirm here' : 'no terminal: answers are proposals, nothing is approved')} ${o.dim(`${sym.dot} Ctrl-C stops it`)}`);
+  if (!ctx.flags['no-open'] && byPerson) openBrowser(ui.url);
+  // Serves until Ctrl-C, which exits through onSignal like `--watch` does.
+  return new Promise<number>(() => {});
+}
+
+const UI_PORT = 4127;
+
+function openBrowser(url: string) {
+  const [cmd, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]];
+  // Best effort: the link is printed either way.
+  spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
 }
 
 async function cmdLint(ctx: Ctx): Promise<number> {

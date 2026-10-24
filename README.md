@@ -428,6 +428,21 @@ Each section tells you what to do next:
 
 `oodle mutate --tests "npm test"` runs your unit tests against the same bugs, and lists the tests whose every catch an outcome made too: candidates to delete once you've read them. `--min-score 80` makes the score a CI gate. Every flag, status and the JSON output are in [`docs/cli.md`](docs/cli.md#mutation-testing).
 
+### The catalog in a browser
+
+`oodle ui` opens the `oodlc/` folder in your browser, for the people who look after it:
+
+```bash
+npx oodle ui                    # http://127.0.0.1:4127/#token=…
+```
+
+- **What's waiting for you**, on one page: lint errors, broken outcomes, proposals to approve, questions only you can answer, routes nothing describes, changes waiting for their code.
+- **The system map**: each intent, the capabilities that serve it with the rungs each has, and whether the outcomes protecting them hold. Click a capability for its routes, calls, table writes and graded evidence.
+- **Every outcome, behavior and constraint** under every condition from the last run, with what failed and the entry as it reads in its file. **Run** runs the catalog in the sealed simulation.
+- **Answer and approve in place.** The interview's questions are forms. Approving a proposal removes its `status: proposed` line, after you sharpen its statement if it needs it. Each answer is an ordinary edit to `oodlc/`, comments kept, for review to see. The page follows the files, so edits from your editor, git or an agent show up at once.
+
+Only a person approves. Started from a terminal, the page can approve and confirm. Started without one (by an agent, say), it writes answers as proposals and approves nothing. It listens on `127.0.0.1` only, behind the token in the link it prints. See [0018](docs/decisions/0018-the-catalog-in-a-browser.md).
+
 ## The CLI
 
 ```
@@ -445,6 +460,7 @@ oodle changes [brief|fold]     List changes agreed before their code, brief an a
 oodle propose <file>           Add drafted entries as proposals, never changing an existing one
 oodle draft <brief>            Print the prompt that drafts catalog entries from a brief
 oodle mcp [project]            Serve Oodle to coding agents over MCP
+oodle ui [project]             Look after the catalog in a browser: the system map, proposals, questions, runs
 oodle hook <event>             Answer a coding agent's hook (Claude Code)
 oodle completion <shell>       Print a bash, zsh or fish completion script
 ```

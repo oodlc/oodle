@@ -4,6 +4,12 @@ Oodle is v0. Until 1.0, a minor version (0.x.0) can change the catalog format or
 
 The GitHub Action follows the newest release through the `v0` tag (`uses: oodlc/oodle@v0`).
 
+## 0.19.0 (2026-10-23): the catalog in a browser
+
+- `oodle ui` serves a local page for the `oodlc/` folder. It shows what's waiting for a person, the system map, every outcome, behavior and constraint under every condition from the last run, proposals, questions, changes with their agent briefs, actors, experiences, terms, conditions and lint. It refreshes as the files change, and runs the catalog on request in a child process. See [0018](docs/decisions/0018-the-catalog-in-a-browser.md).
+- From the page, a person answers the interview's questions and approves proposals: the `status: proposed` line goes, optionally after a sharper statement. Every write is an edit to `oodlc/` that keeps comments, and is undone if it would add lint errors. An entry that still says nothing (a TODO, "handles orders") can't be approved.
+- Approving and confirming need `oodle ui` started from a terminal, as `oodle interview` does. Without one, answers are written with an agent's rights. It listens on `127.0.0.1` only, and refuses requests without the launch token, with another `Host`, or with a foreign `Origin`.
+
 ## 0.18.0 (2026-10-23): Cloudflare Workers, in process
 
 - **Changes:** `@oodlc/oodle/workers` runs a Cloudflare Worker's own fetch handler in process, in the sealed simulation, with `env` built from `wrangler.jsonc`, `.json` or `.toml`. D1 is SQLite with the migrations applied. KV lives in `given.state`. Static assets are served before the Worker. Every other binding (`send_email`, queues, services, R2, …) records each call as the effect `<BINDING>.<method>`. `ctx.waitUntil` work counts. `cloudflare:workers`, `cloudflare:email`, HTMLRewriter (lol-html, through the optional peer `html-rewriter-wasm`), `caches`, `crypto.subtle.timingSafeEqual`, and Text, Data and Wasm modules all work. See [0017](docs/decisions/0017-workers-in-process.md) and `examples/worker-cards`.

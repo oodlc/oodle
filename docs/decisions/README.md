@@ -21,6 +21,7 @@ Design decisions that shape OODLC and Oodle, written down so contributors can se
 | [0015](0015-stubs-and-bodies-from-traffic.md) | Stubs and request bodies are proposed from traffic, scrubbed, and accepted by a person | Proposed |
 | [0016](0016-outcomes-check-headers-text-and-host.md) | Outcomes check headers and text, set the host, and cite outside specs | Proposed |
 | [0017](0017-workers-in-process.md) | Cloudflare Workers run in process, with D1 as SQLite | Proposed |
+| [0018](0018-the-catalog-in-a-browser.md) | The catalog in a browser: a local studio over the oodlc/ folder | Proposed |
 
 ## When to write one
 

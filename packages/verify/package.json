@@ -1,0 +1,28 @@
+{
+  "name": "@oodle/verify",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Checks one build against the spec: static checks, journeys, constraints and pinned decisions",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oodle/compile": "workspace:*",
+    "@oodle/runtime": "workspace:*",
+    "@oodle/sim": "workspace:*",
+    "@oodle/spec": "workspace:*",
+    "oxc-parser": "0.155.0"
+  }
+}

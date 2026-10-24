@@ -4,7 +4,9 @@ import { join } from 'node:path';
 
 const here = import.meta.dirname;
 export const README_EXAMPLE = join(here, 'fixtures/readme');
-export const DOGWALK = join(here, '../../../examples/dogwalk');
+/** The README example in the split layout, as it was written (examples/dogwalk has since been compiled). */
+export const DOGWALK = join(here, 'fixtures/split');
+export const EXAMPLE = join(here, '../../../examples/dogwalk');
 
 /** A scratch copy of a project, so a test can edit its spec. */
 export function copyProject(from: string): string {

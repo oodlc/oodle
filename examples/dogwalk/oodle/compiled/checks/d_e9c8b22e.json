@@ -1,0 +1,49 @@
+{
+  "for": {
+    "decision": "d_e9c8b22e"
+  },
+  "text": "Declining a walk asks the walker for no reason",
+  "hash": "c439361c9de4d47419921760b0b199db3dfaa348e2d6b4945672f6b8b59c8441",
+  "by": "recorded",
+  "check": {
+    "kind": "scenario",
+    "scenario": {
+      "id": "check/d_e9c8b22e",
+      "fixtures": {
+        "owner:ada": {
+          "name": "Ada",
+          "address": "1 Elm St"
+        },
+        "walker:sam": {
+          "name": "Sam"
+        }
+      },
+      "steps": [
+        {
+          "at": "2026-11-02T08:00:00Z",
+          "as": "owner:ada",
+          "do": "owner.book_walk",
+          "input": {
+            "walker": "walker:sam",
+            "starts_at": "2026-11-03T09:00:00Z",
+            "minutes": 30
+          }
+        },
+        {
+          "as": "walker:sam",
+          "do": "walker.decline_walk",
+          "input": {
+            "walk": "$walk_1"
+          },
+          "expect": {
+            "screen_not_contains": [
+              "reason",
+              "Reason"
+            ],
+            "outcome": "ok"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# The things the app holds: their fields, the states each moves through, and the rules between them.
+walk:
+  fields: { owner, walker, starts_at, minutes: [30, 60], price, status }
+  states: requested -> accepted -> done | declined | cancelled
+  rules:
+    - A walker has at most one walk at any moment
+    - An owner can cancel for free until 2 hours before starts_at

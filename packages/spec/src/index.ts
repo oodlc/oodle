@@ -1,3 +1,4 @@
+export { CONFIG_FILE, Config, loadConfig } from './config.ts';
 export { SpecError, TierViolation } from './errors.ts';
 export { assertDeclaredUnchanged, declaredDiff, jsonDiff } from './guard.ts';
 export { decidedOf, decisionId, declaredOf, sha256, specHash, stableStringify, type Tier } from './hash.ts';

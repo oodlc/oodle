@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadSpec, SpecError, specHash } from '../src/index.ts';
-import { copyProject, DOGWALK, edit, README_EXAMPLE, write } from './helpers.ts';
+import { copyProject, DOGWALK, EXAMPLE, edit, README_EXAMPLE, write } from './helpers.ts';
 
 const problemsOf = (fn: () => unknown): string[] => {
   try {
@@ -47,11 +47,18 @@ describe('the README example (single file)', () => {
 });
 
 describe('the split layout', () => {
-  it('loads examples/dogwalk to the same spec as the README example', () => {
-    const split = loadSpec(DOGWALK);
+  it('loads the split layout to the same spec as the README example', () => {
+    expect(specHash(loadSpec(DOGWALK).spec)).toBe(specHash(loadSpec(README_EXAMPLE).spec));
+  });
+
+  it('loads examples/dogwalk to the same spec as the README example, once its constraints are classified', () => {
+    const split = loadSpec(EXAMPLE);
     expect(split.layout).toBe('split');
     expect(split.spec.journeys.map((j) => j.id)).toEqual(['first-booking']);
-    expect(specHash(split.spec)).toBe(specHash(loadSpec(README_EXAMPLE).spec));
+    const readme = loadSpec(README_EXAMPLE).spec;
+    const checks = split.spec.constraints.map((c) => c.check);
+    expect(checks).toEqual(['build', 'build', 'production', 'generator']);
+    expect(specHash(split.spec)).toBe(specHash({ ...readme, constraints: readme.constraints.map((c, i) => ({ ...c, check: checks[i] })) }));
   });
 
   it('accepts a section file with or without its section key', () => {

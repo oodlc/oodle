@@ -14,6 +14,8 @@ export interface Expect {
   /** Texts the observed screen shows. */
   screen_contains?: string[];
   screen_not_contains?: string[];
+  /** Texts the screen shows in this order. */
+  screen_order?: string[];
   /** `ok` (2xx/3xx) or `blocked` (4xx). */
   outcome?: 'ok' | 'blocked';
   /** A fixture key (`owner:ada`) that receives mail during the step. */

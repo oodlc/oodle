@@ -1,0 +1,5 @@
+# Written by the generator where the spec is silent, and pinned: the next build must keep them.
+# A person can change any of them, make one a rule, or say they don't care.
+- Walks are listed by starts_at, soonest first
+- Prices are shown in the owner's currency, two decimals
+- Declining a walk asks the walker for no reason

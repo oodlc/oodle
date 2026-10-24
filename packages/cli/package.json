@@ -17,5 +17,17 @@
     "build": "tsup && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oodle/compile": "workspace:*",
+    "@oodle/sim": "workspace:*",
+    "@oodle/spec": "workspace:*",
+    "@oodle/template": "workspace:*",
+    "@oodle/verify": "workspace:*",
+    "commander": "15.0.0",
+    "yaml": "2.9.1"
+  },
+  "bin": {
+    "oodle": "./dist/bin.js"
   }
 }

@@ -1,0 +1,79 @@
+{
+  "journey": "first-booking",
+  "hash": "c44cfeaf5d1bafcee4d235d4cae6cb263230b47322d073f80ba290c13636da32",
+  "by": "recorded",
+  "prose": [
+    "Ada opens the app, picks Sam for Tuesday 9:00, 30 minutes: she sees \"Requested, $20\"",
+    "Sam accepts: Ada sees \"Accepted\" and gets an email",
+    "Ada cancels on Monday at 18:00: she sees \"Cancelled, no charge\""
+  ],
+  "scenario": {
+    "id": "journey/first-booking",
+    "fixtures": {
+      "owner:ada": {
+        "name": "Ada",
+        "address": "1 Elm St"
+      },
+      "walker:sam": {
+        "name": "Sam"
+      }
+    },
+    "steps": [
+      {
+        "prose": "Ada opens the app, picks Sam for Tuesday 9:00, 30 minutes: she sees \"Requested, $20\"",
+        "line": 0,
+        "at": "2026-11-02T08:00:00Z",
+        "as": "owner:ada",
+        "do": "owner.book_walk",
+        "input": {
+          "walker": "walker:sam",
+          "starts_at": "2026-11-03T09:00:00Z",
+          "minutes": 30
+        },
+        "expect": {
+          "screen_contains": [
+            "Requested",
+            "$20"
+          ]
+        }
+      },
+      {
+        "prose": "Sam accepts: Ada sees \"Accepted\" and gets an email",
+        "line": 1,
+        "as": "walker:sam",
+        "do": "walker.accept_walk",
+        "input": {
+          "walk": "$walk_1"
+        },
+        "look": {
+          "as": "owner:ada",
+          "screen": "walk",
+          "params": {
+            "walk": "$walk_1"
+          }
+        },
+        "expect": {
+          "screen_contains": [
+            "Accepted"
+          ],
+          "mail_to": "owner:ada"
+        }
+      },
+      {
+        "prose": "Ada cancels on Monday at 18:00: she sees \"Cancelled, no charge\"",
+        "line": 2,
+        "at": "2026-11-02T18:00:00Z",
+        "as": "owner:ada",
+        "do": "owner.cancel_walk",
+        "input": {
+          "walk": "$walk_1"
+        },
+        "expect": {
+          "screen_contains": [
+            "Cancelled, no charge"
+          ]
+        }
+      }
+    ]
+  }
+}

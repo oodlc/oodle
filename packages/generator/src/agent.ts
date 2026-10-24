@@ -34,8 +34,20 @@ const COMMANDS = [
   /^pnpm (run )?(typecheck|check)$/,
   /^(pnpm exec |npx )?tsc( --noEmit)?( -p \S+)?$/,
   /^(pnpm exec |npx )?wrangler d1 migrations apply \S+ --local$/,
-  /^(ls|pwd)( -[a-zA-Z]+)?( [\w./-]+)?$/,
+  /^pwd$/,
 ];
+
+/** `ls` of paths inside the app: relative, no `..`. */
+const listsInside = (cmd: string) => {
+  const m = /^ls((?: -[a-zA-Z]+)*)((?: [\w.@/-]+)*)$/.exec(cmd);
+  return (
+    !!m &&
+    (m[2] ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .every((p) => !p.startsWith('/') && !p.split('/').includes('..'))
+  );
+};
 const WRITES = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const READS = new Set(['Read', 'Glob', 'Grep', 'LS']);
 const OODLE_WRITABLE = new Set(['oodle/decisions.proposed.yaml', 'oodle/blocked.yaml']);
@@ -62,7 +74,7 @@ export function permit(cwd: string, tool: string, input: Record<string, unknown>
   }
   if (tool === 'Bash') {
     const cmd = String(input.command ?? '').trim();
-    if (COMMANDS.some((re) => re.test(cmd))) return { ok: true };
+    if (COMMANDS.some((re) => re.test(cmd)) || listsInside(cmd)) return { ok: true };
     return {
       ok: false,
       why: `only these commands are allowed: pnpm install, pnpm typecheck, pnpm check, tsc, wrangler d1 migrations apply <db> --local, ls. Use the file tools for everything else.`,

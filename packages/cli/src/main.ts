@@ -5,7 +5,9 @@ import { SpecError, TierViolation } from '@oodle/spec';
 import { Command, CommanderError } from 'commander';
 import { compileCommand, init, verifyCommand } from './commands/basics.ts';
 import { intentApprove, intentList, intentMerge, intentNew, intentReview } from './commands/intents.ts';
+import { interviewCommand } from './commands/interview.ts';
 import { answerCommand, buildCommand, exportCommand, gapsCommand, statusCommand } from './commands/loop.ts';
+import { mcpCommand } from './commands/mcp.ts';
 import { loginCommand, syncCommand } from './commands/remote.ts';
 import { CliError, context, EXIT } from './context.ts';
 
@@ -25,6 +27,10 @@ export function program(): Command {
     .description('start a spec in oodle/ (empty, or the dog-walking example)')
     .option('--example', "start from the README's dog-walking example")
     .action(async (o) => run(() => init(context(g(), false), o)));
+
+  p.command('interview')
+    .description('write the spec in a conversation: intent, personas, domain, journeys, constraints')
+    .action(async () => run(() => interviewCommand(context(g(), false))));
 
   p.command('compile')
     .description('compile journeys, constraints and decisions into what the simulation runs')
@@ -104,6 +110,10 @@ export function program(): Command {
     .option('--project <id>', 'also set remote.project in oodle.config.yaml')
     .option('--token <token>', 'the token (otherwise asked for)')
     .action(async (remote, o) => run(() => loginCommand(context(g()), remote, o)));
+
+  p.command('mcp')
+    .description('serve Oodle to a local agent over the Model Context Protocol (stdio), with the same rules as the CLI')
+    .action(async () => run(() => mcpCommand(context(g()))));
 
   p.command('export <buildId> <dir>')
     .description("copy a build's app out of .oodle/builds/")

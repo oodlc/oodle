@@ -1,0 +1,431 @@
+:root {
+  --bg: #fbfaf8;
+  --fg: #1d1c1a;
+  --muted: #6c6862;
+  --line: #e4e0da;
+  --card: #ffffff;
+  --accent: #2f5d50;
+  --accent-fg: #ffffff;
+  --warn-bg: #fff4dc;
+  --warn-fg: #6b4a00;
+  --ok-bg: #e6f3ec;
+  --ok-fg: #1f5135;
+  --err-bg: #fdeaea;
+  --err-fg: #7d1d1d;
+  --before: #fbeeee;
+  --after: #ecf6ef;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514;
+    --fg: #ece9e4;
+    --muted: #a19c94;
+    --line: #34312d;
+    --card: #1f1d1b;
+    --accent: #7fbfa9;
+    --accent-fg: #10201b;
+    --warn-bg: #3a2f14;
+    --warn-fg: #f3d58f;
+    --ok-bg: #173226;
+    --ok-fg: #a8dcc0;
+    --err-bg: #3b1919;
+    --err-fg: #f2b0b0;
+    --before: #2e1d1d;
+    --after: #1a2c21;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    16px / 1.5 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+header.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--fg);
+}
+
+main {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  line-height: 1.3;
+  margin: 0.25rem 0 1rem;
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+h4.entity {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0.75rem 0 0.25rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.warn-text {
+  color: var(--warn-fg);
+}
+
+.crumbs {
+  margin: 0;
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge.warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-color: transparent;
+}
+
+.banner {
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  margin: 0.75rem 0;
+}
+
+.banner.warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.banner.ok {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+
+.banner.error {
+  background: var(--err-bg);
+  color: var(--err-fg);
+}
+
+.banner .actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-left: 0.75rem;
+}
+
+.banner pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0.5rem 0 0;
+}
+
+section.project {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+  margin-top: 1.5rem;
+}
+
+.project-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.project-head nav {
+  display: flex;
+  gap: 1rem;
+}
+
+ul.rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+ul.rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.scenario {
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 40rem) {
+  .sides,
+  .two {
+    grid-template-columns: 1fr;
+  }
+}
+
+.side {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+}
+
+.side .summary {
+  font-weight: 600;
+  margin: 0.15rem 0 0.4rem;
+}
+
+.side .sample {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.answered {
+  margin: 1rem 0;
+}
+
+.options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+}
+
+button.link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  padding: 0.45rem 0.25rem;
+  text-decoration: underline;
+}
+
+button.option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.7rem 1rem;
+}
+
+button.option:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button.option .label {
+  font-weight: 600;
+}
+
+button.option .effect {
+  color: var(--muted);
+}
+
+button.option .replaces {
+  color: var(--warn-fg);
+}
+
+.secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+form.rule,
+section.review {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 1rem;
+}
+
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+textarea,
+input,
+select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.change {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--card);
+}
+
+.change-title {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.change .before,
+.change .after {
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  margin-top: 0.35rem;
+}
+
+.change .before {
+  background: var(--before);
+}
+
+.change .after {
+  background: var(--after);
+}
+
+.change p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.change dl {
+  margin: 0.5rem 0 0;
+}
+
+.change dl div {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.change dt {
+  color: var(--muted);
+}
+
+.change dd {
+  margin: 0;
+}
+
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.filters {
+  margin-bottom: 1rem;
+}
+
+table.log {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.log th,
+table.log td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+table.log th {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}

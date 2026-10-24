@@ -45,7 +45,7 @@ export type DemoFixture = { gaps: PushedGap[]; intents: PushedIntent[] };
 export function demoSql(project: string, fixture: DemoFixture, at = new Date().toISOString()): string[] {
   const gaps = fixture.gaps.map(({ id, content_hash, body }) => {
     const status = body.answer != null ? 'applied' : 'open';
-    return `INSERT OR REPLACE INTO gaps (project_id, id, content_hash, status, route, tier, kind, question, body_json, spec_hash, intent_id, version, created_at, updated_at) VALUES (${[
+    return `INSERT INTO gaps (project_id, id, content_hash, status, route, tier, kind, question, body_json, spec_hash, intent_id, version, created_at, updated_at) VALUES (${[
       project,
       id,
       content_hash,
@@ -59,11 +59,11 @@ export function demoSql(project: string, fixture: DemoFixture, at = new Date().t
       body.intent_id ?? null,
     ]
       .map(q)
-      .join(', ')}, 1, ${q(at)}, ${q(at)});`;
+      .join(', ')}, 1, ${q(at)}, ${q(at)}) ON CONFLICT DO NOTHING;`;
   });
   const intents = fixture.intents.map(
     ({ id, content_hash, body }) =>
-      `INSERT OR REPLACE INTO intents (project_id, id, status, body_json, content_hash, updated_at) VALUES (${[project, id, body.status, JSON.stringify(body), content_hash, at].map(q).join(', ')});`,
+      `INSERT INTO intents (project_id, id, status, body_json, content_hash, updated_at) VALUES (${[project, id, body.status, JSON.stringify(body), content_hash, at].map(q).join(', ')}) ON CONFLICT DO NOTHING;`,
   );
   return [...gaps, ...intents];
 }

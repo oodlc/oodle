@@ -117,7 +117,7 @@ export function answerInWords(a: AnswerBody, gap: Pick<GapFile, 'options'>): str
   return 'Not a real difference';
 }
 
-export type DecisionEffect = { adds?: string; replaces?: string };
+export type DecisionEffect = { adds?: string; replaces?: string; declared?: string };
 
 /**
  * What choosing an option would do to decisions.yaml: the decision it adds and, if any, the one
@@ -129,7 +129,15 @@ export function decisionEffect(gap: Pick<GapFile, 'options'>, optionId: string, 
   const adds = option?.becomes?.decision;
   const prev = standing && 'option' in standing ? gap.options.find((o) => o.id === standing.option)?.becomes?.decision : undefined;
   const replaces = option?.becomes?.replaces ?? (prev && prev !== adds ? prev : undefined);
-  return { ...(adds ? { adds } : {}), ...(replaces ? { replaces } : {}) };
+  const b = option?.becomes;
+  const declared = b?.constraint
+    ? `Adds the constraint “${b.constraint}”`
+    : b?.rule
+      ? `Adds a rule about ${b.rule.entity}: “${b.rule.text}”`
+      : b?.cannot
+        ? `Says ${/^[aeiou]/i.test(b.cannot.persona) ? 'an' : 'a'} ${b.cannot.persona} cannot ${b.cannot.text}`
+        : undefined;
+  return { ...(adds ? { adds } : {}), ...(replaces ? { replaces } : {}), ...(declared ? { declared } : {}) };
 }
 
 export type ChangeView = { title: string; before?: string; after?: string; details: [string, string][] };

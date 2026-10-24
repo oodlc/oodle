@@ -162,6 +162,7 @@ function AnswerForm({ gap, onAnswer }: { gap: GapRecord; onAnswer: (a: AnswerBod
             <button key={o.id} type="button" className="option" disabled={busy} onClick={run({ option: o.id })}>
               <span className="label">{o.label}</span>
               {effect.adds && <span className="effect small">Adds the decision “{effect.adds}”</span>}
+              {effect.declared && <span className="effect small">{effect.declared}</span>}
               {effect.replaces && <span className="effect small replaces">Replaces “{effect.replaces}”</span>}
             </button>
           );

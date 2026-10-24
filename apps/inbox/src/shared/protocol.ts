@@ -37,6 +37,10 @@ export type GapOption = {
     decision?: string;
     /** Inbox extension: text of the existing decision this option would replace. */
     replaces?: string;
+    /** Declared-tier effects, for permission and rule gaps (decision 0023). Only a person's answer may write these. */
+    constraint?: string;
+    rule?: { entity: string; text: string };
+    cannot?: { persona: string; text: string };
   };
 };
 

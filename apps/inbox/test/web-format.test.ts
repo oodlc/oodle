@@ -125,3 +125,18 @@ describe('inbox grouping and routes', () => {
     expect(age('2026-10-28T12:00:00Z', now)).toBe('5 d');
   });
 });
+
+describe('declared-tier effects', () => {
+  it('says what a permission or rule option writes', () => {
+    const gap = {
+      options: [
+        { id: 'a', label: 'Refuse it', becomes: { cannot: { persona: 'owner', text: "cancel another owner's walks" } } },
+        { id: 'b', label: 'Allow it', becomes: { constraint: 'Any owner can cancel any walk' } },
+        { id: 'c', label: 'A rule', becomes: { rule: { entity: 'walk', text: 'Only the owner cancels' } } },
+      ],
+    };
+    expect(decisionEffect(gap, 'a').declared).toBe("Says an owner cannot cancel another owner's walks");
+    expect(decisionEffect(gap, 'b').declared).toBe('Adds the constraint “Any owner can cancel any walk”');
+    expect(decisionEffect(gap, 'c').declared).toBe('Adds a rule about walk: “Only the owner cancels”');
+  });
+});
